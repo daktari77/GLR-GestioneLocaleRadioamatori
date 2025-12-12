@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+"""
+Template Manager for Libro Soci v4.2a
+Handles document templates for official communications (convocations, verbali, etc.)
+"""
+
+import os
+import shutil
+import logging
+from typing import List, Dict, Optional
+from datetime import datetime
+from pathlib import Path
+
+logger = logging.getLogger("librosoci")
+
+# Template types
+TEMPLATE_TYPES = {
+    'convocazione_cd': 'Convocazione Consiglio Direttivo',
+    'verbale_cd': 'Verbale Consiglio Direttivo',
+    'delibera': 'Delibera',
+    'comunicazione': 'Comunicazione generica',
+    'convocazione_assemblea': 'Convocazione Assemblea',
+}
+
+def get_templates_dir() -> str:
+    """Get templates directory path."""
+    # Use src/templates directory
+    base_dir = Path(__file__).parent
+    templates_dir = base_dir / "templates"
+    templates_dir.mkdir(exist_ok=True)
+    return str(templates_dir)
+
+def init_templates_table():
+    """Initialize templates table in database."""
+    from database import exec_query
+    
+    sql = """
+    CREATE TABLE IF NOT EXISTS templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        descrizione TEXT,
+        file_path TEXT NOT NULL,
+        placeholders TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """
+    exec_query(sql)
+    logger.info("Templates table initialized")
+
+def add_template(nome: str, tipo: str, source_file: str, descrizione: str = "", placeholders: str = "") -> tuple[bool, str]:
+    """
+    Add a new template to the system.
+    
+    Args:
+        nome: Template name
+        tipo: Template type (convocazione_cd, verbale_cd, etc.)
+        source_file: Source file path to copy
+        descrizione: Template description
+        placeholders: Comma-separated list of placeholders
+    
+    Returns:
+        Tuple (success, message)
+    """
+    try:
+        if not os.path.exists(source_file):
+            return False, "File sorgente non trovato"
+        
+        # Get file extension
+        _, ext = os.path.splitext(source_file)
+        if ext.lower() not in ['.txt', '.doc', '.docx', '.odt', '.html']:
+            return False, "Formato file non supportato. Usare: .txt, .doc, .docx, .odt, .html"
+        
+        # Create unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_name = "".join(c for c in nome if c.isalnum() or c in (' ', '-', '_')).strip()
+        filename = f"{safe_name}_{timestamp}{ext}"
+        
+        # Copy file to templates directory
+        templates_dir = get_templates_dir()
+        dest_path = os.path.join(templates_dir, filename)
+        shutil.copy2(source_file, dest_path)
+        
+        # Insert into database
+        from database import exec_query
+        now = datetime.now().isoformat()
+        
+        sql = """
+        INSERT INTO templates (nome, tipo, descrizione, file_path, placeholders, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        exec_query(sql, (nome, tipo, descrizione, dest_path, placeholders, now, now))
+        
+        logger.info(f"Template added: {nome}")
+        return True, f"Template '{nome}' aggiunto con successo"
+        
+    except Exception as e:
+        logger.error(f"Failed to add template: {e}")
+        return False, f"Errore: {str(e)}"
+
+def get_all_templates() -> List[Dict]:
+    """Get all templates."""
+    from database import fetch_all
+    
+    try:
+        sql = "SELECT * FROM templates ORDER BY tipo, nome"
+        rows = fetch_all(sql)
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Failed to get templates: {e}")
+        return []
+
+def get_templates_by_type(tipo: str) -> List[Dict]:
+    """Get templates by type."""
+    from database import fetch_all
+    
+    try:
+        sql = "SELECT * FROM templates WHERE tipo = ? ORDER BY nome"
+        rows = fetch_all(sql, (tipo,))
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Failed to get templates by type: {e}")
+        return []
+
+def get_template_by_id(template_id: int) -> Optional[Dict]:
+    """Get template by ID."""
+    from database import fetch_one
+    
+    try:
+        sql = "SELECT * FROM templates WHERE id = ?"
+        row = fetch_one(sql, (template_id,))
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Failed to get template: {e}")
+        return None
+
+def delete_template(template_id: int) -> tuple[bool, str]:
+    """Delete a template."""
+    try:
+        # Get template info
+        template = get_template_by_id(template_id)
+        if not template:
+            return False, "Template non trovato"
+        
+        # Delete file
+        if os.path.exists(template['file_path']):
+            os.remove(template['file_path'])
+        
+        # Delete from database
+        from database import exec_query
+        sql = "DELETE FROM templates WHERE id = ?"
+        exec_query(sql, (template_id,))
+        
+        logger.info(f"Template deleted: {template['nome']}")
+        return True, "Template eliminato"
+        
+    except Exception as e:
+        logger.error(f"Failed to delete template: {e}")
+        return False, f"Errore: {str(e)}"
+
+def read_template_content(template_id: int) -> Optional[str]:
+    """Read template file content (for text-based templates)."""
+    try:
+        template = get_template_by_id(template_id)
+        if not template:
+            return None
+        
+        file_path = template['file_path']
+        if not os.path.exists(file_path):
+            return None
+        
+        _, ext = os.path.splitext(file_path)
+        if ext.lower() not in ['.txt', '.html']:
+            return None  # Binary formats need special handling
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+            
+    except Exception as e:
+        logger.error(f"Failed to read template content: {e}")
+        return None
+
+def apply_template(template_id: int, replacements: Dict[str, str], output_path: str) -> tuple[bool, str]:
+    """
+    Apply template with placeholder replacements.
+    
+    Args:
+        template_id: Template ID
+        replacements: Dictionary of placeholder -> value
+        output_path: Output file path
+    
+    Returns:
+        Tuple (success, message)
+    """
+    try:
+        content = read_template_content(template_id)
+        if content is None:
+            return False, "Impossibile leggere il template"
+        
+        # Replace all placeholders
+        for placeholder, value in replacements.items():
+            # Support both [placeholder] and {placeholder} formats
+            content = content.replace(f"[{placeholder}]", value)
+            content = content.replace(f"{{{placeholder}}}", value)
+        
+        # Write output
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        logger.info(f"Template applied: {output_path}")
+        return True, f"Documento generato: {output_path}"
+        
+    except Exception as e:
+        logger.error(f"Failed to apply template: {e}")
+        return False, f"Errore: {str(e)}"

@@ -1,0 +1,4 @@
+Elenco documenti socio 67 - cartella 'documento'
+Nome file	Descrizione	Tipo	Categoria
+328dbf4a78.pdf	Domanda ammissione 2025	documento	Altro
+f02ff427d6.pdf	Quota associativa 2025	documento	Ricevute

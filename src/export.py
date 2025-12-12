@@ -1,0 +1,398 @@
+# -*- coding: utf-8 -*-
+"""
+Export functionality for Libro Soci v4.2a
+Supports HTML, CSV, and PDF export of members and reports
+"""
+
+import logging
+from datetime import datetime
+from pathlib import Path
+
+logger = logging.getLogger("librosoci")
+
+class ExportManager:
+    """Manages all export operations"""
+    
+    def __init__(self, db_path=None):
+        """Initialize export manager"""
+        self.db_path = db_path
+        self.export_dir = Path.home() / "Downloads" / "LibroSoci_Export"
+        self.export_dir.mkdir(parents=True, exist_ok=True)
+    
+    def export_members_csv(self, members_list, filename=None):
+        """
+        Export members to CSV format
+        
+        Args:
+            members_list: List of member dicts or tuples
+            filename: Output filename (auto-generated if None)
+        
+        Returns:
+            Path to exported file
+        """
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"soci_export_{timestamp}.csv"
+        
+        filepath = self.export_dir / filename
+        
+        try:
+            import csv
+            
+            if not members_list:
+                logger.warning("Empty members list for CSV export")
+                return None
+            
+            # Get headers
+            if isinstance(members_list[0], dict):
+                headers = list(members_list[0].keys())
+            else:
+                # Assume standard columns from database
+                headers = [
+                    "id", "attivo", "nominativo", "nominativo2", "nome", "cognome",
+                    "data_nascita", "luogo_nascita", "codicefiscale",
+                    "indirizzo", "cap", "citta", "provincia",
+                    "email", "telefono", "familiare", "socio",
+                    "matricola", "num_iscrizione", "q0", "q1", "q2", "cd_ruolo",
+                    "note", "voto", "privacy_ok", "privacy_data", "privacy_scadenza",
+                    "data_iscrizione", "deleted_at"
+                ]
+            
+            # Write CSV
+            with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.DictWriter(f, fieldnames=headers, delimiter=";")
+                writer.writeheader()
+                
+                for member in members_list:
+                    if isinstance(member, dict):
+                        writer.writerow(member)
+                    else:
+                        # Convert tuple/row to dict
+                        row = dict(zip(headers, member))
+                        writer.writerow(row)
+            
+            logger.info(f"CSV export completed: {filepath}")
+            return filepath
+        
+        except Exception as e:
+            logger.error(f"CSV export failed: {e}")
+            return None
+    
+    def export_members_html(self, members_list, config=None, filename=None):
+        """
+        Export members to HTML format with styling
+        
+        Args:
+            members_list: List of member dicts
+            config: Section configuration dict
+            filename: Output filename
+        
+        Returns:
+            Path to exported file
+        """
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"soci_export_{timestamp}.html"
+        
+        filepath = self.export_dir / filename
+        
+        try:
+            config = config or {}
+            
+            html_content = self._generate_html_report(members_list, config)
+            
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            
+            logger.info(f"HTML export completed: {filepath}")
+            return filepath
+        
+        except Exception as e:
+            logger.error(f"HTML export failed: {e}")
+            return None
+    
+    def _generate_html_report(self, members_list, config):
+        """Generate HTML content for members report"""
+        
+        section_name = config.get("nome_sezione", "Sezione")
+        section_code = config.get("codice_sezione", "")
+        export_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+        
+        html = f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Libro Soci - {section_name}</title>
+    <style>
+        body {{
+            font-family: "Segoe UI", Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        header {{
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }}
+        h1 {{
+            color: #0066cc;
+            margin: 0;
+        }}
+        .header-info {{
+            color: #666;
+            font-size: 14px;
+            margin-top: 10px;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }}
+        thead {{
+            background-color: #f0f0f0;
+            border-bottom: 2px solid #0066cc;
+        }}
+        th {{
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #333;
+        }}
+        td {{
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+        }}
+        tr:hover {{
+            background-color: #f9f9f9;
+        }}
+        .active {{
+            color: #28a745;
+            font-weight: 500;
+        }}
+        .inactive {{
+            color: #dc3545;
+            opacity: 0.7;
+        }}
+        footer {{
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 12px;
+            text-align: right;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>{section_name}</h1>
+            <div class="header-info">
+                <p><strong>Codice:</strong> {section_code}</p>
+                <p><strong>Data stampa:</strong> {export_date}</p>
+                <p><strong>Totale soci:</strong> {len(members_list)}</p>
+            </div>
+        </header>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Nominativo</th>
+                    <th>Nome</th>
+                    <th>Cognome</th>
+                    <th>Matricola</th>
+                    <th>Tipo</th>
+                    <th>Email</th>
+                    <th>Città</th>
+                    <th>Provincia</th>
+                    <th>Stato</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+        
+        # Add member rows
+        for member in members_list:
+            nom = member.get("nominativo", "")
+            nome = member.get("nome", "")
+            cognome = member.get("cognome", "")
+            matr = member.get("matricola", "")
+            socio = member.get("socio", "")
+            email = member.get("email", "")
+            citta = member.get("citta", "")
+            prov = member.get("provincia", "")
+            attivo = member.get("attivo", 1)
+            
+            status_class = "active" if attivo else "inactive"
+            status_text = "Attivo" if attivo else "Inattivo"
+            
+            html += f"""                <tr>
+                    <td>{nom}</td>
+                    <td>{nome}</td>
+                    <td>{cognome}</td>
+                    <td>{matr}</td>
+                    <td>{socio}</td>
+                    <td>{email}</td>
+                    <td>{citta}</td>
+                    <td>{prov}</td>
+                    <td class="{status_class}">{status_text}</td>
+                </tr>
+"""
+        
+        html += """            </tbody>
+        </table>
+        
+        <footer>
+            <p>Libro Soci - Documento generato automaticamente</p>
+        </footer>
+    </div>
+</body>
+</html>
+"""
+        
+        return html
+    
+    def get_export_dir(self):
+        """Get export directory path"""
+        return str(self.export_dir)
+
+
+class ReportGenerator:
+    """Generate statistical and analytical reports"""
+    
+    def __init__(self):
+        """Initialize report generator"""
+        pass
+    
+    def generate_statistics(self, members_list):
+        """
+        Generate statistics from members list
+        
+        Args:
+            members_list: List of member dicts
+        
+        Returns:
+            Dict with statistics
+        """
+        stats = {
+            "total_members": len(members_list),
+            "active_members": 0,
+            "inactive_members": 0,
+            "avg_age": 0,
+            "quota_stats": {"q0": 0, "q1": 0, "q2": 0},
+            "cd_roles": {},
+            "by_province": {},
+        }
+        
+        total_age = 0
+        age_count = 0
+        
+        for member in members_list:
+            # Active/inactive count
+            if member.get("attivo"):
+                stats["active_members"] += 1
+            else:
+                stats["inactive_members"] += 1
+            
+            # Age calculation
+            if member.get("data_nascita"):
+                try:
+                    from utils import ddmmyyyy_to_iso
+                    birth_date = ddmmyyyy_to_iso(member["data_nascita"])
+                    today = datetime.now().date()
+                    age = today.year - int(birth_date[:4])
+                    total_age += age
+                    age_count += 1
+                except:
+                    pass
+            
+            # Quota stats
+            for q in ["q0", "q1", "q2"]:
+                if member.get(q):
+                    stats["quota_stats"][q] += 1
+            
+            # CD roles
+            role = member.get("cd_ruolo", "")
+            if role:
+                stats["cd_roles"][role] = stats["cd_roles"].get(role, 0) + 1
+            
+            # By province
+            prov = member.get("provincia", "N/D")
+            stats["by_province"][prov] = stats["by_province"].get(prov, 0) + 1
+        
+        # Calculate average age
+        if age_count > 0:
+            stats["avg_age"] = total_age / age_count
+        
+        return stats
+    
+    def generate_quota_report(self, members_list):
+        """
+        Generate quota analysis report
+        
+        Returns:
+            Dict with quota data
+        """
+        report = {
+            "q0_members": [],
+            "q1_members": [],
+            "q2_members": [],
+            "no_quota": [],
+        }
+        
+        for member in members_list:
+            nom = member.get("nominativo", "")
+            
+            if member.get("q0"):
+                report["q0_members"].append(nom)
+            elif member.get("q1"):
+                report["q1_members"].append(nom)
+            elif member.get("q2"):
+                report["q2_members"].append(nom)
+            else:
+                report["no_quota"].append(nom)
+        
+        return report
+    
+    def generate_cd_report(self, members_list, config=None):
+        """
+        Generate Consiglio Direttivo composition report
+        
+        Returns:
+            Dict with CD roles and members
+        """
+        config = config or {}
+        
+        report = {
+            "section": config.get("nome_sezione", ""),
+            "composition": {},
+            "members": {}
+        }
+        
+        cd_roles = [
+            "Presidente", "Vice Presidente", "Segretario", "Tesoriere",
+            "Sindaco", "Consigliere"
+        ]
+        
+        # Initialize all roles
+        for role in cd_roles:
+            report["composition"][role] = 0
+            report["members"][role] = []
+        
+        # Populate with members
+        for member in members_list:
+            role = member.get("cd_ruolo", "")
+            if role and role in cd_roles:
+                report["composition"][role] += 1
+                report["members"][role].append(member.get("nominativo", ""))
+        
+        return report

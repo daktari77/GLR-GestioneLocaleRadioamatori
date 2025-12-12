@@ -1,0 +1,7 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src"
+  ],
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.packageIndexDepth": 2
+}

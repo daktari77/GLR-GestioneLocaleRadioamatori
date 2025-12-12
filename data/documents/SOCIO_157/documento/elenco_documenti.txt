@@ -1,0 +1,5 @@
+Elenco documenti socio 157 - cartella 'documento'
+Nome file	Descrizione	Tipo	Categoria
+a912b1e879.pdf	Domanda ammissione radio club	documento	Altro
+bb53304dd1.pdf	CI	documento	Documenti Identità
+f25f5c65c9.pdf	Quota iscrizione Radio club 2025	documento	Ricevute

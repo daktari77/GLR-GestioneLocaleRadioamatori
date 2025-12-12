@@ -1,0 +1,19 @@
+{
+  "nome_sezione": "Sez. ARI Bergamo",
+  "codice_sezione": "2401",
+  "sede_operativa": "Via Aldo Moro, 9\n24020 Scanzorosciate (BG)\n(presso “BM Group S.r.l.s.”)",
+  "sede_legale": "Via Carlo Serassi, 7\n24125 Bergamo (BG) C/O Coesi",
+  "indirizzo_postale": "Associazione Radioamatori Italiani Sezione di Bergamo \nc/o MBE 381\nVia Lecco, 39 – 24030 Mozzo (BG)",
+  "telefono": "+390350667531",
+  "email": "segretario@aribg.it",
+  "sito_web": "www.aribg.it",
+  "coordinate_bancarie": "IBAN: IT82T0326811100052897158060 \nBIC (Swift): SELBIT2BXX X  \nBanca: Banca Sella",
+  "recapiti": "info@aribg.it\ntesoriere@aribg.it",
+  "cd_componenti": "Presidente:\n    IW2KPL, Franco Cristini\nVice Presidente:\n    IZ2FME, Michele Carlone\nSegretario:\n    IU2GLR, Michele Martino\nTesoriere:\n    IK2HNG, Andrea d'Amore\nSindaco:\n    IK2RLN, Corrado Gaspani\n    IK2AOH, Vincenzo Malenza\n    IK2CLC, Maurizio Resigotti\nConsigliere:\n    IK2ANI, Aldo Angeletti\n    I2PEI, Maurizio Percassi\n    IU2GHS, Rosa Angela Zanchi",
+  "privacy_validita_anni": "10",
+  "thunderbird_path": "E:/PortableApps/ThunderbirdPortable/ThunderbirdPortable.exe",
+  "cd_triennio": "2023-2025",
+  "custom_role_options": [
+    "Referente ARI-RE"
+  ]
+}

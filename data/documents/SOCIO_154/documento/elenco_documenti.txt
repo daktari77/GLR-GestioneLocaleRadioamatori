@@ -1,0 +1,5 @@
+Elenco documenti socio 154 - cartella 'documento'
+Nome file	Descrizione	Tipo	Categoria
+09f037c6d6.jpg	Quota associativa 2025	documento	Ricevute
+5b1dc7739d.pdf	Domanda ammissione 2025	documento	Altro
+be431783d8.jpg	CI	documento	Documenti Identità

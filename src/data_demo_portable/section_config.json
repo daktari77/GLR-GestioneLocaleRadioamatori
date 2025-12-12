@@ -1,0 +1,15 @@
+{
+  "nome_sezione": "Sezione Demo",
+  "codice_sezione": "0000",
+  "sede_operativa": "Via Esempio 1\n00000 Città (IT)",
+  "sede_legale": "Via Legale 10\n00000 Città (IT)",
+  "indirizzo_postale": "Sezione Demo\nCasella Postale 123\n00000 Città",
+  "email": "demo@section.example",
+  "telefono": "+39 000 0000000",
+  "sito_web": "https://demo.section.example",
+  "coordinate_bancarie": "IBAN: IT00X0000000000000000000000\nBanca Demo",
+  "recapiti": "info@section.example",
+  "cd_componenti": "Presidente: IW2ABC\nSegretario: IU2XYZ\nTesoriere: IK2QWE",
+  "cd_triennio": "2025-2027",
+  "privacy_validita_anni": 2
+}
