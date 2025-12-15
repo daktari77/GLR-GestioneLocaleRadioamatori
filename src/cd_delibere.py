@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Delibere (Resolutions) management for Libro Soci v4.2a
+CD Delibere (Resolutions) management for GLR Gestione Locale Radioamatori v4.2a
 Handles registration of CD meeting resolutions with full tracking
 """
 

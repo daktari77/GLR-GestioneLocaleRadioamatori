@@ -10,7 +10,7 @@ import sys
 
 # Import configuration
 from config import (
-    APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE,
+    APP_NAME, APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE,
     BASE_DIR, DATA_DIR, BACKUP_DIR, DOCS_BASE, TRASH_DIR, SEC_DOCS, LOG_DIR,
     DB_NAME, CONFIG_JSON, PRESETS_JSON, CAUSALI_JSON, APP_LOG,
     SEC_CATEGORIES, DEFAULT_CONFIG
@@ -44,11 +44,24 @@ logger.debug("Database initialized")
 # Perform startup backup
 backup_on_startup(DB_NAME, BACKUP_DIR)
 
-# Import the main App class from UI module
+# Import the main App class and loading splash
 from v4_ui.main_window import App
+from v4_ui.loading_window import LoadingWindow
 from startup_checks import collect_startup_issues
 
 if __name__ == "__main__":
     logger.info("Starting application...")
-    startup_issues = collect_startup_issues()
+    loading = LoadingWindow(
+        app_name=APP_NAME,
+        version=APP_VERSION,
+        author=AUTHOR,
+        min_duration=5.0,
+        activity_logger=logger,
+    )
+    try:
+        loading.show()
+        loading.set_status("Verifica ambiente...")
+        startup_issues = collect_startup_issues()
+    finally:
+        loading.close()
     app = App(startup_issues=startup_issues)

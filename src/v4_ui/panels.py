@@ -18,6 +18,7 @@ from section_documents import (
     SECTION_DOCUMENT_CATEGORIES,
     add_section_document,
     delete_section_document,
+    ensure_section_index_file,
     human_readable_mtime,
     human_readable_size,
     list_section_documents,
@@ -649,7 +650,9 @@ class DocumentPanel(ttk.Frame):
         try:
             if os.name == "nt":
                 if os.path.exists(path):
-                    subprocess.run(["explorer", f"/select,{os.path.normpath(path)}"], check=False)
+                    normalized = os.path.normpath(path)
+                    cmd = f'explorer /select,"{normalized}"'
+                    subprocess.run(cmd, check=False, shell=True)
                 else:
                     os.startfile(folder)  # type: ignore[attr-defined]
             elif sys.platform == "darwin":
@@ -815,6 +818,8 @@ class SectionDocumentPanel(ttk.Frame):
         self.filter_var = tk.StringVar(value=self.ALL_LABEL)
         default_cat = SECTION_DOCUMENT_CATEGORIES[0] if SECTION_DOCUMENT_CATEGORIES else "Altro"
         self.upload_category_var = tk.StringVar(value=default_cat)
+        self._doc_path_map: dict[str, str] = {}
+        self._doc_meta_map: dict[str, dict] = {}
         self._build_ui()
         self.refresh()
 
@@ -824,6 +829,7 @@ class SectionDocumentPanel(ttk.Frame):
 
         ttk.Button(toolbar, text="Carica", command=self._add_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Apri", command=self._open_document).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Apri cartella", command=self._open_document_folder).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Modifica", command=self._edit_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_document).pack(side=tk.LEFT, padx=2)
 
@@ -883,6 +889,8 @@ class SectionDocumentPanel(ttk.Frame):
         """Reload section documents from disk applying current filter."""
         for item in self.tv_docs.get_children():
             self.tv_docs.delete(item)
+        self._doc_path_map.clear()
+        self._doc_meta_map.clear()
 
         try:
             self.docs = list_section_documents()
@@ -899,6 +907,7 @@ class SectionDocumentPanel(ttk.Frame):
                 continue
 
             path = str(doc.get("percorso") or "")
+            absolute_path = str(doc.get("absolute_path") or path)
             original_name = str(doc.get("original_name") or doc.get("nome_file") or "")
             hash_id = str(doc.get("hash_id") or "-")
             descrizione = str(doc.get("descrizione") or "")
@@ -925,10 +934,9 @@ class SectionDocumentPanel(ttk.Frame):
             else:
                 mtime = None
 
-            self.tv_docs.insert(
+            item_id = self.tv_docs.insert(
                 "",
                 tk.END,
-                iid=path,
                 values=(
                     original_name,
                     hash_id,
@@ -938,12 +946,20 @@ class SectionDocumentPanel(ttk.Frame):
                     human_readable_mtime(mtime),
                 ),
             )
+            self._doc_path_map[item_id] = absolute_path
+            self._doc_meta_map[item_id] = doc
 
     def _selected_path(self):
         sel = self.tv_docs.selection()
         if not sel:
             return None
-        return sel[0]
+        return self._doc_path_map.get(sel[0])
+
+    def _selected_doc_entry(self):
+        sel = self.tv_docs.selection()
+        if not sel:
+            return None
+        return self._doc_meta_map.get(sel[0])
 
     def _add_document(self):
         file_path = filedialog.askopenfilename(parent=self, title="Seleziona documento di sezione")
@@ -986,12 +1002,55 @@ class SectionDocumentPanel(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Documenti", f"Impossibile aprire il documento:\n{exc}")
 
+    def _open_document_folder(self):
+        path = self._selected_path()
+        if not path:
+            messagebox.showwarning("Documenti", "Selezionare un documento per aprire la cartella")
+            return
+
+        folder = os.path.dirname(path) or os.path.dirname(os.path.abspath(path))
+        if not folder:
+            messagebox.showerror("Documenti", "Impossibile determinare la cartella del documento")
+            return
+
+        if not os.path.exists(path) and not os.path.isdir(folder):
+            messagebox.showerror("Documenti", "File non trovato sul disco")
+            self.refresh()
+            return
+
+        doc = self._selected_doc_entry()
+        default_cat = SECTION_DOCUMENT_CATEGORIES[0] if SECTION_DOCUMENT_CATEGORIES else "Altro"
+        category = str(doc.get("categoria") or default_cat) if doc else default_cat
+
+        try:
+            ensure_section_index_file(category)
+        except Exception as exc:
+            logger.warning("Impossibile aggiornare l'indice per la categoria %s: %s", category, exc)
+
+        try:
+            if os.name == "nt":
+                if os.path.exists(path):
+                    normalized = os.path.normpath(path)
+                    cmd = f'explorer /select,"{normalized}"'
+                    subprocess.run(cmd, check=False, shell=True)
+                else:
+                    os.startfile(folder)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                if os.path.exists(path):
+                    subprocess.run(["open", "-R", path], check=False)
+                else:
+                    subprocess.run(["open", folder], check=False)
+            else:
+                subprocess.run(["xdg-open", folder], check=False)
+        except Exception as exc:
+            messagebox.showerror("Documenti", f"Impossibile aprire la cartella:\n{exc}")
+
     def _edit_document(self):
         path = self._selected_path()
         if not path:
             messagebox.showwarning("Documenti", "Selezionare un documento da modificare")
             return
-        doc = next((item for item in self.docs if str(item.get("percorso")) == path), None)
+        doc = self._selected_doc_entry()
         if not doc:
             messagebox.showwarning("Documenti", "Documento non trovato nella lista")
             return

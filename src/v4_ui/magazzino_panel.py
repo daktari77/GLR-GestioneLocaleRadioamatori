@@ -294,7 +294,10 @@ class MagazzinoPanel(ttk.Frame):
             messagebox.showerror("Magazzino", f"Errore caricando i prestiti:\n{exc}")
             return
         for row in rows:
-            loan_id = int(row.get("id"))
+            loan_id_raw = row.get("id")
+            if loan_id_raw is None:
+                continue
+            loan_id = int(loan_id_raw)
             self.loan_rows[loan_id] = row
             tree.insert(
                 "",

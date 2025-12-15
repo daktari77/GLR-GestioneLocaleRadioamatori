@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Verbali (Minutes) management for Libro Soci v4.2a
+CD Verbali (Minutes) management for GLR Gestione Locale Radioamatori v4.2a
 Handles registration of CD meeting minutes with detailed tracking
 """
 

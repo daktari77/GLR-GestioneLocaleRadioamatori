@@ -10,6 +10,7 @@
 - **Documenti socio**: seleziona un socio > "Documenti". Puoi aggiungere file per categorie catalogate; i file finiscono in `data/documents/<MATRICOLA>/`.
 - **Documenti di sezione**: menu Documenti di Sezione; categorie da `documents_catalog.py`. Il cestino è `data/.trash/`.
 - **Backup**: menu Backup > Crea/Importa. I backup incrementali sono in `backup/`; usa sempre il pulsante Importa per ripristinare.
+  - **Backup on demand**: apri il menu Backup > "Crea archivio dati" (oppure premi `Ctrl+B`). L'app verifica `data/soci.db`, duplica l'intera cartella `data/` e genera un archivio ZIP in `backup/[YYYYMMDD_HHMMSS]_backup.zip`. All'interno dell'archivio trovi `data/` (mirror della cartella originale), `soci.db` (copia coerente del database) e `backup_manifest.json` con i percorsi sorgente. Conserva o sposta questo file ZIP per mantenere uno snapshot completo.
 - **Privacy e scadenze**: calcolo automatico da data privacy; formati date ISO `YYYY-MM-DD`.
 
 ## Email Wizard

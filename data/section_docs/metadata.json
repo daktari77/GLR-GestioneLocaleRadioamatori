@@ -9,6 +9,24 @@
       "description": "test",
       "uploaded_at": "2025-11-27T23:06:15.845595",
       "relative_path": "verbali_cd/b50d6fbbc7.pdf"
+    },
+    "a130f6cbc2": {
+      "hash_id": "a130f6cbc2",
+      "categoria": "Altro",
+      "original_name": "Esito votazioni 2025.xlsx",
+      "stored_name": "a130f6cbc2.xlsx",
+      "description": "Esito elezioni 2026-28 del 12/12/2025",
+      "uploaded_at": "2025-12-15T15:56:55.818389",
+      "relative_path": "altro/a130f6cbc2.xlsx"
+    },
+    "581d6081c9": {
+      "hash_id": "581d6081c9",
+      "categoria": "Verbali CD",
+      "original_name": "2025-12-12_-_Elezioni CD 2026-28.docx",
+      "stored_name": "581d6081c9.docx",
+      "description": "Verbale esito elezioni CD 2026-28 del 12/12/2025__",
+      "uploaded_at": "2025-12-15T15:57:48.781070",
+      "relative_path": "verbali_cd/581d6081c9.docx"
     }
   }
 }

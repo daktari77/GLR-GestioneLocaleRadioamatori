@@ -167,6 +167,104 @@ def backup_incremental(db_path: str, backup_dir: str, max_backups: int = 20, for
         logger.error(f"Incremental backup failed: {e}")
         return False, str(e)
 
+
+def _backup_sqlite_file(source_db: str, destination_db: str):
+    """Create a consistent SQLite copy using the backup API."""
+    try:
+        dest_parent = os.path.dirname(destination_db)
+        if dest_parent:
+            os.makedirs(dest_parent, exist_ok=True)
+        src_conn = sqlite3.connect(source_db)
+        dst_conn = sqlite3.connect(destination_db)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+            src_conn.close()
+    except Exception as exc:
+        raise BackupError(f"Database backup failed: {exc}")
+
+
+def backup_on_demand(data_dir: str, db_path: str, backup_dir: str) -> Tuple[bool, str]:
+    """Create a full on-demand backup (data directory + DB) and compress it."""
+    if not os.path.isdir(data_dir):
+        return False, f"Data directory not found: {data_dir}"
+
+    if not os.path.exists(db_path):
+        return False, f"Database not found: {db_path}"
+
+    is_valid, error_msg = verify_db_integrity(db_path)
+    if not is_valid:
+        return False, f"Database corrupted: {error_msg}"
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    folder_name = f"{timestamp}_backup"
+    target_dir = os.path.join(backup_dir, folder_name)
+
+    try:
+        os.makedirs(backup_dir, exist_ok=True)
+
+        if os.path.exists(target_dir):
+            return False, f"Backup folder already exists: {target_dir}"
+
+        db_name = os.path.basename(db_path)
+        try:
+            db_within_data = os.path.commonpath([
+                os.path.abspath(db_path),
+                os.path.abspath(data_dir)
+            ]) == os.path.abspath(data_dir)
+        except ValueError:
+            db_within_data = False
+
+        ignore_patterns = None
+        if db_within_data:
+            ignore_patterns = shutil.ignore_patterns(db_name)
+
+        os.makedirs(target_dir)
+
+        data_destination = os.path.join(target_dir, "data")
+        shutil.copytree(data_dir, data_destination, ignore=ignore_patterns)
+
+        db_destination = os.path.join(target_dir, db_name)
+        _backup_sqlite_file(db_path, db_destination)
+
+        metadata = {
+            "created_at": datetime.now().isoformat(),
+            "data_source": os.path.abspath(data_dir),
+            "db_source": os.path.abspath(db_path),
+            "db_hash": calculate_db_hash(db_path),
+            "items": {
+                "data_dir": "data",
+                "database": db_name
+            }
+        }
+        manifest_path = os.path.join(target_dir, "backup_manifest.json")
+        with open(manifest_path, 'w', encoding='utf-8') as manifest_file:
+            json.dump(metadata, manifest_file, indent=2, ensure_ascii=False)
+
+        archive_path = shutil.make_archive(
+            os.path.join(backup_dir, folder_name),
+            "zip",
+            root_dir=backup_dir,
+            base_dir=folder_name
+        )
+
+        shutil.rmtree(target_dir, ignore_errors=True)
+        logger.info(f"On-demand backup archive created: {archive_path}")
+        return True, archive_path
+
+    except Exception as exc:
+        logger.error(f"On-demand backup failed: {exc}")
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+        archive_candidate = os.path.join(backup_dir, f"{folder_name}.zip")
+        if os.path.exists(archive_candidate):
+            try:
+                os.remove(archive_candidate)
+            except OSError:
+                pass
+        return False, str(exc)
+
 def restore_from_backup(backup_path: str, target_db_path: str, create_safety_backup: bool = True) -> Tuple[bool, str]:
     """
     Restore database from backup with safety measures.

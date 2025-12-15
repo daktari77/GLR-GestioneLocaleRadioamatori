@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Main application window for Libro Soci v4.2a
+Main application window for GLR - Gestione Locale Radioamatori v4.2a
 """
 
 import csv
@@ -25,7 +25,7 @@ TreeviewAnchor = Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"]
 
 
 class App:
-    """Main application class for Libro Soci v4.2a"""
+    """Main application class for GLR - Gestione Locale Radioamatori v4.2a"""
     
     COLONNE = (
         "id",
@@ -68,22 +68,12 @@ class App:
     
     def __init__(self, *, startup_issues: Sequence[StartupIssue] | None = None):
         """Initialize the application."""
-        # Import configuration after logger is set up
+        # Import configuration after logger is set up; DB setup already happens in main.py
         from config import APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE
-        from database import init_db
-        from backup import backup_on_startup
-        from config import DB_NAME, BACKUP_DIR
-        
-        # Initialize database
-        init_db()
-        logger.debug("Database initialized")
-        
-        # Perform startup backup
-        backup_on_startup(DB_NAME, BACKUP_DIR)
         
         # Create root window
         self.root = tk.Tk()
-        self.root.title(f"Libro Soci - Rev {APP_VERSION} - Build {BUILD_ID}")
+        self.root.title(f"GLR - Gestione Locale Radioamatori - Rev {APP_VERSION} - Build {BUILD_ID}")
         # Window sized to comfortably fit 20 rows while staying within 1900x850 footprint
         self.root.geometry("1300x850")
         # Enforce a minimum so layout widgets never collapse
@@ -120,7 +110,7 @@ class App:
     def _update_title(self):
         """Update window title with section information."""
         from config import APP_VERSION, BUILD_ID
-        title = f"Libro Soci - Rev {APP_VERSION} (Build {BUILD_ID})"
+        title = f"GLR - Gestione Locale Radioamatori - Rev {APP_VERSION} (Build {BUILD_ID})"
         if self.cfg.get("nome_sezione"):
             code = self.cfg.get("codice_sezione") or ""
             title += f" — {self.cfg['nome_sezione']}"

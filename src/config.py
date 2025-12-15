@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Configuration and constants for Libro Soci v4.2a
+Configuration and constants for GLR Gestione Locale Radioamatori 
 """
 
 import os
@@ -10,6 +10,7 @@ from datetime import datetime
 # --------------------------
 # Versione / Build
 # --------------------------
+APP_NAME = "GLR Gestione Locale Radioamatori - il gestionale soci della sezione"
 APP_VERSION = "4.2a"
 AUTHOR = "Michele Martino - IU2GLR"
 

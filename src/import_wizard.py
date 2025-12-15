@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CSV Import Wizard orchestrator for Libro Soci v4.2a
+CSV Import Wizard orchestrator for GLR Gestione Locale Radioamatori v4.2a
 Manages the complete import workflow: File → Preset → Mapping → Preview → Insert
 """
 
@@ -160,7 +160,7 @@ class ImportWizard:
         # Header
         header_frame = ttk.Frame(scrollable_frame)
         header_frame.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Label(header_frame, text="✓", font=("Segoe UI", 9, "bold"), width=3).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="✓", font=("Segoe UI", 9, "bold"), width=3).pack(side=tk.LEFT, padx=2)
         ttk.Label(header_frame, text="Campo DB", font=("Segoe UI", 9, "bold"), width=18).pack(side=tk.LEFT, padx=5)
         ttk.Label(header_frame, text="Colonna CSV", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=5)
         
@@ -369,21 +369,21 @@ class ImportWizard:
             from csv_import import TARGET_FIELDS
         except Exception:
             TARGET_FIELDS = [("matricola", "Matricola"), ("nome", "Nome"), ("cognome", "Cognome")]
-        
+
         csv_options = [""]
         if hasattr(self, 'headers'):
             csv_options.extend(self.headers)
-        
+
         self.mapping_widgets = {}
         self.field_checkboxes = {}
-        
+
         for field_key, field_label in TARGET_FIELDS:
             if field_key == 'id':
                 continue
-                
+
             row_frame = ttk.Frame(parent)
             row_frame.pack(fill=tk.X, padx=5, pady=1)
-            
+
             # Checkbox
             var = tk.BooleanVar()
             if field_key == 'matricola':
@@ -392,31 +392,58 @@ class ImportWizard:
             else:
                 var.set(field_key != 'attivo')  # All except attivo selected by default
                 cb = ttk.Checkbutton(row_frame, variable=var, width=3)
-            
+
             cb.pack(side=tk.LEFT)
             self.field_checkboxes[field_key] = var
-            
+
             # Field label
             ttk.Label(row_frame, text=field_label, width=18, anchor="w").pack(side=tk.LEFT, padx=5)
-            
+
             # Mapping combo
             combo = ttk.Combobox(row_frame, values=csv_options, state="readonly", width=20)
             combo.pack(side=tk.LEFT, padx=5)
             self.mapping_widgets[field_key] = combo
-            
+
             # Bind combo change to update preview
             combo.bind('<<ComboboxSelected>>', self._on_mapping_change)
-        """Select all field checkboxes (except matricola which is always selected)"""
+
+        # Ensure all optional fields start selected by default
         for field_key, var in self.field_checkboxes.items():
-            if field_key != 'matricola':  # Skip matricola as it's disabled
+            if field_key != 'matricola':
                 var.set(True)
-            
+
+    def _select_all_fields(self):
+        """Select every optional field checkbox (matricola remains enforced)."""
+        if not hasattr(self, 'field_checkboxes'):
+            return
+        for field_key, var in self.field_checkboxes.items():
+            if field_key != 'matricola':
+                var.set(True)
+
     def _deselect_all_fields(self):
-        """Deselect all field checkboxes (except matricola which is always selected)"""
+        """Deselect every optional field checkbox (matricola remains enforced)."""
+        if not hasattr(self, 'field_checkboxes'):
+            return
         for field_key, var in self.field_checkboxes.items():
             if field_key != 'matricola':  # Skip matricola as it's disabled
                 var.set(False)
 
+    def _on_mapping_change(self, event):
+        """Keep self.mapping synced with combo selections."""
+        if not hasattr(self, 'mapping_widgets'):
+            return
+        widget = getattr(event, 'widget', None)
+        if widget is None:
+            return
+        target_field = next((field for field, combo in self.mapping_widgets.items() if combo is widget), None)
+        if target_field is None:
+            return
+        value = widget.get().strip()
+        if value:
+            self.mapping[target_field] = value
+        else:
+            self.mapping.pop(target_field, None)
+    
     def _build_page_preview(self):
         """Page 4: Preview mapped data"""
         frame = ttk.Frame(self.content_frame)

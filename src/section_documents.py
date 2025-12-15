@@ -10,7 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-SECTION_DOCUMENT_ROOT = Path("data/section_docs")
+from config import SEC_DOCS
+
+SECTION_DOCUMENT_ROOT = Path(SEC_DOCS)
 SECTION_METADATA_FILE = SECTION_DOCUMENT_ROOT / "metadata.json"
 SECTION_DOCUMENT_CATEGORIES: tuple[str, ...] = (
     "Verbali CD",
@@ -22,6 +24,7 @@ SECTION_DOCUMENT_CATEGORIES: tuple[str, ...] = (
     "Altro",
 )
 DEFAULT_SECTION_CATEGORY = SECTION_DOCUMENT_CATEGORIES[0]
+SECTION_DOCUMENT_INDEX_FILENAME = "elenco_documenti.txt"
 METADATA_SCHEMA_VERSION = 1
 
 logger = logging.getLogger("librosoci")
@@ -149,6 +152,50 @@ def _category_from_directory(directory: Path) -> str:
     return DEFAULT_SECTION_CATEGORY
 
 
+def ensure_section_index_file(category: str) -> Path:
+    """Ensure the TXT listing for a given section category exists (regenerated when invoked)."""
+    ensure_section_structure()
+    normalized = _normalize_category(category)
+    directory = _category_dir(normalized)
+    index_path = directory / SECTION_DOCUMENT_INDEX_FILENAME
+
+    metadata = _load_metadata()
+    metadata_by_path: dict[str, dict] = {}
+    for payload in metadata.values():
+        rel = payload.get("relative_path")
+        if not rel:
+            continue
+        abs_path = (SECTION_DOCUMENT_ROOT / rel).resolve()
+        metadata_by_path[str(abs_path)] = payload
+
+    lines = [
+        f"Elenco documenti sezione - categoria '{normalized}'",
+        "Nome file\tDescrizione\tCategoria\tPercorso relativo",
+    ]
+
+    try:
+        for path in sorted(directory.iterdir(), key=lambda p: p.name.lower()):
+            if not path.is_file() or path.name == SECTION_DOCUMENT_INDEX_FILENAME:
+                continue
+            resolved = path.resolve()
+            payload = metadata_by_path.get(str(resolved))
+            descrizione = (payload.get("description") if payload else "") or ""
+            categoria = payload.get("categoria") if payload else normalized
+            rel = _relative_to_root(resolved) or path.name
+            originale = (payload.get("original_name") if payload else None) or path.name
+            lines.append(f"{originale}\t{descrizione}\t{categoria}\t{rel}")
+
+        if len(lines) == 2:
+            lines.append("(Nessun documento presente)")
+
+        with index_path.open("w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+    except OSError as exc:
+        logger.warning("Impossibile aggiornare l'indice documenti sezione %s: %s", normalized, exc)
+
+    return index_path
+
+
 def ensure_section_structure():
     SECTION_DOCUMENT_ROOT.mkdir(parents=True, exist_ok=True)
     for cat in SECTION_DOCUMENT_CATEGORIES:
@@ -169,6 +216,7 @@ def list_section_documents() -> List[Dict[str, object]]:
         if not path.exists() or not path.is_file():
             logger.warning("Documento sezione %s mancante sul disco", rel_path)
             continue
+        relative_display = rel_path or _relative_to_root(path) or path.name
         try:
             stat = path.stat()
         except OSError:
@@ -178,7 +226,9 @@ def list_section_documents() -> List[Dict[str, object]]:
             {
                 "nome_file": payload.get("original_name") or path.name,
                 "categoria": categoria,
-                "percorso": str(path),
+                "percorso": relative_display,
+                "relative_path": relative_display,
+                "absolute_path": str(path),
                 "size": stat.st_size,
                 "mtime": stat.st_mtime,
                 "hash_id": hash_id,
@@ -203,11 +253,15 @@ def list_section_documents() -> List[Dict[str, object]]:
                 stat = path.stat()
             except OSError:
                 continue
+            rel = _relative_to_root(resolved)
+            relative_display = rel or resolved.name
             docs.append(
                 {
                     "nome_file": path.name,
                     "categoria": category,
-                    "percorso": str(resolved),
+                    "percorso": relative_display,
+                    "relative_path": relative_display,
+                    "absolute_path": str(resolved),
                     "size": stat.st_size,
                     "mtime": stat.st_mtime,
                     "hash_id": None,

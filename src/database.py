@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Database operations for Libro Soci v4.2a
+Database operations for GLR Gestione Locale Radioamatori v4.2a
 """
 
 import sqlite3

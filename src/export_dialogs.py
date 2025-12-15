@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Export dialogs for Libro Soci v4.2a
+Export dialogs for GLR Gestione Locale Radioamatori v4.2a
 Provides UI for member export and reports
 """
 

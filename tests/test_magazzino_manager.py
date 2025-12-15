@@ -37,14 +37,18 @@ class TestMagazzinoManager(unittest.TestCase):
                 "INSERT INTO soci (nome, cognome, matricola) VALUES (?, ?, ?)",
                 ("Mario", "Rossi", "001"),
             )
-            self.socio_id = cur.lastrowid
-        self.item_id = create_item(
+            socio_id = cur.lastrowid
+            if socio_id is None:
+                raise RuntimeError("Impossibile creare il socio di test")
+            self.socio_id = int(socio_id)
+        item_id = create_item(
             numero_inventario="INV-01",
             marca="Yaesu",
             modello="FT-818",
             descrizione="Ricetrasmettitore portatile",
             note="Test",
         )
+        self.item_id = int(item_id)
 
     def tearDown(self):
         try:

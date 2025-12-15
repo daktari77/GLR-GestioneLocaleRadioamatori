@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Meetings UI Dialogs for Libro Soci v4.2a
+CD Meetings UI Dialogs for GLR Gestione Locale Radioamatori v4.2a
 """
 
 import tkinter as tk
@@ -351,7 +351,7 @@ La Segreteria""",
         """Show email preview"""
         subject = self.entry_oggetto.get().strip()
         body = self.text_email.get('1.0', tk.END).strip()
-        odg = self.text_odg.get('1.0', tk.END).strip()
+        odg = self.text_odg.get('1.0', tk.END).strip();
         
         # Replace ODG placeholder if present
         if '{odg}' in body and odg:

@@ -42,7 +42,13 @@ class PreferencesDialog(tk.Toplevel):
         container = ttk.Frame(self, padding=10)
         container.pack(fill=tk.BOTH, expand=True)
 
-        notebook = ttk.Notebook(container)
+        style = ttk.Style(self)
+        style.configure(
+            "PreferencesNotebook.TNotebook.Tab",
+            font=("Segoe UI", 10, "bold"),
+            padding=(16, 6, 16, 6),
+        )
+        notebook = ttk.Notebook(container, style="PreferencesNotebook.TNotebook")
         notebook.pack(fill=tk.BOTH, expand=True)
 
         roles_frame = ttk.Frame(notebook, padding=10)

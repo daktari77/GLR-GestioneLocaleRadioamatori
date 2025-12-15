@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Export functionality for Libro Soci v4.2a
+Export functionality for GLR Gestione Locale Radioamatori v4.2a
 Supports HTML, CSV, and PDF export of members and reports
 """
 
@@ -16,7 +16,7 @@ class ExportManager:
     def __init__(self, db_path=None):
         """Initialize export manager"""
         self.db_path = db_path
-        self.export_dir = Path.home() / "Downloads" / "LibroSoci_Export"
+        self.export_dir = Path.home() / "Downloads" / "GLR_GestioneSoci_Export"
         self.export_dir.mkdir(parents=True, exist_ok=True)
     
     def export_members_csv(self, members_list, filename=None):
@@ -123,7 +123,7 @@ class ExportManager:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Libro Soci - {section_name}</title>
+    <title>GLR Gestione Locale Radioamatori - {section_name}</title>
     <style>
         body {{
             font-family: "Segoe UI", Arial, sans-serif;
@@ -252,7 +252,7 @@ class ExportManager:
         </table>
         
         <footer>
-            <p>Libro Soci - Documento generato automaticamente</p>
+            <p>GLR Gestione Locale Radioamatori - Documento generato automaticamente</p>
         </footer>
     </div>
 </body>

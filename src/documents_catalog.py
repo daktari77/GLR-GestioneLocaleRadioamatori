@@ -1,4 +1,4 @@
-"""Document categories shared across the Libro Soci UI."""
+"""Document categories shared across the GLR Gestione Locale Radioamatori UI."""
 from __future__ import annotations
 
 from typing import Iterable, Tuple

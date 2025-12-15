@@ -11,6 +11,7 @@ import os
 import shutil
 import sqlite3
 import json
+import zipfile
 from pathlib import Path
 
 # Add src to path
@@ -26,7 +27,8 @@ from backup import (
     get_backup_metadata,
     save_backup_metadata,
     verify_db,
-    rebuild_indexes
+    rebuild_indexes,
+    backup_on_demand
 )
 from database import set_db_path, init_db, exec_query
 from exceptions import BackupError, BackupIntegrityError, RestoreError
@@ -351,6 +353,60 @@ class TestBackupList(unittest.TestCase):
                     valid_backups[i]['created'],
                     valid_backups[i + 1]['created']
                 )
+
+
+class TestOnDemandBackup(unittest.TestCase):
+    """Test on-demand full backup workflow."""
+
+    def setUp(self):
+        """Prepare temporary data and backup directories."""
+        self.temp_root = tempfile.mkdtemp()
+        self.data_dir = os.path.join(self.temp_root, "data")
+        self.backup_dir = os.path.join(self.temp_root, "backup")
+        os.makedirs(self.data_dir, exist_ok=True)
+        os.makedirs(self.backup_dir, exist_ok=True)
+
+        # Create database inside data directory
+        self.db_path = os.path.join(self.data_dir, "soci.db")
+        set_db_path(self.db_path)
+        init_db()
+        exec_query(
+            "INSERT INTO soci (nome, cognome, attivo) VALUES (?, ?, ?)",
+            ("Giulia", "Bianchi", 1)
+        )
+
+        # Add sample file to data directory
+        self.sample_file = os.path.join(self.data_dir, "dummy.txt")
+        with open(self.sample_file, 'w', encoding='utf-8') as handle:
+            handle.write("sample data")
+
+    def tearDown(self):
+        """Clean up temp directories."""
+        try:
+            shutil.rmtree(self.temp_root)
+        except Exception:
+            pass
+
+    def test_backup_on_demand_creates_archive(self):
+        """Verify that on-demand backup creates a zip archive with expected contents."""
+        success, archive_path = backup_on_demand(self.data_dir, self.db_path, self.backup_dir)
+
+        self.assertTrue(success)
+        self.assertTrue(archive_path.endswith('.zip'))
+        self.assertTrue(os.path.exists(archive_path))
+
+        prefix = Path(archive_path).stem
+        expected_data_entry = f"{prefix}/data/dummy.txt"
+        expected_db_entry = f"{prefix}/soci.db"
+        expected_manifest_entry = f"{prefix}/backup_manifest.json"
+
+        with zipfile.ZipFile(archive_path, 'r') as archive:
+            names = archive.namelist()
+
+            self.assertIn(expected_data_entry, names)
+            self.assertIn(expected_db_entry, names)
+            self.assertIn(expected_manifest_entry, names)
+
 
 
 class TestDatabaseUtilities(unittest.TestCase):

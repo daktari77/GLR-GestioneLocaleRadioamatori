@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Custom exceptions for Libro Soci v4.2a
+Custom exceptions for GLR Gestione Locale Radioamatori v4.2a
 
 Provides specific exception types for better error handling
 and more informative error messages.
@@ -8,7 +8,7 @@ and more informative error messages.
 
 
 class LibroSociError(Exception):
-    """Base exception for all Libro Soci errors."""
+    """Base exception for all GLR Gestione Locale Radioamatori errors."""
     pass
 
 

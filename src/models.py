@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Data models and validation for Libro Soci v4.2a
-
-This module provides type-safe dataclasses with built-in validation
-for member data, ensuring data integrity at the model level.
+Data models and validation for GLR Gestione Locale Radioamatori v4.2a
 """
 
 from dataclasses import dataclass, field
