@@ -49,6 +49,7 @@ def print_usage():
     print("  test_database  - Database operations tests")
     print("  test_backup    - Backup and restore tests")
     print("  test_models    - Member model validation tests")
+    print("  test_magazzino_manager - Gestione magazzino e prestiti")
 
 
 if __name__ == '__main__':

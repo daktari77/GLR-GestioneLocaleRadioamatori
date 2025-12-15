@@ -343,6 +343,34 @@ CREATE TABLE IF NOT EXISTS ponti_documents (
 )
 """
 
+CREATE_MAGAZZINO_ITEMS = """
+CREATE TABLE IF NOT EXISTS magazzino_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero_inventario TEXT NOT NULL UNIQUE,
+    marca TEXT NOT NULL,
+    modello TEXT,
+    descrizione TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+)
+"""
+
+CREATE_MAGAZZINO_LOANS = """
+CREATE TABLE IF NOT EXISTS magazzino_loans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL,
+    socio_id INTEGER,
+    data_prestito TEXT NOT NULL,
+    data_reso TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (item_id) REFERENCES magazzino_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (socio_id) REFERENCES soci(id) ON DELETE SET NULL
+)
+"""
+
 CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_soci_attivo ON soci(attivo)",
     "CREATE INDEX IF NOT EXISTS idx_soci_deleted ON soci(deleted_at)",
@@ -355,7 +383,9 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_ponti_stato ON ponti(stato_corrente)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_auth_scadenza ON ponti_authorizations(data_scadenza)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_interventi_data ON ponti_interventi(data)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_soci_ruoli_unique ON soci_ruoli(socio_id, ruolo)"
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_soci_ruoli_unique ON soci_ruoli(socio_id, ruolo)",
+    "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_item ON magazzino_loans(item_id)",
+    "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_active ON magazzino_loans(item_id, data_reso)"
 ]
 
 # --------------------------
@@ -399,6 +429,8 @@ def init_db():
         _ensure_column(conn, "ponti_authorizations", "calendar_event_id", "INTEGER")
         conn.execute(CREATE_PONTI_INTERVENTI)
         conn.execute(CREATE_PONTI_DOCUMENTS)
+        conn.execute(CREATE_MAGAZZINO_ITEMS)
+        conn.execute(CREATE_MAGAZZINO_LOANS)
         conn.execute(CREATE_SOCI_ROLES)
         for idx in CREATE_INDEXES:
             try:

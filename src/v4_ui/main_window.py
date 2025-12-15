@@ -14,6 +14,7 @@ from typing import Literal, Mapping, Sequence
 from calendar_utils import events_to_ics
 from .calendar_wizard import CalendarWizard, EVENT_TYPES as CALENDAR_EVENT_TYPES
 from .ponti_panel import PontiPanel
+from .magazzino_panel import MagazzinoPanel
 from startup_checks import StartupIssue, format_startup_issues
 
 logger = logging.getLogger("librosoci")
@@ -228,19 +229,19 @@ class App:
             pass
     
     def _manual_backup(self):
-        """Perform manual backup."""
-        from backup import backup_incremental
-        from config import DB_NAME, BACKUP_DIR
+        """Perform on-demand backup (data folder + database)."""
+        from backup import backup_on_demand
+        from config import DATA_DIR, DB_NAME, BACKUP_DIR
         from tkinter import messagebox
-        
+
         try:
-            success, result = backup_incremental(DB_NAME, BACKUP_DIR, force=True)
+            success, result = backup_on_demand(DATA_DIR, DB_NAME, BACKUP_DIR)
             if success:
-                messagebox.showinfo("Backup", f"Backup completato:\n{result}")
+                messagebox.showinfo("Backup", f"Archivio creato:\n{result}")
             else:
-                messagebox.showwarning("Backup", f"Backup non necessario:\n{result}")
+                messagebox.showerror("Errore Backup", f"Backup non riuscito:\n{result}")
         except Exception as e:
-            messagebox.showerror("Errore Backup", f"Errore durante il backup:\n{str(e)}")
+            messagebox.showerror("Errore Backup", f"Errore durante il backup on demand:\n{str(e)}")
             logger.error(f"Manual backup failed: {e}")
 
     def _relink_document_paths(self):
@@ -279,11 +280,14 @@ class App:
         # Create notebook (tabs) with custom style for delimiters
         self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
         
         # Create tabs
         self._create_soci_tab()
         self._add_tab_delimiter()
         self._create_docs_tab()
+        self._add_tab_delimiter()
+        self._create_magazzino_tab()
         self._add_tab_delimiter()
         self._create_ponti_tab()
         self._add_tab_delimiter()
@@ -598,6 +602,13 @@ class App:
         self.panel_docs = DocumentPanel(docs_notebook, show_all_documents=True)
         docs_notebook.add(self.panel_docs, text="Documenti soci")
 
+    def _create_magazzino_tab(self):
+        """Create the inventory (magazzino) tab."""
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="Magazzino")
+        self.magazzino_panel = MagazzinoPanel(tab)
+        self.magazzino_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
     def _create_ponti_tab(self):
         """Create the Ponti (repeaters) management tab."""
         tab = ttk.Frame(self.notebook)
@@ -605,16 +616,19 @@ class App:
         self.ponti_panel = PontiPanel(tab)
         self.ponti_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     
-    def _on_notebook_tab_changed(self, event):
-        """Refresh lists when tabs are selected"""
-        current_tab = self.notebook.index(self.notebook.select())
-        if current_tab == 2:  # Delibere tab
+    def _on_notebook_tab_changed(self, _event):
+        """Refresh expensive tabs when they become visible."""
+        try:
+            tab_id = self.notebook.select()
+        except Exception:
+            return
+        tab_text = (self.notebook.tab(tab_id, "text") or "").strip()
+        if tab_text == "Delibere":
             self._refresh_cd_delibere()
-        elif current_tab == 3:  # Verbali tab
+        elif tab_text == "Verbali":
             self._refresh_cd_verbali()
-        elif current_tab == 5:  # Strumenti tab
-            if hasattr(self, 'stats_panel'):
-                self.stats_panel.refresh()
+        elif tab_text == "Statistiche" and hasattr(self, "stats_panel"):
+            self.stats_panel.refresh()
 
     def _make_treeview_sortable(self, tv, cols):
         """Enable click-to-sort on the given Treeview for the provided columns."""
