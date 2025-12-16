@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Configuration and constants for GLR Gestione Locale Radioamatori 
+Configuration and constants for Libro Soci v4.2b
 """
 
 import os
@@ -10,8 +10,8 @@ from datetime import datetime
 # --------------------------
 # Versione / Build
 # --------------------------
-APP_NAME = "GLR Gestione Locale Radioamatori - il gestionale soci della sezione"
-APP_VERSION = "4.2a"
+APP_NAME = "Libro Soci"
+APP_VERSION = "4.2b"
 AUTHOR = "Michele Martino - IU2GLR"
 
 def _calc_build_from_file() -> tuple[str, str]:

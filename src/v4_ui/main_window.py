@@ -75,9 +75,9 @@ class App:
         self.root = tk.Tk()
         self.root.title(f"GLR - Gestione Locale Radioamatori - Rev {APP_VERSION} - Build {BUILD_ID}")
         # Window sized to comfortably fit 20 rows while staying within 1900x850 footprint
-        self.root.geometry("1300x850")
+        self.root.geometry("1300x860")
         # Enforce a minimum so layout widgets never collapse
-        self.root.minsize(1300, 850)
+        self.root.minsize(1300, 860)
         # Ensure closing main window also closes all Toplevel dialogs
         self.root.protocol("WM_DELETE_WINDOW", self._on_root_close)
         
@@ -332,6 +332,7 @@ class App:
         tools_menu.add_command(label="Aggiorna stato soci", command=self._show_update_status_wizard)
         tools_menu.add_separator()
         tools_menu.add_command(label="📄 Gestione Template", command=self._show_templates_dialog)
+        tools_menu.add_command(label="📧 Email", command=self._open_email_wizard)
         tools_menu.add_separator()
         tools_menu.add_command(label="Legenda codici quote", command=self._show_quota_legend)
         tools_menu.add_separator()
@@ -379,8 +380,6 @@ class App:
         ttk.Button(toolbar, text="Elimina", command=self._delete_member).pack(side=tk.LEFT, padx=2)
         ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
         ttk.Button(toolbar, text="🗑️ Cestino", command=self._show_trash).pack(side=tk.LEFT, padx=2)
-        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="📧 Email", command=self._open_email_wizard).pack(side=tk.LEFT, padx=2)
         ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
         ttk.Button(toolbar, text="Documentale", command=self._open_documentale).pack(side=tk.LEFT, padx=2)
         ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
