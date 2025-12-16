@@ -5,12 +5,23 @@
 
 ---
 
+## 4.2b · 16 Dicembre 2025
+
+- **Import Magazzino**: controllo preventivo su duplicati/mancanze per `numero inventario` e `marca` con elenco immediato delle righe bloccanti.
+- **Esporta errori**: al termine dell'import è possibile salvare un CSV con le righe fallite (numero riga, inventario, marca e motivo) per correggere rapidamente il file sorgente.
+- **Ricerca case-insensitive** sugli oggetti magazzino, così un nuovo inserimento non duplica record esistenti che differiscono solo per il casing.
+- **Documentazione** aggiornata per chiarire perché alcuni script legacy restano nel repo (`src/README.md`).
+
+---
+
 ## 🚀 Highlights
 
 - **Gestione Magazzino** completa per beni di sezione (anagrafica hardware, prestiti, resi).
 - **UI dedicata** su notebook principale con filtri stato e riepilogo prestiti.
 - **Test automatici** per il nuovo dominio (`tests/test_magazzino_manager.py`).
 - **Ambiente di sviluppo ripulito**: nuovo virtualenv + dipendenze reinstallate per esecuzioni stabili.
+- **Splash brandizzata** con finestra di caricamento GLR e feed log in tempo reale all'avvio.
+- **Documenti di sezione** più affidabili: percorsi assoluti/relativi tracciati e indici TXT rigenerati prima di aprire l'Explorer.
 
 ---
 
@@ -20,6 +31,7 @@
 | --- | --- |
 | Schema | Tabelle `magazzino_items` e `magazzino_loans` create da `init_db()` con chiavi esterne verso `soci`. |
 | Manager | Nuovo modulo [`src/magazzino_manager.py`](src/magazzino_manager.py) con CRUD, validazione campi, normalizzazione date, controllo prestiti attivi e gestione resi. |
+| Documenti sezione | Refactoring di [`src/section_documents.py`](src/section_documents.py#L1-L220) con salvataggio sia del percorso relativo sia assoluto, rigenerazione dell'indice `elenco_documenti.txt` ([`ensure_section_index_file()`](src/section_documents.py#L155-L212)) e sincronizzazione metadati quando un file manca su disco. |
 | Backup | Nessuna regressione: nuove tabelle incluse automaticamente nei backup incrementali. |
 
 ---
@@ -35,6 +47,9 @@
 - form dettagli + note
 - sezione prestiti storici con pulsanti "Nuovo prestito" e "Registra reso" |
 | Dialoghi | Member picker riusa `soci` attivi; loan/return dialog gestiscono date in formato locale. |
+| Splash/Loading | Nuovo modulo [`src/v4_ui/loading_window.py`](src/v4_ui/loading_window.py) che mostra nome app, versione, autore e log di avvio con minimo tempo di permanenza per un avvio più curato. |
+| Documenti sezione | [`SectionDocumentPanel`](src/v4_ui/panels.py#L832-L1033) mantiene una mappa dei metadati, rigenera l'indice TXT via `ensure_section_index_file()` e apre la cartella selezionata usando `explorer /select` su Windows o gli equivalenti macOS/Linux. |
+| Preferenze | Il notebook del dialogo usa lo stile `PreferencesNotebook` in [`src/v4_ui/preferences_dialog.py`](src/v4_ui/preferences_dialog.py#L1-L120) con tab bold e padding extra per rendere visibile la sezione "Client posta" e il campo del percorso Thunderbird. |
 
 ---
 

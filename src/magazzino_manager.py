@@ -14,6 +14,7 @@ __all__ = [
     "delete_item",
     "list_items",
     "get_item",
+    "get_item_by_inventory_number",
     "list_loans",
     "create_loan",
     "register_return",
@@ -150,6 +151,18 @@ def get_item(item_id: int) -> dict | None:
     data = dict(row)
     data["active_loan"] = get_active_loan(item_id)
     return data
+
+
+def get_item_by_inventory_number(numero_inventario: str | None) -> dict | None:
+    """Return an item given its inventory number, or None if missing."""
+    normalized = _normalize_text(numero_inventario)
+    if not normalized:
+        return None
+    row = fetch_one(
+        "SELECT * FROM magazzino_items WHERE LOWER(numero_inventario) = ?",
+        (normalized.lower(),),
+    )
+    return dict(row) if row else None
 
 
 def list_loans(item_id: int) -> list[dict]:
