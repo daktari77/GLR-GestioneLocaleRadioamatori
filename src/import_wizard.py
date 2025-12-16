@@ -38,7 +38,7 @@ class ImportWizard:
         # Create main window
         self.win = tk.Toplevel(parent)
         self.win.title("Importazione CSV - Nuovo socio")
-        self.win.geometry("700x600")
+        self.win.geometry("760x680")
         self.win.transient(parent)
         self.win.grab_set()
         
@@ -146,7 +146,7 @@ class ImportWizard:
         ttk.Button(btn_frame, text="Deseleziona tutto", command=self._deselect_all_fields).pack(side=tk.LEFT, padx=5)
         
         # Scrollable mapping area
-        canvas = tk.Canvas(mapping_frame, height=300)
+        canvas = tk.Canvas(mapping_frame, height=380)
         scrollbar = ttk.Scrollbar(mapping_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         
@@ -355,13 +355,9 @@ class ImportWizard:
         self.progress = ttk.Progressbar(frame, mode="determinate", maximum=100)
         self.progress.pack(fill=tk.X, pady=20, padx=50)
         
-        self.progress_text = ttk.Label(frame, text="Cliccare 'Importa' per iniziare")
+        self.progress_text = ttk.Label(frame, text="Premi 'Avvia importazione' per iniziare")
         self.progress_text.pack(pady=10)
         
-        # Import button
-        ttk.Button(frame, text="Importa Ora", command=self._execute_import, style="Accent.TButton").pack(pady=20)
-
-
         
     def _create_mapping_widgets(self, parent):
         """Create mapping widgets for field configuration"""
@@ -984,7 +980,7 @@ class ImportWizard:
         
         # On last page, next becomes Import
         if self.current_page == len(self.pages) - 1:
-            self.btn_next.config(text="Importa", state=tk.NORMAL)
+            self.btn_next.config(text="Avvia importazione", state=tk.NORMAL)
         else:
             self.btn_next.config(text="Avanti")
         

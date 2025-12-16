@@ -15,6 +15,8 @@ from calendar_utils import events_to_ics
 from .calendar_wizard import CalendarWizard, EVENT_TYPES as CALENDAR_EVENT_TYPES
 from .ponti_panel import PontiPanel
 from .magazzino_panel import MagazzinoPanel
+from .unified_export_wizard import UnifiedExportWizard
+from .unified_import_wizard import UnifiedImportWizard
 from startup_checks import StartupIssue, format_startup_issues
 
 logger = logging.getLogger("librosoci")
@@ -322,8 +324,8 @@ class App:
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Strumenti", menu=tools_menu)
-        tools_menu.add_command(label="Import CSV", command=self._show_import_wizard)
-        tools_menu.add_command(label="Esporta soci             Ctrl+E", command=self._show_export_dialog)
+        tools_menu.add_command(label="Importa dati CSV", command=self._show_import_wizard)
+        tools_menu.add_command(label="Esporta dati             Ctrl+E", command=self._show_export_dialog)
         tools_menu.add_command(label="Ricerca Duplicati        Ctrl+M", command=self._show_duplicates_dialog)
         tools_menu.add_command(label="Documentale socio        Ctrl+D", command=self._open_documentale)
         tools_menu.add_separator()
@@ -1401,7 +1403,7 @@ Navigazione:
   Ctrl+1/2/3    Vai a pannello Soci/CD/Stats
   
 Operazioni:
-  Ctrl+E        Esporta soci
+    Ctrl+E        Esporta dati
   Ctrl+B        Backup manuale database
   
 Generale:
@@ -2356,9 +2358,15 @@ Generale:
         panel.refresh()
     
     def _show_import_wizard(self):
-        """Show CSV import wizard"""
-        from import_wizard import ImportWizard
-        ImportWizard(self.root, on_complete_callback=self._on_import_complete)
+        """Show unified CSV import wizard"""
+        try:
+            UnifiedImportWizard(
+                self.root,
+                on_soci_complete=self._on_import_complete,
+                on_magazzino_complete=self._on_magazzino_import_complete,
+            )
+        except Exception as exc:
+            messagebox.showerror("Import CSV", f"Impossibile aprire il wizard:\n{exc}")
     
     def _show_templates_dialog(self):
         """Show templates management dialog."""
@@ -2393,13 +2401,33 @@ Generale:
         self._refresh_member_list()
         self._set_status_message(f"{count} soci importati con successo")
     
+    def _on_magazzino_import_complete(self, *counts):
+        """Refresh magazzino after import completion."""
+        total = 0
+        for value in counts:
+            try:
+                total += int(value)
+            except (TypeError, ValueError):
+                continue
+        if total <= 0:
+            message = "Import magazzino completato"
+        else:
+            message = f"Import magazzino completato: {total} oggetti elaborati"
+        panel = getattr(self, "magazzino_panel", None)
+        if panel is not None:
+            try:
+                panel.refresh_list()
+            except Exception as exc:
+                logger.error("Errore aggiornando il magazzino dopo import: %s", exc)
+        self._set_status_message(message)
+
     def _show_export_dialog(self):
-        """Show export dialog"""
+        """Show the unified export wizard."""
         try:
-            from v4_ui.export_dialog import ExportDialog
-            ExportDialog(self.root)
-        except Exception as e:
-            messagebox.showerror("Errore", f"Errore: {e}")
+            UnifiedExportWizard(self.root)
+        except Exception as exc:
+            logger.error("Errore apertura export: %s", exc)
+            messagebox.showerror("Export", f"Impossibile aprire l'esportazione:\n{exc}")
     
     def _show_duplicates_dialog(self):
         """Show duplicates detection and merge dialog"""

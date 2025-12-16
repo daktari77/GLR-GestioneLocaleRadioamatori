@@ -514,7 +514,7 @@ class MagazzinoImportDialog:
         builder()
         self.btn_prev.config(state=tk.NORMAL if self.current_page > 0 else tk.DISABLED)
         if self.current_page == len(self.pages) - 1:
-            self.btn_next.config(text="Importa")
+            self.btn_next.config(text="Avvia importazione")
             self._update_summary()
         else:
             self.btn_next.config(text="Avanti")
