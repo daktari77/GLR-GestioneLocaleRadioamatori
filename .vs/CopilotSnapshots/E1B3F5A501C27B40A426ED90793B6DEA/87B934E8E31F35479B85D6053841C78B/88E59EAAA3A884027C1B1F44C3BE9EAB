@@ -1,0 +1,117 @@
+﻿# -*- coding: utf-8 -*-
+"""Lightweight splash/loading window displayed before the main UI."""
+
+from __future__ import annotations
+
+import time
+import tkinter as tk
+
+
+class LoadingWindow:
+    """Simple splash window showing app metadata during startup."""
+
+    def __init__(
+        self,
+        *,
+        app_name: str,
+        version: str,
+        author: str,
+        message: str | None = None,
+        min_duration: float = 1.5,
+    ):
+        self._app_name = app_name
+        self._version = version
+        self._author = author
+        self._min_duration = max(0.0, float(min_duration))
+        self._shown_at: float | None = None
+        self._root = tk.Tk()
+        self._message_var = tk.StringVar(master=self._root, value=message or "Avvio in corso…")
+        self._configure_root()
+        self._build_contents()
+
+    def _configure_root(self):
+        self._root.withdraw()
+        self._root.title("Inizializzazione")
+        self._root.overrideredirect(True)
+        self._root.configure(bg="#0f1b2c")
+        self._root.attributes("-topmost", True)
+        width, height = 420, 210
+        self._root.update_idletasks()
+        screen_w = self._root.winfo_screenwidth()
+        screen_h = self._root.winfo_screenheight()
+        pos_x = (screen_w - width) // 2
+        pos_y = (screen_h - height) // 3
+        self._root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+
+    def _build_contents(self):
+        outer = tk.Frame(self._root, bg="#172a44", bd=0, relief=tk.FLAT)
+        outer.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        header = tk.Label(
+            outer,
+            text=self._app_name,
+            fg="#f7f9fc",
+            bg="#172a44",
+            font=("Segoe UI", 20, "bold"),
+        )
+        header.pack(pady=(26, 6))
+
+        tk.Label(
+            outer,
+            text=f"Versione {self._version}",
+            fg="#c7d7f7",
+            bg="#172a44",
+            font=("Segoe UI", 12),
+        ).pack()
+
+        tk.Label(
+            outer,
+            text=f"Creato da {self._author}",
+            fg="#9fb8e4",
+            bg="#172a44",
+            font=("Segoe UI", 11),
+        ).pack(pady=(2, 18))
+
+        tk.Label(
+            outer,
+            textvariable=self._message_var,
+            fg="#dbe6ff",
+            bg="#172a44",
+            font=("Segoe UI", 11, "italic"),
+        ).pack()
+
+    def show(self):
+        """Display the window and process pending draw events."""
+        if self._root is None:
+            return
+        self._root.deiconify()
+        self._root.update_idletasks()
+        self._root.update()
+        self._shown_at = time.perf_counter()
+
+    def set_status(self, text: str):
+        """Update the status message shown to the user."""
+        if self._root is None:
+            return
+        self._message_var.set(text or "")
+        self._root.update_idletasks()
+        self._root.update()
+
+    def close(self):
+        """Destroy the splash window."""
+        if self._root is None:
+            return
+        if self._shown_at is not None:
+            elapsed = time.perf_counter() - self._shown_at
+            remaining = self._min_duration - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+        try:
+            self._root.destroy()
+        except tk.TclError:
+            pass
+        finally:
+            self._root = None
+
+
+__all__ = ["LoadingWindow"]

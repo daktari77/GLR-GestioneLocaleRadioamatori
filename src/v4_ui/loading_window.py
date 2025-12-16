@@ -42,18 +42,22 @@ class LoadingWindow:
         self._schedule_log_pump()
 
     def _configure_root(self):
-        self._root.withdraw()
-        self._root.title("GLR - GestioneLocale Radioamatori")
-        self._root.overrideredirect(True)
-        self._root.configure(bg="#040711")
-        self._root.attributes("-topmost", True)
+        root = self._root
+        if root is None:
+            return
+
+        root.withdraw()
+        root.title("GLR - GestioneLocale Radioamatori")
+        root.overrideredirect(True)
+        root.configure(bg="#040711")
+        root.attributes("-topmost", True)
         width, height = 540, 260
-        self._root.update_idletasks()
-        screen_w = self._root.winfo_screenwidth()
-        screen_h = self._root.winfo_screenheight()
+        root.update_idletasks()
+        screen_w = root.winfo_screenwidth()
+        screen_h = root.winfo_screenheight()
         pos_x = (screen_w - width) // 2
         pos_y = (screen_h - height) // 3
-        self._root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+        root.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
 
     def _build_contents(self):
         outer = tk.Frame(self._root, bg="#0f1b2c", bd=0, relief=tk.FLAT)

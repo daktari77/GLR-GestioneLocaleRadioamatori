@@ -1,0 +1,3 @@
+Elenco documenti sezione - categoria 'Altro'
+Nome file	Descrizione	Categoria	Percorso relativo
+Esito votazioni 2025.xlsx	Esito elezioni 2026-28 del 12/12/2025	Altro	altro/a130f6cbc2.xlsx

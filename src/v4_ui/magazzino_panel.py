@@ -54,6 +54,7 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Button(toolbar, text="Salva", command=self._save_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Aggiorna", command=self.refresh_list).pack(side=tk.LEFT, padx=12)
+        ttk.Button(toolbar, text="Importa", command=self._import_items).pack(side=tk.LEFT, padx=2)
 
         ttk.Label(toolbar, text="Filtro stato:").pack(side=tk.LEFT, padx=(10, 2))
         filter_combo = ttk.Combobox(
@@ -380,6 +381,18 @@ class MagazzinoPanel(ttk.Frame):
             messagebox.showerror("Magazzino", f"Errore nell'eliminazione:\n{exc}")
             return
         self.refresh_list()
+
+    def _import_items(self):
+        try:
+            from v4_ui.magazzino_import_dialog import MagazzinoImportDialog
+        except Exception as exc:
+            messagebox.showerror("Magazzino", f"Impossibile aprire l'importazione:\n{exc}")
+            return
+
+        def _refresh_after_import(*_args):
+            self.refresh_list()
+
+        MagazzinoImportDialog(self.winfo_toplevel(), on_complete=_refresh_after_import)
 
     # ------------------------------------------------------------------
     # Loan handling

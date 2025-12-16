@@ -1,0 +1,3 @@
+Elenco documenti sezione - categoria 'Verbali CD'
+Nome file	Descrizione	Categoria	Percorso relativo
+2025-12-12_-_Elezioni CD 2026-28.docx	Verbale esito elezioni CD 2026-28 del 12/12/2025	Verbali CD	verbali_cd/92df5cf45c.docx

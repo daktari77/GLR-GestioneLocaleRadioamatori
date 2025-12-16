@@ -1,0 +1,243 @@
+﻿# -*- coding: utf-8 -*-
+"""
+Duplicate detection and merge for GLR Gestione Locale Radioamatori v4.2a
+"""
+
+import logging
+from typing import List, Dict, Tuple
+from database import fetch_all, fetch_one, exec_query, get_conn
+
+logger = logging.getLogger("librosoci")
+
+def find_duplicates_by_matricola() -> List[List[Dict]]:
+    """
+    Find potential duplicates by matching matricola.
+    Returns: List of groups, each group is a list of members with same matricola
+    """
+    sql = """
+    SELECT id, matricola, nominativo, nome, cognome, email, attivo, data_iscrizione
+    FROM soci
+    WHERE matricola IS NOT NULL AND matricola != '' AND deleted_at IS NULL
+    GROUP BY LOWER(TRIM(matricola))
+    HAVING COUNT(*) > 1
+    ORDER BY LOWER(TRIM(matricola))
+    """
+    duplicate_matricole = fetch_all(sql)
+    
+    groups = []
+    for row in duplicate_matricole:
+        matricola = row['matricola']
+        # Find all members with this matricola
+        members_sql = """
+        SELECT id, matricola, nominativo, nome, cognome, email, attivo, data_iscrizione
+        FROM soci
+        WHERE LOWER(TRIM(matricola)) = LOWER(TRIM(?)) AND deleted_at IS NULL
+        ORDER BY id
+        """
+        members = fetch_all(members_sql, (matricola,))
+        groups.append([dict(m) for m in members])
+    
+    return groups
+
+def find_duplicates_by_nominativo() -> List[List[Dict]]:
+    """
+    Find potential duplicates by matching nominativo.
+    Returns: List of groups, each group is a list of members with same nominativo
+    """
+    sql = """
+    SELECT id, nominativo, matricola, nome, cognome, email, attivo, data_iscrizione
+    FROM soci
+    WHERE nominativo IS NOT NULL AND nominativo != '' AND deleted_at IS NULL
+    GROUP BY LOWER(TRIM(nominativo))
+    HAVING COUNT(*) > 1
+    ORDER BY LOWER(TRIM(nominativo))
+    """
+    duplicate_nominativi = fetch_all(sql)
+    
+    groups = []
+    for row in duplicate_nominativi:
+        nominativo = row['nominativo']
+        # Find all members with this nominativo
+        members_sql = """
+        SELECT id, nominativo, matricola, nome, cognome, email, attivo, data_iscrizione
+        FROM soci
+        WHERE LOWER(TRIM(nominativo)) = LOWER(TRIM(?)) AND deleted_at IS NULL
+        ORDER BY id
+        """
+        members = fetch_all(members_sql, (nominativo,))
+        groups.append([dict(m) for m in members])
+    
+    return groups
+
+def find_duplicates_rcl_by_name() -> List[List[Dict]]:
+        """Find duplicates for RCL members lacking matricola and nominativo via nome+cognome."""
+        sql = """
+        SELECT LOWER(TRIM(nome)) AS nome_norm,
+                     LOWER(TRIM(cognome)) AS cognome_norm
+        FROM soci
+        WHERE deleted_at IS NULL
+            AND socio = 'RCL'
+            AND (matricola IS NULL OR TRIM(COALESCE(matricola, '')) = '')
+            AND (nominativo IS NULL OR TRIM(COALESCE(nominativo, '')) = '')
+            AND nome IS NOT NULL AND TRIM(COALESCE(nome, '')) != ''
+            AND cognome IS NOT NULL AND TRIM(COALESCE(cognome, '')) != ''
+        GROUP BY nome_norm, cognome_norm
+        HAVING COUNT(*) > 1
+        ORDER BY cognome_norm, nome_norm
+        """
+        duplicate_names = fetch_all(sql)
+
+        groups: List[List[Dict]] = []
+        for row in duplicate_names:
+            nome_norm = row['nome_norm']
+            cognome_norm = row['cognome_norm']
+            members_sql = """
+            SELECT id, matricola, nominativo, nome, cognome, socio, email, attivo, data_iscrizione
+            FROM soci
+            WHERE deleted_at IS NULL
+                AND socio = 'RCL'
+                AND (matricola IS NULL OR TRIM(COALESCE(matricola, '')) = '')
+                AND (nominativo IS NULL OR TRIM(COALESCE(nominativo, '')) = '')
+                AND nome IS NOT NULL AND TRIM(COALESCE(nome, '')) != ''
+                AND cognome IS NOT NULL AND TRIM(COALESCE(cognome, '')) != ''
+                AND LOWER(TRIM(nome)) = ?
+                AND LOWER(TRIM(cognome)) = ?
+            ORDER BY id
+            """
+            members = fetch_all(members_sql, (nome_norm, cognome_norm))
+            groups.append([dict(m) for m in members])
+
+        return groups
+
+def find_duplicates_combined() -> List[List[Dict]]:
+    """
+    Find potential duplicates by combining matricola AND nominativo matching.
+    Returns: List of groups, each group is a list of members
+    """
+    # Find by matricola first and nominativo
+    matricola_groups = find_duplicates_by_matricola()
+    nominativo_groups = find_duplicates_by_nominativo()
+    rcl_name_groups = find_duplicates_rcl_by_name()
+
+    # Build an adjacency graph between member ids: two members are connected
+    # if they appear in the same duplicate-detection group.
+    all_groups = matricola_groups + nominativo_groups + rcl_name_groups
+
+    # Map id -> member dict (take from any occurrence)
+    id_to_member: Dict[int, Dict] = {}
+    for group in all_groups:
+        for m in group:
+            id_to_member[m['id']] = m
+
+    # Build adjacency list
+    adjacency: Dict[int, set] = {mid: set() for mid in id_to_member.keys()}
+    for group in all_groups:
+        ids = [m['id'] for m in group]
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                a = ids[i]
+                b = ids[j]
+                adjacency[a].add(b)
+                adjacency[b].add(a)
+
+    # Find connected components (each component is a merged duplicate group)
+    visited = set()
+    merged_groups: List[List[Dict]] = []
+
+    for node in adjacency.keys():
+        if node in visited:
+            continue
+        # BFS/DFS to collect component
+        stack = [node]
+        comp = []
+        while stack:
+            cur = stack.pop()
+            if cur in visited:
+                continue
+            visited.add(cur)
+            comp.append(id_to_member[cur])
+            for neigh in adjacency[cur]:
+                if neigh not in visited:
+                    stack.append(neigh)
+
+        # Only consider components with more than one member
+        if len(comp) > 1:
+            # sort by id for deterministic ordering
+            comp_sorted = sorted(comp, key=lambda x: x['id'])
+            merged_groups.append(comp_sorted)
+
+    return merged_groups
+
+def get_all_fields_for_member(member_id: int) -> Dict:
+    """Get all fields for a member."""
+    sql = "SELECT * FROM soci WHERE id = ?"
+    result = fetch_one(sql, (member_id,))
+    return dict(result) if result else {}
+
+def merge_duplicates(master_id: int, duplicate_id: int, field_values: Dict) -> bool:
+    """
+    Merge a duplicate member into the master member.
+    master_id: ID of the member to keep
+    duplicate_id: ID of the member to merge into master (will be soft-deleted)
+    field_values: Dict of fields to update on master
+    
+    Returns: True if successful, False otherwise
+    """
+    try:
+        with get_conn() as c:
+            # Update master with selected fields
+            if field_values:
+                placeholders = ", ".join([f"{k} = ?" for k in field_values.keys()])
+                values = list(field_values.values())
+                values.append(master_id)
+                sql = f"UPDATE soci SET {placeholders} WHERE id = ?"
+                c.execute(sql, values)
+            
+            # Soft delete the duplicate (mark as deleted)
+            sql = "UPDATE soci SET deleted_at = datetime('now') WHERE id = ?"
+            c.execute(sql, (duplicate_id,))
+            
+            # Move documents from duplicate to master
+            sql = "UPDATE documenti SET socio_id = ? WHERE socio_id = ?"
+            c.execute(sql, (master_id, duplicate_id))
+            
+            # Log the merge event
+            import json
+            from datetime import datetime
+            event_json = json.dumps({
+                "type": "merge",
+                "merged_id": duplicate_id,
+                "fields_updated": list(field_values.keys()) if field_values else []
+            })
+            sql = "INSERT INTO eventi_libro_soci (socio_id, tipo_evento, dettagli_json, ts) VALUES (?, ?, ?, ?)"
+            c.execute(sql, (master_id, "merge", event_json, datetime.now().isoformat()))
+            
+            logger.info(f"Merged duplicate {duplicate_id} into {master_id}")
+            return True
+    except Exception as e:
+        logger.error(f"Error merging duplicates: {e}")
+        return False
+
+def get_field_differences(member1_id: int, member2_id: int) -> Dict[str, Tuple]:
+    """
+    Compare two members and return fields that differ.
+    Returns: Dict with field names as keys and (value1, value2) as values
+    """
+    m1 = get_all_fields_for_member(member1_id)
+    m2 = get_all_fields_for_member(member2_id)
+    
+    differences = {}
+    all_keys = set(m1.keys()) | set(m2.keys())
+    
+    # Skip ID and metadata fields
+    skip_fields = {'id', 'deleted_at'}
+    
+    for key in all_keys:
+        if key in skip_fields:
+            continue
+        v1 = m1.get(key)
+        v2 = m2.get(key)
+        if v1 != v2:
+            differences[key] = (v1, v2)
+    
+    return differences

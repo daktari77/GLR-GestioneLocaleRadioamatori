@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "documents": {
+    "92df5cf45c": {
+      "hash_id": "92df5cf45c",
+      "categoria": "Verbali CD",
+      "original_name": "2025-12-12_-_Elezioni CD 2026-28.docx",
+      "stored_name": "92df5cf45c.docx",
+      "description": "Verbale esito elezioni CD 2026-28 del 12/12/2025",
+      "uploaded_at": "2025-12-15T16:35:47.804171",
+      "relative_path": "verbali_cd/92df5cf45c.docx"
+    },
+    "fad790b73d": {
+      "hash_id": "fad790b73d",
+      "categoria": "Altro",
+      "original_name": "Esito votazioni 2025.xlsx",
+      "stored_name": "fad790b73d.xlsx",
+      "description": "Esito votazioni del 12/12/2025",
+      "uploaded_at": "2025-12-15T16:37:31.044409",
+      "relative_path": "altro/fad790b73d.xlsx"
+    }
+  }
+}

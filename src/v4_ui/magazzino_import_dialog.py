@@ -340,12 +340,13 @@ class MagazzinoImportDialog:
 
         for idx, row in enumerate(mapped_rows, start=1):
             numero = row.get("numero_inventario")
+            numero_clean = (numero or "").strip()
+            numero_norm = normalize_inventory_code(numero)
             marca = row.get("marca")
+            marca_clean = (marca or "").strip()
             modello = row.get("modello")
             descrizione = row.get("descrizione")
             note = row.get("note")
-            numero_norm = normalize_inventory_code(numero)
-            marca_clean = (marca or "").strip()
 
             if not numero_norm or not marca_clean:
                 skipped += 1
@@ -356,7 +357,7 @@ class MagazzinoImportDialog:
                 continue
 
             try:
-                existing = get_item_by_inventory_number(numero)
+                existing = get_item_by_inventory_number(numero_clean)
                 if existing:
                     if duplicate_mode == "skip":
                         skipped += 1
@@ -388,8 +389,8 @@ class MagazzinoImportDialog:
                             self._record_failure(idx, numero, marca, "Duplicato senza campi aggiornabili")
                 else:
                     payload = {
-                        "numero_inventario": numero,
-                        "marca": marca,
+                        "numero_inventario": numero_clean,
+                        "marca": marca_clean,
                         "modello": modello if self.selected_fields.get("modello", True) else None,
                         "descrizione": descrizione if self.selected_fields.get("descrizione", True) else None,
                         "note": note if self.selected_fields.get("note", True) else None,
