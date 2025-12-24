@@ -90,4 +90,8 @@ DEFAULT_CONFIG = {
     "cd_componenti": "",
     "privacy_validita_anni": 2,
     "thunderbird_path": "",
+
+    # Repository secondario per backup (es. cartella su drive cloud)
+    # Se valorizzato, i backup creati localmente verranno copiati anche qui.
+    "backup_repo_dir": "",
 }

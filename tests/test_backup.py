@@ -68,6 +68,9 @@ class TestBackupBasics(unittest.TestCase):
             shutil.rmtree(self.backup_dir)
         except Exception:
             pass
+
+        # Ensure env override does not leak across tests.
+        os.environ.pop("GESTIONESOCI_BACKUP_REPO_DIR", None)
     
     def test_calculate_db_hash(self):
         """Test SHA256 hash calculation."""
@@ -145,6 +148,21 @@ class TestBackupBasics(unittest.TestCase):
         self.assertTrue(success2)
         self.assertIsNotNone(backup2)
         self.assertNotEqual(backup1, backup2)
+
+    def test_backup_mirrored_to_repo_dir_env(self):
+        """When a repo dir is configured, backup is copied there too."""
+        repo_dir = tempfile.mkdtemp()
+        try:
+            os.environ["GESTIONESOCI_BACKUP_REPO_DIR"] = repo_dir
+
+            success, backup_path = backup_incremental(self.db_path, self.backup_dir, force=True)
+            self.assertTrue(success)
+            self.assertTrue(os.path.exists(backup_path))
+
+            mirrored = os.path.join(repo_dir, os.path.basename(backup_path))
+            self.assertTrue(os.path.exists(mirrored))
+        finally:
+            shutil.rmtree(repo_dir, ignore_errors=True)
 
 
 class TestBackupMetadata(unittest.TestCase):

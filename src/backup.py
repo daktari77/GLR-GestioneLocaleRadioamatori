@@ -22,6 +22,56 @@ from exceptions import BackupError, BackupIntegrityError, RestoreError, Database
 
 logger = logging.getLogger("librosoci")
 
+
+def _get_backup_repo_dir() -> str | None:
+    """Return configured secondary backup repository directory (best-effort).
+
+    Priority:
+    1) env var GESTIONESOCI_BACKUP_REPO_DIR
+    2) config key 'backup_repo_dir' from config_manager.load_config()
+    """
+    env_value = (os.environ.get("GESTIONESOCI_BACKUP_REPO_DIR") or "").strip()
+    if env_value:
+        return os.path.abspath(os.path.expanduser(os.path.expandvars(env_value)))
+
+    try:
+        from config_manager import load_config
+
+        cfg = load_config()
+        if isinstance(cfg, dict):
+            value = (cfg.get("backup_repo_dir") or "").strip()
+            if value:
+                return os.path.abspath(os.path.expanduser(os.path.expandvars(value)))
+    except Exception:
+        # Config not available during some contexts (e.g. early startup/tests).
+        return None
+
+    return None
+
+
+def _mirror_backup_to_repo(backup_path: str) -> None:
+    """Copy a backup artifact into the configured repository directory.
+
+    This is best-effort and must never break the main backup flow.
+    """
+    try:
+        repo_dir = _get_backup_repo_dir()
+        if not repo_dir:
+            return
+
+        if not os.path.isfile(backup_path):
+            return
+
+        os.makedirs(repo_dir, exist_ok=True)
+        if not os.path.isdir(repo_dir):
+            return
+
+        dest_path = os.path.join(repo_dir, os.path.basename(backup_path))
+        shutil.copy2(backup_path, dest_path)
+        logger.info("Backup mirrored to repository: %s", dest_path)
+    except Exception as exc:
+        logger.warning("Backup mirror skipped: %s", exc)
+
 def calculate_db_hash(db_path: str) -> str:
     """
     Calculate SHA256 hash of database file.
@@ -151,6 +201,9 @@ def backup_incremental(db_path: str, backup_dir: str, max_backups: int = 20, for
         
         shutil.copy2(db_path, backup_path)
         logger.info(f"Incremental backup created: {backup_name}")
+
+        # Mirror to secondary repo (cloud drive) if configured.
+        _mirror_backup_to_repo(backup_path)
         
         # Update metadata
         metadata['last_backup_hash'] = current_hash
@@ -248,6 +301,9 @@ def backup_on_demand(data_dir: str, db_path: str, backup_dir: str) -> Tuple[bool
             root_dir=backup_dir,
             base_dir=folder_name
         )
+
+        # Mirror to secondary repo (cloud drive) if configured.
+        _mirror_backup_to_repo(archive_path)
 
         shutil.rmtree(target_dir, ignore_errors=True)
         logger.info(f"On-demand backup archive created: {archive_path}")
