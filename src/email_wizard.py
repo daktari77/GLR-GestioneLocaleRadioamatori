@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Email Wizard for GLR Gestione Locale Radioamatori v4.2a
+Email Wizard for GLR Gestione Locale Radioamatori
 Simplified wizard for creating emails from templates
 """
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Delibere UI Dialogs for Libro Soci v4.2a
+CD Delibere UI Dialogs for Libro Soci
 """
 
 import tkinter as tk

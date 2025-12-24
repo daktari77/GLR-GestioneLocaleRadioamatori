@@ -1,11 +1,11 @@
-# GestioneSoci v4.2 – Changelog
+# GestioneSoci v0.4.2 – Changelog
 
 **Data:** 15 Dicembre 2025  
-**Versione:** 4.2 (Inventory & Lending)
+**Versione:** 0.4.2 (Inventory & Lending)
 
 ---
 
-## 4.2b · 16 Dicembre 2025
+## 0.4.2b · 16 Dicembre 2025
 
 - **Import Magazzino**: controllo preventivo su duplicati/mancanze per `numero inventario` e `marca` con elenco immediato delle righe bloccanti.
 - **Esporta errori**: al termine dell'import è possibile salvare un CSV con le righe fallite (numero riga, inventario, marca e motivo) per correggere rapidamente il file sorgente.

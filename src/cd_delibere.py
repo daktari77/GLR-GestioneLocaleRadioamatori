@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Delibere (Resolutions) management for GLR Gestione Locale Radioamatori v4.2a
+CD Delibere (Resolutions) management for GLR Gestione Locale Radioamatori
 Handles registration of CD meeting resolutions with full tracking
 """
 

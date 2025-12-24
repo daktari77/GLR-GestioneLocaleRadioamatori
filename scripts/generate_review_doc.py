@@ -115,7 +115,7 @@ def _section_01_content() -> dict:
                     "Consiglio Direttivo: riunioni, delibere, verbali (con allegati).",
                     "Email Wizard (creazione bozza mail, esportazione .eml, integrazione con client).",
                     "Backup e manutenzione (backup all’avvio, backup manuale, verifiche DB).",
-                    "Domini aggiuntivi v4.2: Magazzino/Prestiti, Ponti/Ripetitori, Assicurazioni.",
+                    "Domini aggiuntivi 0.4.2: Magazzino/Prestiti, Ponti/Ripetitori, Assicurazioni.",
                 ],
             ),
             (

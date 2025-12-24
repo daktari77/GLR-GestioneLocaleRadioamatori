@@ -1,4 +1,4 @@
-# GestioneSoci v4.2a – AI Coding Agent Notes
+# GestioneSoci v0.4.2b – AI Coding Agent Notes
 - Desktop Tkinter + SQLite app for ARI member management (registry, documents, board meetings, repeaters, CSV import). Modular, dependency-injected startup.
 
 ## Startup pattern (must follow)
@@ -40,4 +40,4 @@
 - Avoid `&&` in PowerShell (use `;`)
 - Do not hard-code doc categories; use catalog helpers
 
-Version: computed from `config.py` mtime (`BUILD_ID = YYYYMMDD.HHMM`); current APP_VERSION 4.2a (includes repeater/ponti features).
+Version: computed from `config.py` mtime (`BUILD_ID = YYYYMMDD.HHMM`); current APP_VERSION 0.4.2b (includes repeater/ponti features).

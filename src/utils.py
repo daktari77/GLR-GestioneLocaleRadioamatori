@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Utility functions for GLR Gestione Locale Radioamatori v4.2a
+Utility functions for GLR Gestione Locale Radioamatori
 """
 
 import os

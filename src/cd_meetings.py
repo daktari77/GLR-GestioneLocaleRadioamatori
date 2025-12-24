@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Meetings management for GLR Gestione Locale Radioamatori v4.2a
+CD Meetings management for GLR Gestione Locale Radioamatori
 Handles registration of CD meetings and related documents (verbali in .doc/.pdf format)
 """
 

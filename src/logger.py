@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Logger configuration for GLR Gestione Locale Radioamatori v4.2a
+Logger configuration for GLR Gestione Locale Radioamatori
 """
 
 import os

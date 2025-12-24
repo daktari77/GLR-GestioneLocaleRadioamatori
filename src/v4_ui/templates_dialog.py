@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Templates management dialog for Libro Soci v4.2a
+Templates management dialog for Libro Soci
 """
 
 import tkinter as tk

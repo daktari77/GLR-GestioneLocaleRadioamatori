@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Form components for Libro Soci v4.2a
+Form components for Libro Soci
 Handles member data entry and editing
 """
 

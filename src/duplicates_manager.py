@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Duplicate detection and merge for GLR Gestione Locale Radioamatori v4.2a
+Duplicate detection and merge for GLR Gestione Locale Radioamatori
 """
 
 import logging

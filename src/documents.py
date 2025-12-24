@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Document management for GLR Gestione Locale Radioamatori v4.2a
+Document management for GLR Gestione Locale Radioamatori
 """
 
 import os

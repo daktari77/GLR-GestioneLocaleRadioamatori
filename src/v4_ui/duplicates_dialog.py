@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Duplicates detection and merge dialog for Libro Soci v4.2a
+Duplicates detection and merge dialog for Libro Soci
 """
 
 import tkinter as tk

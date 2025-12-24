@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Verbali UI Dialogs for GLR Gestione Locale Radioamatori v4.2a
+CD Verbali UI Dialogs for GLR Gestione Locale Radioamatori
 """
 
 import tkinter as tk

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-UI Styling and theming for Libro Soci v4.2a
+UI Styling and theming for Libro Soci
 Manages colors, fonts, and widget styling
 """
 

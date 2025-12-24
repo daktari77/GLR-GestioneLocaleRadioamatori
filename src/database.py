@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Database operations for GLR Gestione Locale Radioamatori v4.2a
+Database operations for GLR Gestione Locale Radioamatori
 """
 
 import sqlite3

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Data models and validation for GLR Gestione Locale Radioamatori v4.2a
+Data models and validation for GLR Gestione Locale Radioamatori
 """
 
 from dataclasses import dataclass, field

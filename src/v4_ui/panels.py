@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Panel components for Libro Soci v4.2a
+Panel components for Libro Soci
 Handles documents, section info, events, etc.
 """
 

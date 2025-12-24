@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Custom exceptions for GLR Gestione Locale Radioamatori v4.2a
+Custom exceptions for GLR Gestione Locale Radioamatori
 
 Provides specific exception types for better error handling
 and more informative error messages.

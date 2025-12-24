@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Template Manager for GLR Gestione Locale Radioamatori v4.2a
+Template Manager for GLR Gestione Locale Radioamatori
 Handles document templates for official communications (convocations, verbali, etc.)
 """
 

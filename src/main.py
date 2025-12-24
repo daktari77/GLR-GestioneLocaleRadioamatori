@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-GLR - Gestione Locale Radioamatori v4.2a - Main Entry Point
+GLR - Gestione Locale Radioamatori - Main Entry Point
 Modular architecture with separated concerns
 """
 

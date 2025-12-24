@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Backup operations for Libro Soci v4.2a
+Backup operations for Libro Soci
 
 Enhanced with:
 - Incremental backup based on SHA256 hash

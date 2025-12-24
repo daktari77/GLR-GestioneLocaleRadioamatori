@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Causali (quotas) management for Libro Soci v4.2a
+Causali (quotas) management for Libro Soci
 """
 
 import os

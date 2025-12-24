@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CSV Import functionality for GLR Gestione Locale Radioamatori v4.2a
+CSV Import functionality for GLR Gestione Locale Radioamatori
 """
 
 import os

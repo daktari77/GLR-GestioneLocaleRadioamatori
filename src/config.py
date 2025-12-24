@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Configuration and constants for Libro Soci v4.2b
+Configuration and constants for Libro Soci
 """
 
 import os
@@ -11,7 +11,8 @@ from datetime import datetime
 # Versione / Build
 # --------------------------
 APP_NAME = "Libro Soci"
-APP_VERSION = "4.2b"
+APP_VERSION = "0.4.2b"
+__version__ = APP_VERSION
 AUTHOR = "Michele Martino - IU2GLR"
 
 def _calc_build_from_file() -> tuple[str, str]:

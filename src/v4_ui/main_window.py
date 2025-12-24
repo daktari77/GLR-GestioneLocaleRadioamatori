@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Main application window for GLR - Gestione Locale Radioamatori v4.2a
+Main application window for GLR - Gestione Locale Radioamatori
 """
 
 import csv
@@ -27,7 +27,7 @@ TreeviewAnchor = Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"]
 
 
 class App:
-    """Main application class for GLR - Gestione Locale Radioamatori v4.2a"""
+    """Main application class for GLR - Gestione Locale Radioamatori"""
     
     COLONNE = (
         "id",

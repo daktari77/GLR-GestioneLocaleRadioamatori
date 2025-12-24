@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Export dialogs for GLR Gestione Locale Radioamatori v4.2a
+Export dialogs for GLR Gestione Locale Radioamatori
 Provides UI for member export and reports
 """
 

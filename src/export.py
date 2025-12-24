@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Export functionality for GLR Gestione Locale Radioamatori v4.2a
+Export functionality for GLR Gestione Locale Radioamatori
 Supports HTML, CSV, and PDF export of members and reports
 """
 

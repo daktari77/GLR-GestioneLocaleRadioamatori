@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CD Meetings UI Dialogs for GLR Gestione Locale Radioamatori v4.2a
+CD Meetings UI Dialogs for GLR Gestione Locale Radioamatori
 """
 
 import tkinter as tk

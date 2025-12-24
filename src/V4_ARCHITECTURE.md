@@ -51,7 +51,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - `cd_delibere` - Board resolutions
   - `cd_verbali` - Minutes attached to meetings
   - `calendar_events` - Agenda and reminders
-  - `ponti` - Sezione repeaters/nodes/beacons registry (rev4.2a)
+  - `ponti` - Sezione repeaters/nodes/beacons registry (rev0.4.2b)
   - `ponti_status_history` - Operational status log per ponte
   - `ponti_authorizations` - MISE/convenzione/contratto metadata with expiries
   - `ponti_interventi` - Maintenance/upgrade interventions linked to calendario

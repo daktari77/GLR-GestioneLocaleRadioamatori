@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-CSV Import Wizard orchestrator for GLR Gestione Locale Radioamatori v4.2a
+CSV Import Wizard orchestrator for GLR Gestione Locale Radioamatori
 Manages the complete import workflow: File → Preset → Mapping → Preview → Insert
 """
 

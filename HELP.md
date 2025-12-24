@@ -1,4 +1,4 @@
-# GestioneSoci v4.2a - Guida rapida
+# GestioneSoci v0.4.2b - Guida rapida
 
 ## Avvio
 - Windows: apri terminale nella cartella `src` e lancia `python main.py`.

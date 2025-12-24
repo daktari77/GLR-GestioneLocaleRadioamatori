@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Test runner for GestioneSoci v4.2a
+Test runner for GestioneSoci
 
 Run all tests with: python tests/run_tests.py
 Run specific test: python tests/run_tests.py test_database
