@@ -24,7 +24,12 @@ from database import (
     get_connection,
     add_documento,
     get_documenti,
-    delete_documento
+    delete_documento,
+    add_section_document_record,
+    list_section_document_records,
+    get_section_document_by_relative_path,
+    update_section_document_record,
+    soft_delete_section_document_record,
 )
 from exceptions import (
     DatabaseError,
@@ -75,11 +80,57 @@ class TestDatabaseBasics(unittest.TestCase):
             "ponti_authorizations",
             "ponti_interventi",
             "ponti_documents",
+            "section_documents",
         ):
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
             self.assertIsNotNone(cursor.fetchone(), msg=f"Missing table {table_name}")
         
         conn.close()
+
+
+class TestSectionDocumentsRegistry(unittest.TestCase):
+    """Test DB registry for section documents (filesystem is not exercised here)."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        self.temp_db.close()
+        self.db_path = self.temp_db.name
+        set_db_path(self.db_path)
+        init_db()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.db_path)
+        except Exception:
+            pass
+
+    def test_section_documents_crud(self):
+        record_id = add_section_document_record(
+            hash_id="deadbeef00",
+            categoria="Verbali CD",
+            descrizione="Prova",
+            original_name="verbale.docx",
+            stored_name="deadbeef00.docx",
+            relative_path="verbali_cd/deadbeef00.docx",
+            uploaded_at="2025-12-24T10:00:00",
+        )
+        self.assertIsNotNone(record_id)
+
+        rows = list_section_document_records(include_deleted=False)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["hash_id"], "deadbeef00")
+
+        found = get_section_document_by_relative_path("verbali_cd/deadbeef00.docx")
+        self.assertIsNotNone(found)
+
+        ok = update_section_document_record(int(found["id"]), categoria="Bilanci", descrizione="Aggiornata")
+        self.assertTrue(ok)
+        found2 = get_section_document_by_relative_path("verbali_cd/deadbeef00.docx")
+        self.assertEqual(found2["categoria"], "Bilanci")
+
+        self.assertTrue(soft_delete_section_document_record(int(found2["id"])))
+        rows_after = list_section_document_records(include_deleted=False)
+        self.assertEqual(len(rows_after), 0)
     
     def test_insert_and_fetch_member(self):
         """Test inserting and fetching a member."""

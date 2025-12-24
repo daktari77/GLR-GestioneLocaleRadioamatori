@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Configuration and constants for Libro Soci
+Configuration and constants for GLR - Gestione Locale Radioamatori
 """
 
 import os
@@ -10,8 +10,8 @@ from datetime import datetime
 # --------------------------
 # Versione / Build
 # --------------------------
-APP_NAME = "Libro Soci"
-APP_VERSION = "0.4.2b"
+APP_NAME = "GLR - Gestione Locale Radioamatori"
+APP_VERSION = "0.4.2c"
 __version__ = APP_VERSION
 AUTHOR = "Michele Martino - IU2GLR"
 
@@ -43,7 +43,7 @@ def _base_dir():
 BASE_DIR = _base_dir()
 DATA_DIR = os.path.join(BASE_DIR, "data")
 BACKUP_DIR = os.path.join(BASE_DIR, "backup")
-DOCS_BASE = os.path.join(DATA_DIR, "docs")
+DOCS_BASE = os.path.join(DATA_DIR, "documents")
 TRASH_DIR = os.path.join(DATA_DIR, ".trash")
 SEC_DOCS = os.path.join(DATA_DIR, "section_docs")
 LOG_DIR = os.path.join(DATA_DIR, "logs")

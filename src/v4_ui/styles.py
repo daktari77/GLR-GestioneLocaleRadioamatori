@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-UI Styling and theming for Libro Soci
+UI Styling and theming for GLR - Gestione Locale Radioamatori
 Manages colors, fonts, and widget styling
 """
 

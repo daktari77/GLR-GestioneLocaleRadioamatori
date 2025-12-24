@@ -9,8 +9,36 @@ import logging
 import os
 from typing import List, Dict, Optional
 from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger("librosoci")
+
+
+def _archive_cd_verbale_documento(verbale_id: int, source_path: str) -> str:
+    from file_archiver import archive_file
+
+    target_dir = Path("data/documents/cd/verbali") / f"{int(verbale_id):04d}" / "documento"
+    dest_path, _stored = archive_file(source_path=source_path, target_dir=target_dir)
+    return dest_path
+
+
+def _maybe_archive_verbale_documento(verbale_id: int, documento_path: str | None) -> str | None:
+    if not documento_path:
+        return None
+    try:
+        if not os.path.exists(documento_path):
+            return documento_path
+    except Exception:
+        return documento_path
+
+    target_root = (Path("data/documents/cd/verbali") / f"{int(verbale_id):04d}").resolve()
+    try:
+        current = Path(documento_path).resolve()
+        if str(current).lower().startswith(str(target_root).lower()):
+            return documento_path
+    except Exception:
+        pass
+    return _archive_cd_verbale_documento(verbale_id, documento_path)
 
 def get_all_verbali(meeting_id: int = None) -> List[Dict]:
     """
@@ -22,11 +50,11 @@ def get_all_verbali(meeting_id: int = None) -> List[Dict]:
     Returns:
         List of verbali dictionaries
     """
-    from database import fetch_all, get_conn
+    from database import fetch_all, get_connection
     try:
         # Check if table exists
         try:
-            with get_conn() as conn:
+            with get_connection() as conn:
                 conn.execute("SELECT 1 FROM cd_verbali LIMIT 1")
         except sqlite3.OperationalError:
             # Table doesn't exist, return empty list
@@ -99,15 +127,23 @@ def add_verbale(cd_id: int, data_redazione: str, segretario: str = None, preside
     from utils import now_iso
     
     try:
+        original_doc = documento_path
         sql = """
             INSERT INTO cd_verbali 
             (cd_id, data_redazione, segretario, presidente, odg, documento_path, note, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
-        exec_query(sql, (cd_id, data_redazione, segretario, presidente, odg, documento_path, note, now_iso()))
+        exec_query(sql, (cd_id, data_redazione, segretario, presidente, odg, None, note, now_iso()))
         
         result = fetch_one("SELECT last_insert_rowid() as id")
         verbale_id = result['id'] if result else -1
+
+        if verbale_id != -1 and original_doc:
+            try:
+                archived = _archive_cd_verbale_documento(int(verbale_id), original_doc)
+                exec_query("UPDATE cd_verbali SET documento_path = ? WHERE id = ?", (archived, int(verbale_id)))
+            except Exception as exc:
+                logger.warning("Impossibile archiviare documento verbale: %s", exc)
         
         logger.info(f"Added verbale to meeting {cd_id} (ID: {verbale_id})")
         return verbale_id
@@ -152,6 +188,7 @@ def update_verbale(verbale_id: int, data_redazione: str = None, segretario: str 
             updates.append("odg=?")
             values.append(odg)
         if documento_path is not None:
+            documento_path = _maybe_archive_verbale_documento(int(verbale_id), documento_path)
             updates.append("documento_path=?")
             values.append(documento_path)
         if note is not None:

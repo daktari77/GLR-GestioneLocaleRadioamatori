@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 from documents_catalog import ensure_category
+from file_archiver import unique_hex_filename
 
 logger = logging.getLogger("librosoci")
 
@@ -251,13 +252,16 @@ def bulk_rename_documents_to_schema(*, dry_run: bool = False) -> list[tuple[str,
     return pending_changes
 
 def _unique_hex_filename(directory: str, extension: str, *, current_path: str | None = None) -> str:
-    normalized_ext = (extension or "").lower()
-    candidate_path = None
+    """Compatibility wrapper (historical local helper).
+
+    Uses the shared file_archiver.unique_hex_filename() implementation.
+    """
     while True:
-        token = secrets.token_hex(5)  # 10 hex characters
-        candidate = f"{token}{normalized_ext}"
+        candidate = unique_hex_filename(Path(directory), extension)
         candidate_path = os.path.join(directory, candidate)
-        if not os.path.exists(candidate_path) or (current_path and _paths_equal(candidate_path, current_path)):
+        if current_path and _paths_equal(candidate_path, current_path):
+            return candidate
+        if not os.path.exists(candidate_path):
             return candidate
 
 def _is_hex_filename(filename: str, length: int = 10) -> bool:

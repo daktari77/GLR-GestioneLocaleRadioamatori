@@ -1,8 +1,8 @@
-# Libro Soci v4.1 - Phase 2 Implementation Summary
+# Libro Soci v4 - Phase 2 Implementation Summary
 
 ## Completed in Phase 2
 
-### 1. **v41_csv_import.py**
+### 1. **csv_import.py**
 - CSV file reading and parsing
 - Auto-detection of CSV delimiter
 - Column mapping with auto-guess patterns
@@ -64,9 +64,9 @@ Complete main application class with:
 - `_create_statusbar()` - Status bar
 - `_update_title()` - Dynamic title with section info
 
-## Integration with v41_main.py
+## Integration with main.py
 
-v41_main.py now:
+main.py now:
 1. Sets up all module configurations
 2. Initializes database
 3. Performs startup backup
@@ -86,19 +86,19 @@ if __name__ == "__main__":
 ### Module Dependencies (Updated)
 
 ```
-v41_config
+config
     ↓
-v41_logger
+logger
     ↓
-v41_database ← v41_utils, v41_backup
-v41_causali ← v41_utils
-v41_config_manager
-v41_documents ← v41_database, v41_utils
-v41_backup ← v41_database
-v41_csv_import ← v41_utils
-v4_dialogs (standalone, imports as needed)
+database ← utils, backup
+causali ← utils
+config_manager
+documents_manager ← database
+backup ← database
+csv_import ← utils
+dialogs (various modules under src/ and v4_ui/)
     ↓
-v41_main → v4_ui.main_window (App class)
+main → v4_ui.main_window (App class)
     ↓
 Application runs with full menu, tabs, and dialogs
 ```
@@ -149,7 +149,7 @@ Application runs with full menu, tabs, and dialogs
 
 ```bash
 cd "G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\src"
-python.exe v41_main.py
+python.exe main.py
 ```
 
 The application will:
@@ -170,7 +170,7 @@ The application will:
 ## Notes for Phase 3
 
 1. App class needs access to database operations - import them as needed
-2. Table population requires fetch_all() from v41_database
+2. Table population requires fetch_all() from database
 3. Form handling needs proper event binding
 4. Dialog results need proper handling in main app
 5. Status bar should update with user actions

@@ -3,6 +3,9 @@
 **Data**: 24 Novembre 2025  
 **Versione**: v4.1 Enhanced
 
+> Nota (repo attuale): questo documento nasce in una fase storica in cui alcuni file erano nominati diversamente.
+> Nel codice corrente i moduli interessati sono: `src/database.py`, `src/backup.py`, `src/models.py`, `src/exceptions.py`, `src/cd_delibere.py`, `src/cd_verbali.py`, `src/export_dialogs.py`.
+
 ---
 
 ## ✅ Completato
@@ -13,7 +16,7 @@
 
 **Analisi effettuata**:
 - Scansionati tutti i file Python per costruzione dinamica SQL
-- Verificati 18 match in: main_window.py, v41_cd_delibere.py, v41_cd_verbali.py, export_dialog.py
+- Verificati 18 match in: v4_ui/main_window.py, cd_delibere.py, cd_verbali.py, export_dialogs.py
 
 **Risultato**:
 - ✅ **Nessuna vulnerabilità trovata**
@@ -35,7 +38,7 @@ exec_query(sql, values)
 
 **Status**: ✅ **IMPLEMENTATO**
 
-**File modificato**: `src/v41_database.py`
+**File modificato**: `src/database.py`
 
 **Miglioramenti implementati**:
 
@@ -89,7 +92,7 @@ members = fetch_all("SELECT * FROM soci WHERE attivo = ?", (1,))
 
 **Status**: ✅ **IMPLEMENTATO**
 
-**File modificato**: `src/v41_backup.py`
+**File modificato**: `src/backup.py`
 
 **Nuove funzionalità implementate**:
 
@@ -182,6 +185,7 @@ for backup in backups:
 **Novità principali**:
 - 📁 **Filenames opachi**: ogni upload viene salvato come `xxxxxxxxxx.ext` (hash hex a 10 caratteri) per evitare riferimenti diretti a nomi sensibili.
 - 📝 **Metadata persistenti**: indice `data/section_docs/metadata.json` traccia `hash_id`, categoria, nome originale, descrizione e timestamp.
+- 🗃️ **Tracciamento DB (repo attuale)**: oltre ai metadata JSON, i documenti di sezione sono anche tracciati su SQLite (tabella `section_documents`) quando disponibile.
 - 🧭 **Compatibilità**: i file legacy senza metadata vengono ancora mostrati; il rename legacy ignora quelli già indicizzati.
 - 🖥️ **UI aggiornata**: il pannello “Documenti sezione” mostra colonne per Nome originale, Hash, Categoria, Descrizione, Dimensione e Ultima modifica.
 - ✏️ **Descrizione richiesta**: durante l’upload viene chiesto (facoltativamente) il campo descrizione, salvato nei metadata.

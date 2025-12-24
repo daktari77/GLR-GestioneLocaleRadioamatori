@@ -5,7 +5,8 @@ Duplicate detection and merge for GLR Gestione Locale Radioamatori
 
 import logging
 from typing import List, Dict, Tuple
-from database import fetch_all, fetch_one, exec_query, get_conn
+
+from database import fetch_all, fetch_one, exec_query, get_connection
 
 logger = logging.getLogger("librosoci")
 
@@ -184,7 +185,7 @@ def merge_duplicates(master_id: int, duplicate_id: int, field_values: Dict) -> b
     Returns: True if successful, False otherwise
     """
     try:
-        with get_conn() as c:
+        with get_connection() as c:
             # Update master with selected fields
             if field_values:
                 placeholders = ", ".join([f"{k} = ?" for k in field_values.keys()])

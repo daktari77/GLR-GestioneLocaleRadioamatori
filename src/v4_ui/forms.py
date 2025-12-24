@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Form components for Libro Soci
+Form components for GLR - Gestione Locale Radioamatori
 Handles member data entry and editing
 """
 

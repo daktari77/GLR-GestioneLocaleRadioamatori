@@ -8,8 +8,37 @@ import sqlite3
 import logging
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from pathlib import Path
+import os
 
 logger = logging.getLogger("librosoci")
+
+
+def _archive_cd_delibera_attachment(delibera_id: int, source_path: str) -> str:
+    from file_archiver import archive_file
+
+    target_dir = Path("data/documents/cd/delibere") / f"{int(delibera_id):04d}" / "allegati"
+    dest_path, _stored = archive_file(source_path=source_path, target_dir=target_dir)
+    return dest_path
+
+
+def _maybe_archive_delibera_attachment(delibera_id: int, allegato_path: str | None) -> str | None:
+    if not allegato_path:
+        return None
+    try:
+        if not os.path.exists(allegato_path):
+            return allegato_path
+    except Exception:
+        return allegato_path
+
+    target_root = (Path("data/documents/cd/delibere") / f"{int(delibera_id):04d}").resolve()
+    try:
+        current = Path(allegato_path).resolve()
+        if str(current).lower().startswith(str(target_root).lower()):
+            return allegato_path
+    except Exception:
+        pass
+    return _archive_cd_delibera_attachment(delibera_id, allegato_path)
 
 def get_all_delibere(meeting_id: int = None) -> List[Dict]:
     """
@@ -21,11 +50,11 @@ def get_all_delibere(meeting_id: int = None) -> List[Dict]:
     Returns:
         List of delibere dictionaries
     """
-    from database import fetch_all, get_conn
+    from database import fetch_all, get_connection
     try:
         # Check if table exists
         try:
-            with get_conn() as conn:
+            with get_connection() as conn:
                 conn.execute("SELECT 1 FROM cd_delibere LIMIT 1")
         except sqlite3.OperationalError:
             # Table doesn't exist, return empty list
@@ -108,15 +137,23 @@ def add_delibera(cd_id: int, numero: str, oggetto: str, esito: str = "APPROVATA"
         return -1
     
     try:
+        original_attachment = allegato_path
         sql = """
             INSERT INTO cd_delibere 
             (cd_id, numero, oggetto, esito, data_votazione, favorevoli, contrari, astenuti, allegato_path, note, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        exec_query(sql, (cd_id, numero, oggetto, esito, data_votazione, favorevoli, contrari, astenuti, allegato_path, note, now_iso()))
+        exec_query(sql, (cd_id, numero, oggetto, esito, data_votazione, favorevoli, contrari, astenuti, None, note, now_iso()))
         
         result = fetch_one("SELECT last_insert_rowid() as id")
         delibera_id = result['id'] if result else -1
+
+        if delibera_id != -1 and original_attachment:
+            try:
+                archived = _archive_cd_delibera_attachment(int(delibera_id), original_attachment)
+                exec_query("UPDATE cd_delibere SET allegato_path = ? WHERE id = ?", (archived, int(delibera_id)))
+            except Exception as exc:
+                logger.warning("Impossibile archiviare allegato delibera: %s", exc)
         
         logger.info(f"Added delibera {numero} to meeting {cd_id} (ID: {delibera_id})")
         return delibera_id
@@ -177,6 +214,7 @@ def update_delibera(delibera_id: int, numero: str = None, oggetto: str = None, e
             updates.append("astenuti=?")
             values.append(astenuti)
         if allegato_path is not None:
+            allegato_path = _maybe_archive_delibera_attachment(int(delibera_id), allegato_path)
             updates.append("allegato_path=?")
             values.append(allegato_path)
         if note is not None:
@@ -209,7 +247,6 @@ def delete_delibera(delibera_id: int, delete_attachment: bool = False) -> bool:
         True if successful, False otherwise
     """
     from database import exec_query
-    import os
     
     try:
         if delete_attachment:

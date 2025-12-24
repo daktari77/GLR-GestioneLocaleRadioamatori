@@ -30,6 +30,87 @@ METADATA_SCHEMA_VERSION = 1
 logger = logging.getLogger("librosoci")
 
 
+def _db_backfill_registry() -> None:
+    """Ensure section documents are tracked in DB (best effort).
+
+    This keeps backward compatibility with metadata.json while fulfilling
+    the requirement that section docs are also tracked in SQLite.
+    """
+
+    try:
+        from database import (
+            add_section_document_record,
+            get_section_document_by_relative_path,
+        )
+    except Exception:
+        return
+
+    ensure_section_structure()
+
+    def _safe_insert(*, hash_id: str, categoria: str, descrizione: str, original_name: str, stored_name: str, relative_path: str, uploaded_at: str):
+        try:
+            if get_section_document_by_relative_path(relative_path):
+                return
+            add_section_document_record(
+                hash_id=hash_id,
+                categoria=categoria,
+                descrizione=descrizione,
+                original_name=original_name,
+                stored_name=stored_name,
+                relative_path=relative_path,
+                uploaded_at=uploaded_at,
+            )
+        except Exception:
+            return
+
+    # 1) Import existing metadata.json entries
+    metadata = _load_metadata()
+    for hash_id, payload in metadata.items():
+        rel_path = payload.get("relative_path")
+        if not rel_path:
+            continue
+        abs_path = (SECTION_DOCUMENT_ROOT / str(rel_path)).resolve()
+        if not abs_path.exists() or not abs_path.is_file():
+            continue
+        try:
+            stat = abs_path.stat()
+        except OSError:
+            continue
+        _safe_insert(
+            hash_id=str(hash_id),
+            categoria=payload.get("categoria") or _category_from_directory(abs_path.parent),
+            descrizione=(payload.get("description") or "") or "",
+            original_name=(payload.get("original_name") or abs_path.name) or abs_path.name,
+            stored_name=(payload.get("stored_name") or abs_path.name) or abs_path.name,
+            relative_path=str(rel_path),
+            uploaded_at=(payload.get("uploaded_at") or datetime.fromtimestamp(stat.st_mtime).isoformat()),
+        )
+
+    # 2) Import orphan files found on disk
+    for category in SECTION_DOCUMENT_CATEGORIES:
+        directory = _category_dir(category)
+        for path in directory.glob("*"):
+            if not path.is_file() or path.name == SECTION_DOCUMENT_INDEX_FILENAME:
+                continue
+            rel = _relative_to_root(path)
+            if not rel:
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            guessed_hash = path.stem[:10] if len(path.stem) >= 10 else secrets.token_hex(5)
+            _safe_insert(
+                hash_id=guessed_hash,
+                categoria=_category_from_directory(path.parent),
+                descrizione="",
+                original_name=path.name,
+                stored_name=path.name,
+                relative_path=rel,
+                uploaded_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            )
+
+
 def _load_metadata() -> dict[str, dict]:
     ensure_section_structure()
     if not SECTION_METADATA_FILE.exists():
@@ -205,6 +286,7 @@ def ensure_section_structure():
 def list_section_documents() -> List[Dict[str, object]]:
     ensure_section_structure()
     docs: List[Dict[str, object]] = []
+    _db_backfill_registry()
     metadata = _load_metadata()
     indexed_paths: set[str] = set()
 
@@ -318,6 +400,22 @@ def add_section_document(source_path: str, categoria: str, descrizione: str | No
     }
     _save_metadata(metadata)
 
+    # Persist DB tracking (best effort)
+    try:
+        from database import add_section_document_record
+
+        add_section_document_record(
+            hash_id=hash_id,
+            categoria=normalized_category,
+            descrizione=description_value,
+            original_name=src.name,
+            stored_name=dest.name,
+            relative_path=relative_path,
+            uploaded_at=metadata[hash_id]["uploaded_at"],
+        )
+    except Exception:
+        pass
+
     return str(dest.resolve())
 
 
@@ -369,17 +467,61 @@ def update_section_document_metadata(path: str, categoria: str, descrizione: str
     entry["stored_name"] = destination.name
 
     _save_metadata(metadata)
+
+    # Update DB tracking (best effort)
+    try:
+        from database import (
+            get_section_document_by_relative_path,
+            update_section_document_record,
+            add_section_document_record,
+        )
+
+        new_rel = entry.get("relative_path") or _relative_to_root(destination) or destination.name
+        row = get_section_document_by_relative_path(str(rel)) or get_section_document_by_relative_path(str(new_rel))
+        if row:
+            update_section_document_record(
+                int(row["id"]),
+                categoria=normalized_category,
+                descrizione=description_value,
+                relative_path=str(new_rel),
+                stored_name=destination.name,
+            )
+        else:
+            add_section_document_record(
+                hash_id=str(entry_key),
+                categoria=normalized_category,
+                descrizione=description_value,
+                original_name=entry.get("original_name") or destination.name,
+                stored_name=destination.name,
+                relative_path=str(new_rel),
+                uploaded_at=entry.get("uploaded_at") or datetime.now().isoformat(),
+            )
+    except Exception:
+        pass
     return True
 
 
 def delete_section_document(path: str) -> bool:
+    file_path = Path(path)
+
+    # Soft-delete DB record first (best effort)
     try:
-        file_path = Path(path)
+        rel = _relative_to_root(file_path)
+        if rel:
+            from database import get_section_document_by_relative_path, soft_delete_section_document_record
+
+            row = get_section_document_by_relative_path(rel)
+            if row:
+                soft_delete_section_document_record(int(row["id"]))
+    except Exception:
+        pass
+
+    try:
         file_path.unlink()
         _remove_metadata_for_path(file_path)
         return True
     except FileNotFoundError:
-        _remove_metadata_for_path(Path(path))
+        _remove_metadata_for_path(file_path)
         return False
 
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Templates management dialog for Libro Soci
+Templates management dialog for GLR - Gestione Locale Radioamatori
 """
 
 import tkinter as tk

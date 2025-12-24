@@ -47,7 +47,7 @@ class LoadingWindow:
             return
 
         root.withdraw()
-        root.title("GLR - GestioneLocale Radioamatori")
+        root.title(self._app_name)
         root.overrideredirect(True)
         root.configure(bg="#040711")
         root.attributes("-topmost", True)
@@ -68,7 +68,7 @@ class LoadingWindow:
 
         tk.Label(
             hero,
-            text="GLR - Gestione Locale Radioamatori",
+            text=self._app_name,
             fg="#f4f9ff",
             bg="#0f1b2c",
             font=("Segoe UI", 18, "bold"),

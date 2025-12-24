@@ -343,6 +343,20 @@ CREATE TABLE IF NOT EXISTS ponti_documents (
 )
 """
 
+CREATE_SECTION_DOCUMENTS = """
+CREATE TABLE IF NOT EXISTS section_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    hash_id TEXT NOT NULL UNIQUE,
+    categoria TEXT,
+    descrizione TEXT,
+    original_name TEXT,
+    stored_name TEXT,
+    relative_path TEXT NOT NULL,
+    uploaded_at TEXT,
+    deleted_at TEXT
+)
+"""
+
 CREATE_MAGAZZINO_ITEMS = """
 CREATE TABLE IF NOT EXISTS magazzino_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -383,6 +397,8 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_ponti_stato ON ponti(stato_corrente)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_auth_scadenza ON ponti_authorizations(data_scadenza)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_interventi_data ON ponti_interventi(data)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_section_documents_relative_path ON section_documents(relative_path) WHERE deleted_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS idx_section_documents_categoria ON section_documents(categoria)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_soci_ruoli_unique ON soci_ruoli(socio_id, ruolo)",
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_item ON magazzino_loans(item_id)",
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_active ON magazzino_loans(item_id, data_reso)"
@@ -429,6 +445,7 @@ def init_db():
         _ensure_column(conn, "ponti_authorizations", "calendar_event_id", "INTEGER")
         conn.execute(CREATE_PONTI_INTERVENTI)
         conn.execute(CREATE_PONTI_DOCUMENTS)
+        conn.execute(CREATE_SECTION_DOCUMENTS)
         conn.execute(CREATE_MAGAZZINO_ITEMS)
         conn.execute(CREATE_MAGAZZINO_LOANS)
         conn.execute(CREATE_SOCI_ROLES)
@@ -465,6 +482,111 @@ def init_db():
             logger.warning("Impossibile creare indici calendario: %s", e)
 
         logger.info("Database initialized successfully")
+
+
+# --------------------------
+# Section documents (filesystem + DB registry)
+# --------------------------
+
+def add_section_document_record(
+    *,
+    hash_id: str,
+    categoria: str | None,
+    descrizione: str | None,
+    original_name: str | None,
+    stored_name: str | None,
+    relative_path: str,
+    uploaded_at: str | None,
+) -> int | None:
+    """Insert a new section document registry record (soft-delete aware)."""
+    sql = """
+    INSERT INTO section_documents
+        (hash_id, categoria, descrizione, original_name, stored_name, relative_path, uploaded_at, deleted_at)
+    VALUES
+        (?, ?, ?, ?, ?, ?, ?, NULL)
+    """
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                sql,
+                (
+                    hash_id,
+                    categoria,
+                    descrizione,
+                    original_name,
+                    stored_name,
+                    relative_path,
+                    uploaded_at,
+                ),
+            )
+            return cur.lastrowid
+    except sqlite3.Error as e:
+        raise map_sqlite_exception(e)
+
+
+def list_section_document_records(*, include_deleted: bool = False) -> list[dict]:
+    where = "" if include_deleted else "WHERE deleted_at IS NULL"
+    rows = fetch_all(
+        f"""
+        SELECT id, hash_id, categoria, descrizione, original_name, stored_name, relative_path, uploaded_at, deleted_at
+        FROM section_documents
+        {where}
+        ORDER BY categoria COLLATE NOCASE, COALESCE(uploaded_at, '') DESC, id DESC
+        """
+    )
+    return [dict(r) for r in rows]
+
+
+def get_section_document_by_relative_path(relative_path: str) -> dict | None:
+    row = fetch_one(
+        """
+        SELECT id, hash_id, categoria, descrizione, original_name, stored_name, relative_path, uploaded_at, deleted_at
+        FROM section_documents
+        WHERE relative_path = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (relative_path,),
+    )
+    return dict(row) if row else None
+
+
+def update_section_document_record(
+    record_id: int,
+    *,
+    categoria: str | None = None,
+    descrizione: str | None = None,
+    relative_path: str | None = None,
+    stored_name: str | None = None,
+) -> bool:
+    updates: list[str] = []
+    params: list[object] = []
+    if categoria is not None:
+        updates.append("categoria = ?")
+        params.append(categoria)
+    if descrizione is not None:
+        updates.append("descrizione = ?")
+        params.append(descrizione)
+    if relative_path is not None:
+        updates.append("relative_path = ?")
+        params.append(relative_path)
+    if stored_name is not None:
+        updates.append("stored_name = ?")
+        params.append(stored_name)
+    if not updates:
+        return False
+    params.append(record_id)
+    sql = f"UPDATE section_documents SET {', '.join(updates)} WHERE id = ?"
+    exec_query(sql, tuple(params))
+    return True
+
+
+def soft_delete_section_document_record(record_id: int) -> bool:
+    from utils import now_iso
+
+    exec_query("UPDATE section_documents SET deleted_at = ? WHERE id = ?", (now_iso(), record_id))
+    return True
 
 def log_evento(socio_id: int, tipo: str, payload: dict):
     """Log an event to the events table."""

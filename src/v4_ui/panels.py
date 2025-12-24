@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Panel components for Libro Soci
+Panel components for GLR - Gestione Locale Radioamatori
 Handles documents, section info, events, etc.
 """
 

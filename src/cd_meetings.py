@@ -9,8 +9,37 @@ import logging
 import os
 from typing import List, Tuple, Optional, Dict
 from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger("librosoci")
+
+
+def _archive_cd_meeting_verbale(meeting_id: int, source_path: str) -> str:
+    """Copy verbale into managed filesystem folder and return new absolute path."""
+    from file_archiver import archive_file
+
+    target_dir = Path("data/documents/cd/riunioni") / f"{int(meeting_id):04d}" / "verbale"
+    dest_path, _stored = archive_file(source_path=source_path, target_dir=target_dir)
+    return dest_path
+
+
+def _maybe_archive_if_external(meeting_id: int, verbale_path: str | None) -> str | None:
+    if not verbale_path:
+        return None
+    try:
+        if not os.path.exists(verbale_path):
+            return verbale_path
+    except Exception:
+        return verbale_path
+
+    target_root = (Path("data/documents/cd/riunioni") / f"{int(meeting_id):04d}").resolve()
+    try:
+        current = Path(verbale_path).resolve()
+        if str(current).lower().startswith(str(target_root).lower()):
+            return verbale_path
+    except Exception:
+        pass
+    return _archive_cd_meeting_verbale(meeting_id, verbale_path)
 
 def get_all_meetings() -> List[Dict]:
     """
@@ -61,17 +90,19 @@ def add_meeting(data: str, numero_cd: str | None = None, titolo: str | None = No
     Returns:
         ID of inserted meeting or -1 on error
     """
-    from database import get_conn
+    from database import get_connection
     from utils import now_iso
     
     try:
-        with get_conn() as conn:
+        original_verbale = verbale_path
+        # Insert first to obtain meeting_id; we will archive the file afterward.
+        with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
                 INSERT INTO cd_riunioni (numero_cd, data, titolo, note, verbale_path, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql, (numero_cd, data, titolo, odg, verbale_path, now_iso()))
+            cursor.execute(sql, (numero_cd, data, titolo, odg, None, now_iso()))
             meeting_id = cursor.lastrowid
             conn.commit()
         
@@ -79,6 +110,18 @@ def add_meeting(data: str, numero_cd: str | None = None, titolo: str | None = No
             logger.error("Failed to get meeting ID after insert")
             return -1
         
+        if meeting_id is None:
+            logger.error("Failed to get meeting ID after insert")
+            return -1
+
+        if original_verbale:
+            try:
+                archived = _archive_cd_meeting_verbale(int(meeting_id), original_verbale)
+                with get_connection() as conn:
+                    conn.execute("UPDATE cd_riunioni SET verbale_path = ? WHERE id = ?", (archived, int(meeting_id)))
+            except Exception as exc:
+                logger.warning("Impossibile archiviare verbale CD: %s", exc)
+
         logger.info(f"Added meeting on {data} (ID: {meeting_id})")
         return meeting_id
     except Exception as e:
@@ -100,7 +143,7 @@ def update_meeting(meeting_id: int, numero_cd: str | None = None, data: str | No
     Returns:
         True if update was successful, False otherwise
     """
-    from database import get_conn
+    from database import get_connection
     
     try:
         updates = []
@@ -119,6 +162,7 @@ def update_meeting(meeting_id: int, numero_cd: str | None = None, data: str | No
             updates.append("note=?")
             values.append(odg)
         if verbale_path is not None:
+            verbale_path = _maybe_archive_if_external(int(meeting_id), verbale_path)
             updates.append("verbale_path=?")
             values.append(verbale_path)
         
@@ -129,7 +173,7 @@ def update_meeting(meeting_id: int, numero_cd: str | None = None, data: str | No
         values.append(meeting_id)
         sql = f"UPDATE cd_riunioni SET {', '.join(updates)} WHERE id=?"
         
-        with get_conn() as conn:
+        with get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(sql, values)
             conn.commit()

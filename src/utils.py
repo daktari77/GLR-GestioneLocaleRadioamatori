@@ -8,7 +8,7 @@ import sys
 import subprocess
 import re
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, Callable
 
 # Lazy imports to avoid circular dependencies
 _DOCS_BASE = None
@@ -125,14 +125,71 @@ def to_bool01(val) -> Optional[int]:
 # --------------------------
 # File system utilities
 # --------------------------
-def open_path(path: str):
-    """Open a file or directory with the default system application."""
+def open_path(
+    path: str,
+    *,
+    select_target: str | None = None,
+    on_error: Callable[[str], None] | None = None,
+) -> bool:
+    """Open a file or directory with the default system application.
+
+    Args:
+        path: Folder/file to open.
+        select_target: Optional file to highlight (Windows Explorer / macOS Finder).
+        on_error: Optional callback invoked with a user-friendly error message.
+
+    Returns:
+        True if a launcher command was invoked, False otherwise.
+    """
+
+    def _emit_error(message: str) -> None:
+        if on_error is not None:
+            on_error(message)
+
+    normalized = os.path.normpath(str(path or "").strip())
+    if not normalized:
+        _emit_error("Percorso non valido")
+        return False
+
     if sys.platform.startswith("win"):
-        os.startfile(path)  # type: ignore
-    elif sys.platform == "darwin":
-        subprocess.Popen(["open", path])
-    else:
-        subprocess.Popen(["xdg-open", path])
+        if select_target:
+            try:
+                if os.path.exists(select_target):
+                    subprocess.run(["explorer", f"/select,{os.path.normpath(select_target)}"], check=False)
+                    return True
+            except Exception:
+                pass
+
+        try:
+            if os.path.isdir(normalized) or os.path.exists(normalized):
+                os.startfile(normalized)  # type: ignore[attr-defined]
+                return True
+        except Exception as exc:
+            _emit_error(f"Impossibile aprire il percorso: {exc}")
+            return False
+
+        _emit_error("Percorso non disponibile")
+        return False
+
+    if sys.platform == "darwin":
+        target = select_target if select_target and os.path.exists(select_target) else normalized
+        try:
+            if os.path.isdir(target):
+                subprocess.run(["open", target], check=False)
+            else:
+                subprocess.run(["open", "-R", target], check=False)
+            return True
+        except Exception as exc:
+            _emit_error(f"Impossibile aprire il percorso: {exc}")
+            return False
+
+    target = os.path.dirname(select_target) if select_target else normalized
+    try:
+        subprocess.run(["xdg-open", target], check=False)
+        return True
+    except Exception as exc:
+        _emit_error(f"Impossibile aprire il percorso: {exc}")
+        return False
 
 def docs_dir_for_matricola(matricola: Optional[str]) -> str:
     """Get or create the documents directory for a given matricola."""

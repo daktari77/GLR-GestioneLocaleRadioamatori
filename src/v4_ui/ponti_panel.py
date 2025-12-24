@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import sys
 import tkinter as tk
 from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox, simpledialog, ttk
+
+from utils import open_path
 
 from ponti_manager import (
     DEFAULT_REMINDER_DAYS,
@@ -518,7 +518,7 @@ class PontiPanel(ttk.Frame):
         if not path:
             messagebox.showinfo("Ponti", "Nessun documento associato")
             return
-        open_path(path)
+        open_path(path, on_error=lambda msg: messagebox.showerror("Documenti", msg))
 
     # ------------------------------------------------------------------
     # Documents
@@ -614,7 +614,7 @@ class PontiPanel(ttk.Frame):
         if not path:
             messagebox.showinfo("Ponti", "Percorso mancante")
             return
-        open_path(path)
+        open_path(path, on_error=lambda msg: messagebox.showerror("Documenti", msg))
 
     def _open_document_folder(self):
         row = self._selected_document()
@@ -626,7 +626,11 @@ class PontiPanel(ttk.Frame):
             messagebox.showinfo("Ponti", "Percorso mancante")
             return
         folder = os.path.dirname(path) or path
-        open_path(folder, select_target=path if os.path.isfile(path) else None)
+        open_path(
+            folder,
+            select_target=path if os.path.isfile(path) else None,
+            on_error=lambda msg: messagebox.showerror("Documenti", msg),
+        )
 
 
 class PontiAuthorizationDialog(simpledialog.Dialog):
@@ -777,27 +781,3 @@ def format_iso_date(value: str | None) -> str | None:
         return value
 
 
-def open_path(path: str, *, select_target: str | None = None):
-    normalized = os.path.normpath(path)
-    if not normalized:
-        messagebox.showerror("Documenti", "Percorso non valido")
-        return
-    if os.name == "nt":
-        if select_target and os.path.exists(select_target):
-            subprocess.run(["explorer", f"/select,{os.path.normpath(select_target)}"], check=False)
-            return
-        if os.path.isdir(normalized):
-            os.startfile(normalized)  # type: ignore[attr-defined]
-        elif os.path.exists(normalized):
-            os.startfile(normalized)  # type: ignore[attr-defined]
-        else:
-            messagebox.showerror("Documenti", "Percorso non disponibile")
-    elif sys.platform == "darwin":
-        target = select_target if select_target and os.path.exists(select_target) else normalized
-        if os.path.isdir(target):
-            subprocess.run(["open", target], check=False)
-        else:
-            subprocess.run(["open", "-R", target], check=False)
-    else:
-        target = os.path.dirname(select_target) if select_target else normalized
-        subprocess.run(["xdg-open", target], check=False)

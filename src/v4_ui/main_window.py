@@ -71,11 +71,11 @@ class App:
     def __init__(self, *, startup_issues: Sequence[StartupIssue] | None = None):
         """Initialize the application."""
         # Import configuration after logger is set up; DB setup already happens in main.py
-        from config import APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE
+        from config import APP_NAME, APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE
         
         # Create root window
         self.root = tk.Tk()
-        self.root.title(f"GLR - Gestione Locale Radioamatori - Rev {APP_VERSION} - Build {BUILD_ID}")
+        self.root.title(f"{APP_NAME} - Rev {APP_VERSION} - Build {BUILD_ID}")
         # Window sized to comfortably fit 20 rows while staying within 1900x850 footprint
         self.root.geometry("1300x860")
         # Enforce a minimum so layout widgets never collapse
@@ -111,8 +111,8 @@ class App:
     
     def _update_title(self):
         """Update window title with section information."""
-        from config import APP_VERSION, BUILD_ID
-        title = f"GLR - Gestione Locale Radioamatori - Rev {APP_VERSION} (Build {BUILD_ID})"
+        from config import APP_NAME, APP_VERSION, BUILD_ID
+        title = f"{APP_NAME} - Rev {APP_VERSION} (Build {BUILD_ID})"
         if self.cfg.get("nome_sezione"):
             code = self.cfg.get("codice_sezione") or ""
             title += f" — {self.cfg['nome_sezione']}"
@@ -1375,10 +1375,10 @@ class App:
     
     def _show_about(self):
         """Show about dialog."""
-        from config import APP_VERSION, AUTHOR, BUILD_DATE
+        from config import APP_NAME, APP_VERSION, AUTHOR, BUILD_DATE
         messagebox.showinfo(
             "Informazioni",
-            f"Libro Soci v{APP_VERSION}\n"
+            f"{APP_NAME} v{APP_VERSION}\n"
             f"Build: {BUILD_DATE}\n"
             f"Autore: {AUTHOR}"
         )

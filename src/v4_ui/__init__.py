@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-v4_ui package - UI components for Libro Soci
+v4_ui package - UI components for GLR - Gestione Locale Radioamatori
 """
 
 from .main_window import App

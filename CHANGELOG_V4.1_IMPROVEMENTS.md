@@ -3,6 +3,8 @@
 **Data:** 24 Novembre 2025  
 **Versione:** 4.1 (Post-refactoring improvements)
 
+> Nota (repo attuale): questo changelog è storico; nel codice corrente i moduli citati corrispondono a `src/exceptions.py`, `src/models.py`, `src/database.py`, `src/backup.py`.
+
 ---
 
 ## 🎯 OBIETTIVO
@@ -16,7 +18,7 @@ Miglioramento qualità del codice, robustezza, e user experience dell'applicazio
 ### 1. **CODE QUALITY & ARCHITECTURE** (Priorità Alta)
 
 #### 1.1 Exception Handling Personalizzate
-- ✅ Creato `v41_exceptions.py` con gerarchia completa di eccezioni:
+- ✅ Creato `exceptions.py` con gerarchia completa di eccezioni:
   - `LibroSociError` (base exception)
   - `DatabaseError`, `DatabaseIntegrityError`, `DatabaseConnectionError`, `DatabaseLockError`
   - `ValidationError`, `RequiredFieldError`, `InvalidFormatError`
@@ -27,7 +29,7 @@ Miglioramento qualità del codice, robustezza, e user experience dell'applicazio
 - ✅ Type hints corretti con sintassi Python 3.13 (`Type | None`)
 
 #### 1.2 Data Validation con Dataclasses
-- ✅ Creato `v41_models.py` con dataclass `Member`:
+- ✅ Creato `models.py` con dataclass `Member`:
   - Validazione automatica in `__post_init__`
   - Validazione email (RFC 5322 pattern)
   - Validazione codice fiscale (16 caratteri alfanumerici)
@@ -44,11 +46,11 @@ Miglioramento qualità del codice, robustezza, e user experience dell'applicazio
 - ✅ Helper functions: `validate_member_data()`, `sanitize_member_input()`
 
 #### 1.3 Integrazione Exception & Validation
-- ✅ Aggiornato `v41_database.py`:
+- ✅ Aggiornato `database.py`:
   - Import exception personalizzate
   - Wrapping errori sqlite con `map_sqlite_exception()`
   - Gestione corretta errori in `add_documento()`
-- ✅ Aggiornato `v41_backup.py`:
+- ✅ Aggiornato `backup.py`:
   - Utilizzo `BackupError`, `BackupIntegrityError`, `RestoreError`
   - Migliorata gestione errori in `verify_db_integrity()`
 
@@ -138,8 +140,8 @@ Miglioramento qualità del codice, robustezza, e user experience dell'applicazio
 ## 🔧 FILE MODIFICATI/CREATI
 
 ### Nuovi File
-- `src/v41_exceptions.py` (205 righe)
-- `src/v41_models.py` (340 righe)
+- `src/exceptions.py` (circa 200 righe)
+- `src/models.py` (circa 300+ righe)
 - `tests/test_database.py` (365 righe)
 - `tests/test_backup.py` (374 righe)
 - `tests/test_models.py` (440 righe)
@@ -147,8 +149,8 @@ Miglioramento qualità del codice, robustezza, e user experience dell'applicazio
 - `tests/README.md` (documentazione completa)
 
 ### File Modificati
-- `src/v41_database.py` - Exception handling
-- `src/v41_backup.py` - Exception handling
+- `src/database.py` - Exception handling
+- `src/backup.py` - Exception handling
 - `src/v4_ui/main_window.py` - Keyboard shortcuts
 
 ---

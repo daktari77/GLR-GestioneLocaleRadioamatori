@@ -1,0 +1,44 @@
+GestioneSoci v0.4.2b — Code statistics snapshot
+Date: 2025-12-24
+Scope: src/, tests/, scripts/, examples/ (excluded build/dist/data/docs)
+
+=== Workspace code statistics (Python-focused) ===
+Included folders: src, tests, scripts, examples
+Total files scanned: 85
+Top extensions: .py:68, .md:5, .txt:3, .ps1:3, .spec:2, (none):2, .patch:1, .csv:1
+
+Python files: 68
+Python LOC (physical): 23918
+Python non-empty lines: 20274
+
+Python AST counts:
+  classes: 88
+  methods (in classes): 662
+  top-level functions: 292
+  total functions (incl nested): 980
+  imports (top-level): 390
+  module assignments: 155
+  module vars (rough): 155
+  class vars (rough): 71
+  assigns total (all scopes): 3444  annassign total: 152
+  calls total: 9365
+
+--- Breakdown by folder (Python) ---
+[src] py_files=57 loc=20352 nonempty=17258 classes=63 functions_top=246 methods=555
+[tests] py_files=6 loc=1764 nonempty=1433 classes=24 functions_top=5 methods=107
+[scripts] py_files=4 loc=1516 nonempty=1355 classes=1 functions_top=33 methods=0
+[examples] py_files=1 loc=286 nonempty=228 classes=0 functions_top=8 methods=0
+
+--- Largest Python files (by LOC) ---
+ 2512 lines ( 2161 nonempty)  src\v4_ui\main_window.py
+ 1353 lines ( 1196 nonempty)  src\v4_ui\panels.py
+ 1043 lines (  940 nonempty)  scripts\generate_review_doc.py
+ 1025 lines (  839 nonempty)  src\import_wizard.py
+  905 lines (  816 nonempty)  src\database.py
+  847 lines (  689 nonempty)  src\cd_meetings_dialog.py
+  783 lines (  693 nonempty)  src\v4_ui\ponti_panel.py
+  766 lines (  646 nonempty)  src\email_wizard.py
+  625 lines (  545 nonempty)  src\v4_ui\forms.py
+  600 lines (  501 nonempty)  src\v4_ui\duplicates_dialog.py
+
+Note: "module vars" counts only simple module-level Name assignments; it is an approximation.

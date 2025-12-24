@@ -16,7 +16,7 @@ Notes:
 #>
 
 param(
-    [string]$EntryScript = "v41_main.py",
+    [string]$EntryScript = "main.py",
     [string]$ExeName = "GestioneSociPortable",
     [switch]$Windowed
 )

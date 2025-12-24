@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Duplicates detection and merge dialog for Libro Soci
+Duplicates detection and merge dialog for GLR - Gestione Locale Radioamatori
 """
 
 import tkinter as tk

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import re
-import secrets
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +19,7 @@ from database import (
     update_calendar_event,
 )
 from utils import ddmmyyyy_to_iso, now_iso
+from file_archiver import unique_hex_filename
 
 DEFAULT_REMINDER_DAYS = 60
 EVENT_TYPE = "ponte_autorizzazione"
@@ -86,14 +86,6 @@ def _resolve_ponte_dir(ponte: dict) -> Path:
     return target
 
 
-def _unique_hex_filename(directory: Path, extension: str | None) -> str:
-    normalized_ext = (extension or "").lower()
-    while True:
-        candidate = f"{secrets.token_hex(5)}{normalized_ext}"
-        if not (directory / candidate).exists():
-            return candidate
-
-
 def _copy_into_managed_dir(ponte: dict, source_path: str, tipo: str | None) -> str:
     source = Path(source_path).expanduser()
     if not source.exists():
@@ -102,7 +94,7 @@ def _copy_into_managed_dir(ponte: dict, source_path: str, tipo: str | None) -> s
     tipo_label = _sanitize_token(tipo, "DOCUMENTI") if tipo else "DOCUMENTI"
     final_dir = target_dir / tipo_label
     final_dir.mkdir(parents=True, exist_ok=True)
-    filename = _unique_hex_filename(final_dir, source.suffix.lower())
+    filename = unique_hex_filename(final_dir, source.suffix.lower())
     destination = final_dir / filename
     shutil.copy2(source, destination)
     return str(destination)

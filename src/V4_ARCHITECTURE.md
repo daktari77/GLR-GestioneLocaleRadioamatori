@@ -1,4 +1,4 @@
-# Libro Soci v4.1 - Modular Architecture
+# Libro Soci v4 - Modular Architecture
 
 ## Overview
 
@@ -8,7 +8,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
 
 ### Core Modules
 
-#### `v41_config.py`
+#### `config.py`
 - **Purpose**: Application configuration and constants
 - **Contents**: 
   - APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE
@@ -18,7 +18,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - Default configuration dictionary
   - Regular expressions (CAUSALI_CODE_RE)
 
-#### `v41_logger.py`
+#### `logger.py`
 - **Purpose**: Centralized logging configuration
 - **Key Function**: `setup_logger(app_log_path, app_version) → Logger`
 - **Features**:
@@ -26,7 +26,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - Console handler
   - Consistent formatting
 
-#### `v41_utils.py`
+#### `utils.py`
 - **Purpose**: Utility functions for general use
 - **Categories**:
   - **Date utilities**: `now_iso()`, `today_iso()`, `iso_to_ddmmyyyy()`, `ddmmyyyy_to_iso()`, `calc_privacy_scadenza()`
@@ -34,7 +34,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - **File system**: `open_path()`, `docs_dir_for_matricola()`, `set_docs_base()`
   - **Quota utilities**: CAUSALI_CODE_RE, quota validation
 
-#### `v41_database.py`
+#### `database.py`
 - **Purpose**: Database operations and schema
 - **Key Functions**:
   - `set_db_path(db_name)` - Configure database path
@@ -57,14 +57,14 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - `ponti_interventi` - Maintenance/upgrade interventions linked to calendario
   - `ponti_documents` - Attachments referencing section documents
 
-#### `v41_causali.py`
+#### `causali.py`
 - **Purpose**: Quota code management (Q0/Q1/Q2)
 - **Key Functions**:
   - `set_causali_path(causali_json)` - Configure path
   - `load_causali_codes() → List[str]` - Load valid quota codes
   - `save_causali_codes(codes)` - Save quota codes
 
-#### `v41_config_manager.py`
+#### `config_manager.py`
 - **Purpose**: Section configuration management
 - **Key Functions**:
   - `set_config_paths()` - Configure paths
@@ -73,7 +73,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - `ensure_sec_category_dirs()` - Create category directories
   - `copy_into_section()` - Copy files to section docs
 
-#### `v41_documents.py`
+#### `documents_manager.py`
 - **Purpose**: Document management for members
 - **Key Functions**:
   - `list_documenti_for_socio(socio_id)` - List member documents
@@ -82,7 +82,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
   - `copy_in_socio_folder()` - Copy file to member folder
   - `move_file_to_trash()` - Move file to trash
 
-#### `v41_backup.py`
+#### `backup.py`
 - **Purpose**: Backup and maintenance operations
 - **Key Functions**:
   - `backup_on_startup()` - Create startup backup (keeps 10 latest)
@@ -91,17 +91,15 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
 
 ### Planned Modules (Phase 2)
 
-#### `v41_csv_import.py`
+#### `csv_import.py`
 - CSV import wizard
 - Preset management
 - Column mapping dialogs
 
-#### `v4_dialogs.py`
-- CDWindow - Consiglio Direttivo management
-- MergeDuplicatesDialog - Merge duplicate members
-- MeetingDialog - Board meeting management
-- DeliberaDialog - Resolution management
-- PresetDialog - Import preset management
+#### Dialogs (multiple modules)
+- Consiglio Direttivo dialogs: `cd_meetings_dialog.py`, `cd_delibere_dialog.py`, `cd_verbali_dialog.py`
+- Duplicati: `v4_ui/duplicates_dialog.py`
+- Import: `import_wizard.py`
 
 #### `v4_ui/main_window.py`
 - Main App class
@@ -128,7 +126,7 @@ Libro Soci v4.1 represents a significant architectural refactoring from the mono
 
 ## Initialization Sequence
 
-The `v41_main.py` entry point follows this sequence:
+The `main.py` entry point follows this sequence:
 
 1. Import configuration constants
 2. Setup logger
@@ -167,17 +165,17 @@ This allows:
 ## Module Dependencies
 
 ```
-v41_config
-    ↓
-v41_logger
-    ↓
-v41_database ← v41_utils, v41_backup
-v41_causali ← v41_utils
-v41_config_manager
-v41_documents ← v41_database, v41_utils
-v41_backup ← v41_database
-    ↓
-v41_main (coordinates all above)
+config
+  ↓
+logger
+  ↓
+database ← utils, backup
+causali ← utils
+config_manager
+documents_manager ← database
+backup ← database
+  ↓
+main (coordinates all above)
 ```
 
 ## Transition from v3.x to v4.1
@@ -205,17 +203,17 @@ v41_main (coordinates all above)
 Each module can be tested independently:
 
 ```python
-# Test v41_utils
-from v41_utils import iso_to_ddmmyyyy
+# Test utils
+from utils import iso_to_ddmmyyyy
 assert iso_to_ddmmyyyy("2025-11-20") == "20/11/2025"
 
-# Test v41_causali
-from v41_causali import set_causali_path, load_causali_codes
+# Test causali
+from causali import set_causali_path, load_causali_codes
 set_causali_path("/path/to/causali.json")
 codes = load_causali_codes()
 
-# Test v41_database
-from v41_database import set_db_path, init_db
+# Test database
+from database import set_db_path, init_db
 set_db_path("/path/to/test.db")
 init_db()
 ```
