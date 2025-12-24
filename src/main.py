@@ -13,7 +13,8 @@ from config import (
     APP_NAME, APP_VERSION, AUTHOR, BUILD_ID, BUILD_DATE,
     BASE_DIR, DATA_DIR, BACKUP_DIR, DOCS_BASE, TRASH_DIR, SEC_DOCS, LOG_DIR,
     DB_NAME, CONFIG_JSON, PRESETS_JSON, CAUSALI_JSON, APP_LOG,
-    SEC_CATEGORIES, DEFAULT_CONFIG
+    SEC_CATEGORIES, DEFAULT_CONFIG,
+    get_backup_dir,
 )
 
 # Setup logger
@@ -42,7 +43,7 @@ init_db()
 logger.debug("Database initialized")
 
 # Perform startup backup
-backup_on_startup(DB_NAME, BACKUP_DIR)
+backup_on_startup(DB_NAME, get_backup_dir())
 
 # Import the main App class and loading splash
 from v4_ui.main_window import App

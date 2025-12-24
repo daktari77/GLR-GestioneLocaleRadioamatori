@@ -57,6 +57,9 @@ class PreferencesDialog(tk.Toplevel):
         mail_frame = ttk.Frame(notebook, padding=10)
         notebook.add(mail_frame, text="Client posta")
 
+        backup_frame = ttk.Frame(notebook, padding=10)
+        notebook.add(backup_frame, text="Backup")
+
         ttk.Label(
             roles_frame,
             text="Voci predefinite (sempre disponibili):",
@@ -99,6 +102,36 @@ class PreferencesDialog(tk.Toplevel):
         ttk.Label(mail_frame, text="Lascia vuoto per usare il default configurato in config.py", foreground="gray40").grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
         mail_frame.columnconfigure(0, weight=1)
 
+        # Backup
+        ttk.Label(backup_frame, text="Cartella backup locale", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
+        self.backup_dir_var = tk.StringVar(value=(self.current_cfg.get("backup_dir") or ""))
+        backup_entry = ttk.Entry(backup_frame, textvariable=self.backup_dir_var, width=60)
+        backup_entry.grid(row=1, column=0, sticky="ew", pady=(4, 4))
+        ttk.Button(backup_frame, text="Sfoglia...", command=self._browse_backup_dir).grid(row=1, column=1, sticky="w", padx=(6, 0))
+        ttk.Label(
+            backup_frame,
+            text="Lascia vuoto per usare la cartella 'backup' di default (accanto all'app).",
+            foreground="gray40",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
+        ttk.Separator(backup_frame, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 10))
+
+        ttk.Label(backup_frame, text="Repository backup (cloud)", font=("Segoe UI", 9, "bold")).grid(row=4, column=0, sticky="w")
+        self.backup_repo_dir_var = tk.StringVar(value=(self.current_cfg.get("backup_repo_dir") or ""))
+        repo_entry = ttk.Entry(backup_frame, textvariable=self.backup_repo_dir_var, width=60)
+        repo_entry.grid(row=5, column=0, sticky="ew", pady=(4, 4))
+        ttk.Button(backup_frame, text="Sfoglia...", command=self._browse_backup_repo_dir).grid(row=5, column=1, sticky="w", padx=(6, 0))
+        ttk.Label(
+            backup_frame,
+            text=(
+                "Se valorizzato, ogni backup creato viene copiato anche qui. "
+                "Nota: la variabile ambiente GESTIONESOCI_BACKUP_REPO_DIR ha priorità."
+            ),
+            foreground="gray40",
+            wraplength=420,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        backup_frame.columnconfigure(0, weight=1)
+
         btn_frame = ttk.Frame(container)
         btn_frame.pack(fill=tk.X, pady=(10, 0))
         ttk.Button(btn_frame, text="Annulla", command=self.destroy).pack(side=tk.RIGHT)
@@ -129,6 +162,8 @@ class PreferencesDialog(tk.Toplevel):
             updated_cfg = save_custom_role_options(lines)
             cfg = load_config()
             cfg["thunderbird_path"] = (self.th_path_var.get() or "").strip()
+            cfg["backup_dir"] = (self.backup_dir_var.get() or "").strip()
+            cfg["backup_repo_dir"] = (self.backup_repo_dir_var.get() or "").strip()
             save_config(cfg)
             updated_cfg = cfg
         except Exception as exc:  # pragma: no cover - unexpected I/O errors
@@ -150,3 +185,13 @@ class PreferencesDialog(tk.Toplevel):
         )
         if path:
             self.th_path_var.set(path)
+
+    def _browse_backup_dir(self) -> None:
+        path = filedialog.askdirectory(parent=self, title="Seleziona cartella backup")
+        if path:
+            self.backup_dir_var.set(path)
+
+    def _browse_backup_repo_dir(self) -> None:
+        path = filedialog.askdirectory(parent=self, title="Seleziona cartella repository backup")
+        if path:
+            self.backup_repo_dir_var.set(path)

@@ -12,6 +12,8 @@
   "cd_componenti": "Presidente:\n    IW2KPL, Franco Cristini\nVice Presidente:\n    IZ2FME, Michele Carlone\nSegretario:\n    IU2GLR, Michele Martino\nTesoriere:\n    IK2HNG, Andrea d'Amore\nSindaco:\n    IK2RLN, Corrado Gaspani\n    IK2AOH, Vincenzo Malenza\n    IK2CLC, Maurizio Resigotti\nConsigliere:\n    IK2ANI, Aldo Angeletti\n    I2PEI, Maurizio Percassi\n    IU2GHS, Rosa Angela Zanchi",
   "privacy_validita_anni": "10",
   "thunderbird_path": "E:/PortableApps/ThunderbirdPortable/ThunderbirdPortable.exe",
+  "backup_dir": "",
+  "backup_repo_dir": "",
   "cd_triennio": "2023-2025",
   "custom_role_options": []
 }

@@ -91,7 +91,41 @@ DEFAULT_CONFIG = {
     "privacy_validita_anni": 2,
     "thunderbird_path": "",
 
+    # Cartella backup locale (globale). Se vuoto usa BACKUP_DIR (default).
+    "backup_dir": "",
+
     # Repository secondario per backup (es. cartella su drive cloud)
     # Se valorizzato, i backup creati localmente verranno copiati anche qui.
     "backup_repo_dir": "",
 }
+
+
+def _resolve_dir(value: str) -> str:
+    """Expand/normalize a directory path."""
+    return os.path.abspath(os.path.expanduser(os.path.expandvars(value)))
+
+
+def get_backup_dir() -> str:
+    """Return the configured local backup directory.
+
+    Reads config key 'backup_dir' (Preferences) if available, otherwise returns
+    the default BACKUP_DIR.
+    """
+    configured: str = ""
+    try:
+        from config_manager import load_config
+
+        cfg = load_config()
+        if isinstance(cfg, dict):
+            configured = (cfg.get("backup_dir") or "").strip()
+    except Exception:
+        configured = ""
+
+    path = _resolve_dir(configured) if configured else BACKUP_DIR
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception:
+        # Fallback to default if the configured path is invalid/unwritable.
+        path = BACKUP_DIR
+        os.makedirs(path, exist_ok=True)
+    return path

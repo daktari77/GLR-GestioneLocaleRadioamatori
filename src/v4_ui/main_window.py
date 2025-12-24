@@ -223,11 +223,11 @@ class App:
     def _manual_backup(self):
         """Perform on-demand backup (data folder + database)."""
         from backup import backup_on_demand
-        from config import DATA_DIR, DB_NAME, BACKUP_DIR
+        from config import DATA_DIR, DB_NAME, get_backup_dir
         from tkinter import messagebox
 
         try:
-            success, result = backup_on_demand(DATA_DIR, DB_NAME, BACKUP_DIR)
+            success, result = backup_on_demand(DATA_DIR, DB_NAME, get_backup_dir())
             if success:
                 messagebox.showinfo("Backup", f"Archivio creato:\n{result}")
             else:
