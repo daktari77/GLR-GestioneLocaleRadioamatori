@@ -30,8 +30,12 @@ def get_templates_dir() -> str:
     templates_dir.mkdir(exist_ok=True)
     return str(templates_dir)
 
-def init_templates_table():
-    """Initialize templates table in database."""
+def init_templates_table(conn=None):
+    """Initialize templates table in database.
+
+    If a connection is provided, it will be used to avoid nested connections
+    (which can cause SQLite 'database is locked' during schema init).
+    """
     from database import exec_query
     
     sql = """
@@ -46,7 +50,11 @@ def init_templates_table():
         updated_at TEXT
     )
     """
-    exec_query(sql)
+
+    if conn is not None:
+        conn.execute(sql)
+    else:
+        exec_query(sql)
     logger.info("Templates table initialized")
 
 def add_template(nome: str, tipo: str, source_file: str, descrizione: str = "", placeholders: str = "") -> tuple[bool, str]:

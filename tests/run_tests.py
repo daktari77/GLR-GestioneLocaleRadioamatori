@@ -10,9 +10,34 @@ Run with coverage: python tests/run_tests.py --coverage
 import sys
 import unittest
 from pathlib import Path
+import os
+import tempfile
+import atexit
+import shutil
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+
+
+def _configure_temp_test_db() -> str:
+    """Configure an isolated temporary SQLite DB for tests.
+
+    This prevents 'database is locked' when the real app DB is open.
+    """
+    tmp_dir = tempfile.mkdtemp(prefix="gestionesoci_tests_")
+    atexit.register(lambda: shutil.rmtree(tmp_dir, ignore_errors=True))
+
+    db_path = os.path.join(tmp_dir, "soci_test.db")
+
+    # Late import after sys.path is configured
+    from database import set_db_path
+
+    set_db_path(db_path)
+    os.environ["GESTIONESOCI_TEST_DB"] = db_path
+    return db_path
+
+
+_TEST_DB_PATH = _configure_temp_test_db()
 
 
 def run_all_tests(verbosity=2):

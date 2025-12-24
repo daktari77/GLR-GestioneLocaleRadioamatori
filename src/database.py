@@ -453,7 +453,7 @@ def init_db():
         # Initialize templates table
         try:
             from templates_manager import init_templates_table
-            init_templates_table()
+            init_templates_table(conn)
         except Exception as e:
             logger.warning("Templates table initialization failed: %s", e)
         
