@@ -64,7 +64,7 @@ try {
 
 # Prepare output directory
 $ts = Get-Date -Format yyyyMMdd_HHmmss
-$distRoot = Join-Path $repoRoot "dist_portable"
+$distRoot = Join-Path $repoRoot "artifacts\dist_portable"
 New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
 $distBase = if ([string]::IsNullOrWhiteSpace($DistFolderName)) {
     Join-Path $distRoot "dist_portable_$ts"

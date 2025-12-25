@@ -27,7 +27,7 @@
 - Run app: `cd src; python main.py`
 - Tests: `python tests/run_tests.py` (or `test_database`, `test_backup`, `test_models`)
 - Type check: `pyright src` (see `pyrightconfig.json`)
-- Build portable EXE: `cd src; ..\scripts\build_exe.ps1` (outputs `dist_portable_*`)
+- Build portable EXE: `cd src; ..\scripts\build_exe.ps1` (outputs under `artifacts\dist_portable\dist_portable_*`)
 
 ## References
 - Architecture: `src/V4_ARCHITECTURE.md`, `src/V4_MODULE_INDEX.md`, `src/V4_PHASE2_SUMMARY.md`
