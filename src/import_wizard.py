@@ -755,13 +755,38 @@ class ImportWizard:
             # Ask user which name-splitting strategy to use when `cognome` is missing
             def _ask_name_split_mode():
                 dlg = tk.Toplevel(self.win)
-                dlg.title("Strategia split nome/cognome")
+                dlg.title("Divisione Nome/Cognome")
                 dlg.transient(self.win)
                 dlg.grab_set()
                 var = tk.StringVar(value="first")
-                ttk.Label(dlg, text="Se il CSV contiene un unico campo con 'COGNOME NOME', come dividerlo?").pack(padx=10, pady=8)
-                ttk.Radiobutton(dlg, text="Primo token = Cognome (es. 'ROSSI PAOLA')", variable=var, value="first").pack(anchor="w", padx=20, pady=2)
-                ttk.Radiobutton(dlg, text="Ultimo token = Cognome (es. 'Paola Rossi')", variable=var, value="last").pack(anchor="w", padx=20, pady=2)
+                ttk.Label(
+                    dlg,
+                    text=(
+                        "Nel CSV c'è un solo campo con Nome e Cognome insieme.\n"
+                        "Scegli l'ordine con cui sono scritti nel campo:"
+                    ),
+                ).pack(padx=10, pady=8)
+                ttk.Radiobutton(
+                    dlg,
+                    text="Cognome prima (es. 'ROSSI PAOLA' o 'ROSSI MARIA PAOLA')",
+                    variable=var,
+                    value="first",
+                ).pack(anchor="w", padx=20, pady=2)
+                ttk.Radiobutton(
+                    dlg,
+                    text="Nome prima (es. 'Paola Rossi' o 'Maria Paola Rossi')",
+                    variable=var,
+                    value="last",
+                ).pack(anchor="w", padx=20, pady=2)
+
+                ttk.Label(
+                    dlg,
+                    text=(
+                        "Nota: se il cognome è composto (es. 'De Luca'), questa scelta può non essere affidabile;\n"
+                        "se possibile usa colonne separate per Nome e Cognome."
+                    ),
+                    foreground="#666",
+                ).pack(padx=10, pady=(6, 0))
                 btn_frame = ttk.Frame(dlg)
                 btn_frame.pack(pady=10)
                 res = {}
@@ -833,10 +858,12 @@ class ImportWizard:
             duplicate_strategy = None  # 'update_empty' or 'overwrite' or 'status_only'
             res = messagebox.askyesnocancel(
                 "Modalità aggiornamento",
-                "Scegli modalità di aggiornamento:\n"
-                "'Sì' = Aggiorna solo Stato e Voto\n"
-                "'No' = Alla prima anomalia scegli tra: Aggiorna solo i campi vuoti / Sovrascrivi tutti i campi\n"
-                "'Annulla' = Annulla importazione"
+                "Come vuoi gestire i soci già presenti (duplicati)?\n\n"
+                "Premi 'Sì' per aggiornare SOLO 'Stato' e 'Voto' (non modifica gli altri campi).\n\n"
+                "Premi 'No' per decidere caso per caso: al primo duplicato ti verrà chiesto se\n"
+                "- aggiornare solo i campi vuoti\n"
+                "- sovrascrivere tutti i campi\n\n"
+                "Premi 'Annulla' per interrompere l'importazione."
             )
             if res is None:
                 messagebox.showinfo("Importazione", "Importazione annullata dall'utente.")
@@ -874,8 +901,11 @@ class ImportWizard:
                         if duplicate_strategy is None:
                             res = messagebox.askyesnocancel(
                                 "Duplicato trovato",
-                                "È stato trovato un socio con la stessa 'matricola'.\n"
-                                "Scegli: 'Sì' = Aggiorna solo i campi vuoti; 'No' = Sovrascrivi tutti i campi; 'Annulla' = Interrompi importazione."
+                                "È stato trovato un socio con la stessa 'matricola'.\n\n"
+                                "Come vuoi aggiornare i dati?\n\n"
+                                "Premi 'Sì' per aggiornare SOLO i campi vuoti (non sovrascrive quelli già compilati).\n\n"
+                                "Premi 'No' per SOVRASCRIVERE tutti i campi con i valori del CSV.\n\n"
+                                "Premi 'Annulla' per interrompere l'importazione."
                             )
                             if res is None:
                                 messagebox.showinfo("Importazione", "Importazione annullata dall'utente.")

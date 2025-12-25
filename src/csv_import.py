@@ -208,7 +208,8 @@ def apply_mapping(rows: list, mapping: Dict[str, Optional[str]]) -> list:
         mapped_row = {}
         for target_field, csv_column in mapping.items():
             if csv_column and csv_column in row:
-                value = row[csv_column].strip()
+                raw_value = row.get(csv_column)
+                value = "" if raw_value is None else str(raw_value).strip()
                 if target_field in ("attivo", "voto"):
                     mapped_row[target_field] = _normalize_bool_value(value)
                 else:

@@ -18,7 +18,9 @@ Notes:
 param(
     [string]$EntryScript = "main.py",
     [string]$ExeName = "GestioneSociPortable",
-    [switch]$Windowed
+    [switch]$Windowed,
+    [string]$SeedDataDir = "data_seed_portable",
+    [string]$DistFolderName = ""
 )
 
 function Write-Info($m) { Write-Host "[INFO] $m" -ForegroundColor Cyan }
@@ -62,22 +64,32 @@ try {
 
 # Prepare output directory
 $ts = Get-Date -Format yyyyMMdd_HHmmss
-$distBase = Join-Path $src "dist_portable_$ts"
-New-Item -ItemType Directory -Path $distBase | Out-Null
+$distRoot = Join-Path $repoRoot "dist_portable"
+New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
+$distBase = if ([string]::IsNullOrWhiteSpace($DistFolderName)) {
+    Join-Path $distRoot "dist_portable_$ts"
+} else {
+    Join-Path $distRoot $DistFolderName
+}
+New-Item -ItemType Directory -Path $distBase -Force | Out-Null
 
 # Build arguments
 $buildArgs = @('--noconfirm','--onefile','--name', $ExeName)
 if ($Windowed) { $buildArgs += '--windowed' }
 
-# Include data directory as relative data (source;destination) for PyInstaller
-# Note: on Windows use a semicolon to separate source and target inside the single --add-data argument
-if (Test-Path (Join-Path $src 'data')) {
-    $dataArg = "data;data"
-    $buildArgs += "--add-data";
-    $buildArgs += $dataArg
-    Write-Info "Including 'data' folder in bundle (will be extracted at runtime)."
-} else {
-    Write-Warn "No 'data' folder found; the executable will not include the DB or data files."
+function Copy-SeedData([string]$seedDirName, [string]$destDir) {
+    $seedPath = Join-Path $src $seedDirName
+    if (-not (Test-Path $seedPath)) {
+        Write-Warn "Seed data folder '$seedDirName' not found in $src. Skipping seed data copy."
+        return
+    }
+    $destData = Join-Path $destDir 'data'
+    if (Test-Path $destData) {
+        Remove-Item -Recurse -Force $destData
+    }
+    New-Item -ItemType Directory -Path $destData -Force | Out-Null
+    Copy-Item -Path (Join-Path $seedPath '*') -Destination $destData -Recurse -Force
+    Write-Info "Seed data copied to: $destData"
 }
 
 # Output to a temporary build dir to avoid polluting workspace
@@ -107,8 +119,10 @@ if ($exit -ne 0) {
     exit 1
 }
 
+Copy-SeedData $SeedDataDir $distBase
+
 Write-Info "Build complete. Dist directory: $distBase"
-Write-Info "If you included 'data', copy or keep your 'data\soci.db' next to the EXE to use your DB."
+Write-Info "Portable folder contains EXE + seeded 'data' (no soci.db) for a clean first-run test."
 
 Pop-Location
 Write-Host "Done." -ForegroundColor Green
