@@ -92,8 +92,8 @@ function Copy-SeedData([string]$seedDirName, [string]$destDir) {
     Write-Info "Seed data copied to: $destData"
 }
 
-# Output to a temporary build dir to avoid polluting workspace
-$workpath = Join-Path $src 'build_pyinstaller'
+# Output to a temporary build dir to avoid polluting src/
+$workpath = Join-Path $repoRoot 'artifacts\build_pyinstaller'
 if (Test-Path $workpath) { Remove-Item $workpath -Recurse -Force }
 
 Write-Info "Running PyInstaller... this may take a while"

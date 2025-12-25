@@ -9,10 +9,12 @@ src/__pycache__/
 
 # Build artifacts / portable outputs
 dist_portable/
+artifacts/dist_portable/
 src/dist_portable_*/
 src/dist/
 src/build/
 src/build_pyinstaller/
+artifacts/build_pyinstaller/
 
 # Logs / local artifacts
 *.log

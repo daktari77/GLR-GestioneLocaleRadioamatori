@@ -1,0 +1,19 @@
+{
+  "nome_sezione": "",
+  "codice_sezione": "",
+  "sede_operativa": "",
+  "sede_legale": "",
+  "indirizzo_postale": "",
+  "telefono": "",
+  "email": "",
+  "sito_web": "",
+  "coordinate_bancarie": "",
+  "recapiti": "",
+  "cd_componenti": "",
+  "privacy_validita_anni": 2,
+  "thunderbird_path": "",
+  "backup_dir": "",
+  "backup_repo_dir": "",
+  "cd_triennio": "",
+  "custom_role_options": []
+}
