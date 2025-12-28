@@ -23,7 +23,7 @@ class BatchFieldEditDialog(tk.Toplevel):
             "key": "socio",
             "label": "Tipo socio",
             "type": "combo",
-            "options": ("", "HAM", "RCL", "THR"),
+            "options": ("", "ORD", "RCL", "THR"),
         },
         {
             "key": "cd_ruolo",

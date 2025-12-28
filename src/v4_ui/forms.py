@@ -33,6 +33,11 @@ TAG_TEXT = "#182040"
 class RoleTagEditor(tk.Frame):
     """Simple tag-style editor for selecting multiple roles."""
 
+    # Uso:
+    # - mantiene una lista `roles` selezionate e fornisce UI leggera per aggiungerle/rimuoverle
+    # - non fa persistenza: restituisce la lista con `get_roles()` che il chiamante salva
+    # - l'editor opera su widget nativi per minimizzare dipendenze da ttk tema
+
     def __init__(
         self,
         parent,
@@ -91,6 +96,9 @@ class RoleTagEditor(tk.Frame):
             self._placeholder = tk.Label(self.tags_frame, text="Nessun ruolo", font=LABEL_FONT, bg=self._bg, fg=self._tag_text)
             self._placeholder.pack(anchor="w")
             return
+        # Renderizza ogni ruolo come piccola etichetta con bottone di rimozione.
+        # L'uso di widget nativi (Frame/Label/Button) aiuta a mantenere colori
+        # coerenti con lo sfondo personalizzato della sezione.
         for role in self.roles:
             tag = tk.Frame(
                 self.tags_frame,
@@ -144,6 +152,11 @@ class RoleTagEditor(tk.Frame):
 
 class MemberForm(ttk.Frame):
     """Fixed member data form with logical grid layout - NO SCROLLING"""
+
+    # Responsabilità principali:
+    # - costruire il layout compatto del form (più sezioni, campi etichettati)
+    # - validare e fornire i valori tramite `get_values()` / `set_values()`
+    # - non effettua direttamente operazioni DB (chiama la UI padre per salvarle)
 
     def __init__(self, parent, *, cfg: dict | None = None, **kwargs):
         super().__init__(parent, **kwargs)
@@ -226,6 +239,8 @@ class MemberForm(ttk.Frame):
         row = 0
         
         # === SECTION 1: IDENTIFICAZIONE (full width, reduced padding) ===
+        # Nota: il form è progettato per non scrollare; se si aggiungono molti campi
+        # valutare di spostare alcune sezioni in Toplevel o introdurre una scrollbar.
         section1 = ttk.LabelFrame(main_frame, text="Identificazione", padding=5, style=self._section_styles["identificazione"])
         self._apply_section_metadata(section1, "identificazione")
         section1.grid(row=row, column=0, columnspan=2, sticky='ew', padx=3, pady=2)
@@ -234,20 +249,6 @@ class MemberForm(ttk.Frame):
         self._add_field(section1, 1, 0, "nominativo", "Nominativo:", width=10)
         self._add_field(section1, 1, 2, "nominativo2", "Nominativo 2:", width=10)
         self._add_field(section1, 0, 2, "familiare", "Familiare:", width=12)
-
-        self._create_label(section1, "Tipo socio:").grid(row=0, column=4, sticky='w', padx=3, pady=1)
-        socio_var = tk.StringVar()
-        socio_combo = ttk.Combobox(
-            section1,
-            textvariable=socio_var,
-            values=("", "HAM", "RCL", "THR"),
-            state="readonly",
-            width=8
-        )
-        socio_combo.configure(font=INPUT_FONT)
-        socio_combo.grid(row=0, column=5, sticky='w', padx=3, pady=1)
-        self.widgets['socio'] = socio_var
-        section1.columnconfigure(5, weight=1)
 
         # === SECTION 1B: CONTATTI (aligned to the right of Identificazione) ===
         section_contatti = ttk.LabelFrame(main_frame, text="Contatti", padding=5, style=self._section_styles["contatti"])
@@ -312,6 +313,20 @@ class MemberForm(ttk.Frame):
             entry.grid(row=0, column=col + 1, sticky='w', padx=2, pady=2)
             self.widgets[field] = entry
             section5.columnconfigure(col + 1, weight=0)
+
+        # Tipo socio subito dopo Q2
+        self._create_label(section5, "Tipo socio:").grid(row=0, column=9, sticky='w', padx=6, pady=2)
+        socio_var = tk.StringVar()
+        socio_combo = ttk.Combobox(
+            section5,
+            textvariable=socio_var,
+            values=("", "HAM", "RCL", "THR", "ORD"),
+            state="readonly",
+            width=8
+        )
+        socio_combo.configure(font=INPUT_FONT)
+        socio_combo.grid(row=0, column=10, sticky='w', padx=3, pady=2)
+        self.widgets['socio'] = socio_var
 
         # Row 0: Stato combobox allineato con i flag di stato
         self._create_label(section5, "Stato:").grid(row=0, column=11, sticky='w', padx=6, pady=2)
@@ -533,8 +548,8 @@ class MemberForm(ttk.Frame):
                     return False, str(e)
         
                 socio_val = values.get("socio")
-                if socio_val and socio_val not in {"HAM", "RCL", "THR"}:
-                    return False, "Tipo socio non valido (HAM, RCL, THR)"
+                if socio_val and socio_val not in {"HAM", "RCL", "THR", "ORD"}:
+                    return False, "Tipo socio non valido (HAM, RCL, THR, ORD)"
         
         return True, "OK"
 

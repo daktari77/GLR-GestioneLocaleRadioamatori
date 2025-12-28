@@ -327,9 +327,9 @@ class TestSocioField(unittest.TestCase):
 
     def test_valid_socio_values(self):
         """Accepted socio values should be normalized to uppercase."""
-        for value in ["ham", "RCL", "thr"]:
+        for value in ["ham", "RCL", "thr", "ord"]:
             member = Member(nome="Test", cognome="User", socio=value)
-            self.assertIn(member.socio, {"HAM", "RCL", "THR"})
+            self.assertIn(member.socio, {"HAM", "RCL", "THR", "ORD"})
 
     def test_invalid_socio_value(self):
         """Invalid socio values should raise an error."""

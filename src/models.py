@@ -166,9 +166,9 @@ class Member:
             self.socio = None
             return
 
-        allowed = {"HAM", "RCL", "THR"}
+        allowed = {"HAM", "RCL", "THR", "ORD"}
         if socio not in allowed:
-            raise InvalidFormatError("socio", "Valori validi: HAM, RCL, THR")
+            raise InvalidFormatError("socio", "Valori validi: HAM, RCL, THR, ORD")
 
         self.socio = socio
     

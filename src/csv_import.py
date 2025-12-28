@@ -31,7 +31,7 @@ TARGET_FIELDS = [
     ("attivo", "Attivo (Sì/No)"),
     ("voto", "Voto (1/0, Sì/No)"),
     ("familiare", "Familiare (matricola)"),
-    ("socio", "Tipo socio (HAM/RCL/THR)"),
+    ("socio", "Tipo socio (HAM/RCL/THR/ORD)"),
     ("q0", "Q0 (causale anno corrente)"),
     ("q1", "Q1 (causale anno -1)"),
     ("q2", "Q2 (causale anno -2)"),

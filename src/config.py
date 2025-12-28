@@ -11,7 +11,7 @@ from datetime import datetime
 # Versione / Build
 # --------------------------
 APP_NAME = "GLR - Gestione Locale Radioamatori"
-APP_VERSION = "0.4.2c"
+APP_VERSION = "0.4.2d"
 __version__ = APP_VERSION
 AUTHOR = "Michele Martino - IU2GLR"
 
@@ -97,6 +97,18 @@ DEFAULT_CONFIG = {
     # Repository secondario per backup (es. cartella su drive cloud)
     # Se valorizzato, i backup creati localmente verranno copiati anche qui.
     "backup_repo_dir": "",
+
+    # Ruoli/stati socio personalizzabili (Preferences)
+    "custom_role_options": [],
+
+    # Ruoli considerati "manager" (usati ad esempio per filtri/target email)
+    # Una voce per riga nelle Preferenze.
+    "manager_roles": [
+        "Manager Ponti",
+        "Manager Sala Radio",
+        "Manager HF",
+        "Manager VHF e superiori",
+    ],
 }
 
 
