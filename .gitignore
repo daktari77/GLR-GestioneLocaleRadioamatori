@@ -8,6 +8,7 @@ src/__pycache__/
 .venv_old/
 
 # Build artifacts / portable outputs
+artifacts/
 dist_portable/
 artifacts/dist_portable/
 src/dist_portable_*/
