@@ -21,6 +21,12 @@ from config import (
 from logger import setup_logger
 logger = setup_logger(APP_LOG, APP_VERSION)
 
+# Ensure a stable working directory so legacy relative paths keep working
+try:
+    os.chdir(BASE_DIR)
+except Exception as exc:  # pragma: no cover
+    logger.warning("Impossibile impostare la cartella di lavoro su BASE_DIR (%s): %s", BASE_DIR, exc)
+
 # Setup module dependencies
 from database import set_db_path, init_db
 from causali import set_causali_path

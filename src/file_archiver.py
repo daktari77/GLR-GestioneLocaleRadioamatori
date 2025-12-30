@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """Small helper to archive files into managed folders using the same naming convention.
 
-Naming convention: 10-hex token + original extension (lowercased).
+Naming convention: <hex token> + original extension (lowercased).
+
+By default the token is 10 hex chars (historical behavior for member documents).
+Some areas (e.g. section documents) may use a different length to distinguish.
 """
 
 from __future__ import annotations
@@ -11,11 +14,19 @@ import shutil
 from pathlib import Path
 
 
-def unique_hex_filename(directory: Path, extension: str) -> str:
+def _hex_token(*, length: int) -> str:
+    if length < 1:
+        length = 1
+    # token_hex(n) yields 2*n hex chars
+    nbytes = max(1, (length + 1) // 2)
+    return secrets.token_hex(nbytes)[:length]
+
+
+def unique_hex_filename(directory: Path, extension: str, length: int = 10) -> str:
     directory.mkdir(parents=True, exist_ok=True)
     ext = (extension or "").lower()
     while True:
-        token = secrets.token_hex(5)  # 10 hex chars
+        token = _hex_token(length=length)
         candidate = f"{token}{ext}"
         if not (directory / candidate).exists():
             return candidate

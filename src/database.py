@@ -346,10 +346,20 @@ CREATE TABLE IF NOT EXISTS ponti_documents (
 CREATE_SECTION_DOCUMENTS = """
 CREATE TABLE IF NOT EXISTS section_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- Allineamento con `documenti` (soci): stesso campo socio_id (qui NULL)
+    socio_id INTEGER,
     hash_id TEXT NOT NULL UNIQUE,
+    -- Campi uniformati a `documenti` (soci)
+    nome_file TEXT,
+    percorso TEXT,
+    tipo TEXT,
     categoria TEXT,
     descrizione TEXT,
-    original_name TEXT,
+    data_caricamento TEXT,
+    -- Campi aggiuntivi (documenti ufficiali / verbali)
+    protocollo TEXT,
+    verbale_numero TEXT,
+    -- Campi legacy / compatibilita'
     stored_name TEXT,
     relative_path TEXT NOT NULL,
     uploaded_at TEXT,
@@ -398,7 +408,9 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_ponti_auth_scadenza ON ponti_authorizations(data_scadenza)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_interventi_data ON ponti_interventi(data)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_section_documents_relative_path ON section_documents(relative_path) WHERE deleted_at IS NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_section_documents_percorso ON section_documents(percorso) WHERE deleted_at IS NULL",
     "CREATE INDEX IF NOT EXISTS idx_section_documents_categoria ON section_documents(categoria)",
+    "CREATE INDEX IF NOT EXISTS idx_section_documents_data ON section_documents(data_caricamento)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_soci_ruoli_unique ON soci_ruoli(socio_id, ruolo)",
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_item ON magazzino_loans(item_id)",
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_active ON magazzino_loans(item_id, data_reso)"
@@ -437,6 +449,27 @@ def init_db():
         # Ensure numero_cd column exists in cd_riunioni
         _ensure_column(conn, "cd_riunioni", "numero_cd", "TEXT")
         conn.execute(CREATE_CD_DELIBERE)
+        # Best-effort migration for older DBs created before some CD columns existed
+        _ensure_column(conn, "cd_delibere", "data_votazione", "TEXT")
+        _ensure_column(conn, "cd_delibere", "favorevoli", "INTEGER")
+        _ensure_column(conn, "cd_delibere", "contrari", "INTEGER")
+        _ensure_column(conn, "cd_delibere", "astenuti", "INTEGER")
+        _ensure_column(conn, "cd_delibere", "allegato_path", "TEXT")
+        _ensure_column(conn, "cd_delibere", "note", "TEXT")
+        _ensure_column(conn, "cd_delibere", "created_at", "TEXT")
+
+        # If a legacy "data" column exists, backfill data_votazione when empty.
+        try:
+            if _has_column(conn, "cd_delibere", "data") and _has_column(conn, "cd_delibere", "data_votazione"):
+                conn.execute(
+                    """
+                    UPDATE cd_delibere
+                    SET data_votazione = NULLIF(TRIM(data), '')
+                    WHERE (data_votazione IS NULL OR TRIM(data_votazione) = '')
+                    """
+                )
+        except sqlite3.OperationalError as exc:
+            logger.warning("Impossibile eseguire backfill cd_delibere: %s", exc)
         conn.execute(CREATE_CD_VERBALI)
         conn.execute(CREATE_CALENDAR_EVENTS)
         conn.execute(CREATE_PONTI)
@@ -446,6 +479,63 @@ def init_db():
         conn.execute(CREATE_PONTI_INTERVENTI)
         conn.execute(CREATE_PONTI_DOCUMENTS)
         conn.execute(CREATE_SECTION_DOCUMENTS)
+        # Uniforma schema section_documents a quello dei documenti soci (best effort su DB esistenti)
+        _ensure_column(conn, "section_documents", "socio_id", "INTEGER")
+        _ensure_column(conn, "section_documents", "nome_file", "TEXT")
+        _ensure_column(conn, "section_documents", "percorso", "TEXT")
+        _ensure_column(conn, "section_documents", "tipo", "TEXT")
+        _ensure_column(conn, "section_documents", "categoria", "TEXT")
+        _ensure_column(conn, "section_documents", "descrizione", "TEXT")
+        _ensure_column(conn, "section_documents", "data_caricamento", "TEXT")
+        _ensure_column(conn, "section_documents", "protocollo", "TEXT")
+        _ensure_column(conn, "section_documents", "verbale_numero", "TEXT")
+
+        # Backfill campi uniformati (solo se vuoti)
+        try:
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET categoria = COALESCE(NULLIF(TRIM(categoria), ''), 'Altro')
+                WHERE categoria IS NULL OR TRIM(categoria) = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET descrizione = COALESCE(descrizione, '')
+                WHERE descrizione IS NULL
+                """
+            )
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET nome_file = COALESCE(nome_file, NULLIF(TRIM(stored_name), ''))
+                WHERE nome_file IS NULL OR TRIM(nome_file) = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET percorso = COALESCE(percorso, NULLIF(TRIM(relative_path), ''))
+                WHERE percorso IS NULL OR TRIM(percorso) = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET data_caricamento = COALESCE(data_caricamento, NULLIF(TRIM(uploaded_at), ''))
+                WHERE data_caricamento IS NULL OR TRIM(data_caricamento) = ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET tipo = COALESCE(NULLIF(TRIM(tipo), ''), 'documento')
+                WHERE tipo IS NULL OR TRIM(tipo) = ''
+                """
+            )
+        except sqlite3.OperationalError as exc:
+            logger.warning("Impossibile eseguire backfill section_documents: %s", exc)
         conn.execute(CREATE_MAGAZZINO_ITEMS)
         conn.execute(CREATE_MAGAZZINO_LOANS)
         conn.execute(CREATE_SOCI_ROLES)
@@ -493,17 +583,64 @@ def add_section_document_record(
     hash_id: str,
     categoria: str | None,
     descrizione: str | None,
-    original_name: str | None,
-    stored_name: str | None,
-    relative_path: str,
-    uploaded_at: str | None,
+    # Campi uniformati a `documenti` (soci)
+    nome_file: str | None = None,
+    percorso: str | None = None,
+    tipo: str | None = None,
+    data_caricamento: str | None = None,
+    # Campi aggiuntivi
+    protocollo: str | None = None,
+    verbale_numero: str | None = None,
+    # Legacy
+    original_name: str | None = None,
+    stored_name: str | None = None,
+    relative_path: str | None = None,
+    uploaded_at: str | None = None,
 ) -> int | None:
     """Insert a new section document registry record (soft-delete aware)."""
+    percorso_value = (percorso or "").strip()
+    relative_path_value = (relative_path or "").strip()
+
+    # Keep semantics aligned with member docs:
+    # - percorso: absolute path when available
+    # - relative_path: relative to section root when available
+    # For legacy callers that only provide one field, fall back best-effort.
+    if not relative_path_value:
+        relative_path_value = percorso_value
+    if not percorso_value:
+        percorso_value = relative_path_value
+
+        # Removed os.path check for normalization
+    # `original_name` is kept in the function signature for backward compatibility,
+    # but it is no longer persisted in DB (replaced by `descrizione`).
+    nome_file_value = (nome_file or stored_name or "").strip() or None
+    tipo_value = (tipo or "documento").strip() or "documento"
+    data_value = (data_caricamento or uploaded_at or None)
+
+    # If no description provided, use the passed original_name as a best-effort replacement.
+    descrizione_value = (descrizione or "").strip()
+    if not descrizione_value and original_name:
+        descrizione_value = str(original_name).strip()
+
     sql = """
     INSERT INTO section_documents
-        (hash_id, categoria, descrizione, original_name, stored_name, relative_path, uploaded_at, deleted_at)
+        (
+            hash_id,
+            nome_file,
+            percorso,
+            tipo,
+            categoria,
+            descrizione,
+            data_caricamento,
+            protocollo,
+            verbale_numero,
+            stored_name,
+            relative_path,
+            uploaded_at,
+            deleted_at
+        )
     VALUES
-        (?, ?, ?, ?, ?, ?, ?, NULL)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     """
     try:
         with get_connection() as conn:
@@ -512,12 +649,17 @@ def add_section_document_record(
                 sql,
                 (
                     hash_id,
+                    nome_file_value,
+                    percorso_value,
+                    tipo_value,
                     categoria,
-                    descrizione,
-                    original_name,
+                    descrizione_value,
+                    data_value,
+                    (protocollo or None),
+                    (verbale_numero or None),
                     stored_name,
-                    relative_path,
-                    uploaded_at,
+                    relative_path_value,
+                    uploaded_at or data_value,
                 ),
             )
             return cur.lastrowid
@@ -529,10 +671,24 @@ def list_section_document_records(*, include_deleted: bool = False) -> list[dict
     where = "" if include_deleted else "WHERE deleted_at IS NULL"
     rows = fetch_all(
         f"""
-        SELECT id, hash_id, categoria, descrizione, original_name, stored_name, relative_path, uploaded_at, deleted_at
+        SELECT
+            id,
+            hash_id,
+            nome_file,
+            percorso,
+            tipo,
+            categoria,
+            descrizione,
+            data_caricamento,
+            protocollo,
+            verbale_numero,
+            stored_name,
+            relative_path,
+            uploaded_at,
+            deleted_at
         FROM section_documents
         {where}
-        ORDER BY categoria COLLATE NOCASE, COALESCE(uploaded_at, '') DESC, id DESC
+        ORDER BY categoria COLLATE NOCASE, COALESCE(data_caricamento, uploaded_at, '') DESC, id DESC
         """
     )
     return [dict(r) for r in rows]
@@ -541,13 +697,27 @@ def list_section_document_records(*, include_deleted: bool = False) -> list[dict
 def get_section_document_by_relative_path(relative_path: str) -> dict | None:
     row = fetch_one(
         """
-        SELECT id, hash_id, categoria, descrizione, original_name, stored_name, relative_path, uploaded_at, deleted_at
+        SELECT
+            id,
+            hash_id,
+            nome_file,
+            percorso,
+            tipo,
+            categoria,
+            descrizione,
+            data_caricamento,
+            protocollo,
+            verbale_numero,
+            stored_name,
+            relative_path,
+            uploaded_at,
+            deleted_at
         FROM section_documents
-        WHERE relative_path = ?
+        WHERE relative_path = ? OR percorso = ?
         ORDER BY id DESC
         LIMIT 1
         """,
-        (relative_path,),
+        (relative_path, relative_path),
     )
     return dict(row) if row else None
 
@@ -555,25 +725,53 @@ def get_section_document_by_relative_path(relative_path: str) -> dict | None:
 def update_section_document_record(
     record_id: int,
     *,
+    hash_id: str | None = None,
     categoria: str | None = None,
     descrizione: str | None = None,
+    protocollo: str | None = None,
+    verbale_numero: str | None = None,
     relative_path: str | None = None,
+    percorso: str | None = None,
     stored_name: str | None = None,
+    nome_file: str | None = None,
+    tipo: str | None = None,
+    data_caricamento: str | None = None,
 ) -> bool:
     updates: list[str] = []
     params: list[object] = []
+    if hash_id is not None:
+        updates.append("hash_id = ?")
+        params.append(hash_id)
     if categoria is not None:
         updates.append("categoria = ?")
         params.append(categoria)
     if descrizione is not None:
         updates.append("descrizione = ?")
         params.append(descrizione)
+    if protocollo is not None:
+        updates.append("protocollo = ?")
+        params.append(protocollo)
+    if verbale_numero is not None:
+        updates.append("verbale_numero = ?")
+        params.append(verbale_numero)
     if relative_path is not None:
         updates.append("relative_path = ?")
         params.append(relative_path)
+    if percorso is not None:
+        updates.append("percorso = ?")
+        params.append(percorso)
     if stored_name is not None:
         updates.append("stored_name = ?")
         params.append(stored_name)
+    if nome_file is not None:
+        updates.append("nome_file = ?")
+        params.append(nome_file)
+    if tipo is not None:
+        updates.append("tipo = ?")
+        params.append(tipo)
+    if data_caricamento is not None:
+        updates.append("data_caricamento = ?")
+        params.append(data_caricamento)
     if not updates:
         return False
     params.append(record_id)

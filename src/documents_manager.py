@@ -22,6 +22,19 @@ _member_token_cache: dict[int, str] = {}
 _HEX_DIGITS = {"0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f","A","B","C","D","E","F"}
 DOCUMENT_INDEX_FILENAME = "elenco_documenti.txt"
 
+
+def _get_custom_member_categories() -> list[str]:
+    try:
+        from config_manager import load_config
+
+        cfg = load_config()
+        custom = cfg.get("custom_document_categories") if isinstance(cfg, dict) else None
+        if not isinstance(custom, list):
+            return []
+        return [str(c).strip() for c in custom if str(c).strip()]
+    except Exception:
+        return []
+
 def ensure_docs_dir():
     """Ensure documents directory exists."""
     Path(DOCS_BASE_DIR).mkdir(parents=True, exist_ok=True)
@@ -48,7 +61,7 @@ def upload_document(
         return False, "File non trovato"
     
     member_dir = get_member_docs_dir(socio_id)
-    categoria_value = ensure_category(categoria)
+    categoria_value = ensure_category(categoria, extra_allowed=_get_custom_member_categories())
 
     description_value = (descrizione or "").strip() or None
 
@@ -76,6 +89,67 @@ def upload_document(
     except Exception as e:
         logger.error("Failed to upload document: %s", e)
         return False, f"Errore: {str(e)}"
+
+
+def bulk_import_member_documents(
+    socio_id: int,
+    source_dir: str,
+    categoria: str | None,
+    *,
+    move: bool = False,
+) -> tuple[int, int, list[str]]:
+    """Bulk import all files inside a folder for a member.
+
+    Imports are performed per-category as requested by the UI.
+
+    Notes:
+    - Non-recursive: only files directly inside `source_dir` are processed.
+    - If `move=True`, the source file is deleted only after a successful upload.
+
+    Returns:
+        (imported_count, failed_count, details)
+    """
+
+    src_root = (source_dir or "").strip()
+    if not src_root or not os.path.isdir(src_root):
+        raise ValueError("Cartella sorgente non valida")
+
+    normalized_category = ensure_category(categoria, extra_allowed=_get_custom_member_categories())
+    doc_type = "privacy" if normalized_category.lower() == "privacy" else "documento"
+
+    imported = 0
+    failed = 0
+    details: list[str] = []
+
+    try:
+        filenames = sorted(os.listdir(src_root))
+    except OSError as exc:
+        raise RuntimeError(f"Impossibile leggere la cartella: {exc}")
+
+    for name in filenames:
+        src_path = os.path.join(src_root, name)
+        if not os.path.isfile(src_path):
+            continue
+
+        success, msg = upload_document(
+            socio_id,
+            src_path,
+            doc_type,
+            normalized_category,
+            None,
+        )
+        if success:
+            imported += 1
+            if move:
+                try:
+                    os.remove(src_path)
+                except OSError as exc:
+                    details.append(f"{name}: importato ma non spostato ({exc})")
+        else:
+            failed += 1
+            details.append(f"{name}: {msg}")
+
+    return imported, failed, details
 
 def delete_document(socio_id: int, doc_id: int) -> tuple[bool, str]:
     """Delete a document and remove file."""
@@ -124,7 +198,7 @@ def format_file_info(percorso: str) -> str:
 def update_document_category(doc_id: int, categoria: str | None) -> tuple[bool, str]:
     """Update the catalog category stored for a document without renaming the file."""
     try:
-        normalized = ensure_category(categoria)
+        normalized = ensure_category(categoria, extra_allowed=_get_custom_member_categories())
         from database import get_documento_with_member, update_documento_categoria
 
         doc = get_documento_with_member(doc_id)
@@ -164,12 +238,14 @@ def update_document_description(doc_id: int, descrizione: str | None) -> tuple[b
 def relink_missing_documents(new_root: str) -> tuple[int, int, list[str]]:
     """Attempt to fix missing document paths when the base directory changes."""
     from database import get_all_documenti_with_member_names, update_documento_fileinfo
+    from config import BASE_DIR
 
     if not new_root:
         raise ValueError("new_root non valido")
 
+    base_dir = Path(BASE_DIR).expanduser().resolve()
     new_root_path = Path(new_root).expanduser().resolve()
-    old_root_path = Path(DOCS_BASE_DIR).expanduser().resolve()
+    old_root_path = (base_dir / Path(DOCS_BASE_DIR)).expanduser().resolve()
 
     updated = 0
     unresolved = 0
@@ -179,8 +255,19 @@ def relink_missing_documents(new_root: str) -> tuple[int, int, list[str]]:
     for row in rows:
         doc = dict(row)
         current_path = doc.get("percorso") or ""
-        if current_path and os.path.exists(current_path):
-            continue
+
+        def _exists_under_base(p: Path) -> bool:
+            try:
+                if p.is_absolute():
+                    return p.exists()
+                return (base_dir / p).exists()
+            except Exception:
+                return False
+
+        if current_path:
+            normalized = Path(os.path.normpath(str(current_path).strip()))
+            if _exists_under_base(normalized):
+                continue
 
         socio_id = doc.get("socio_id")
         nominativo = doc.get("nominativo") or f"Socio #{socio_id or '?'}"
@@ -190,16 +277,30 @@ def relink_missing_documents(new_root: str) -> tuple[int, int, list[str]]:
             unresolved_details.append(f"ID {doc.get('id')} · {nominativo} · percorso non registrato")
             continue
 
-        source_path = Path(current_path)
+        source_path = Path(os.path.normpath(str(current_path).strip()))
+        if source_path.is_absolute():
+            source_abs = source_path
+        else:
+            source_abs = (base_dir / source_path).resolve()
         try:
-            relative_path = source_path.relative_to(old_root_path)
+            relative_path = source_abs.relative_to(old_root_path)
         except ValueError:
             relative_path = Path(doc.get("nome_file") or source_path.name)
+
+        # Ensure we don't accidentally join with an absolute path.
+        if relative_path.is_absolute():
+            relative_path = Path(relative_path.name)
 
         candidate = (new_root_path / relative_path).resolve()
         if candidate.exists():
             try:
-                update_documento_fileinfo(int(doc["id"]), doc.get("nome_file") or candidate.name, str(candidate))
+                stored_name = doc.get("nome_file") or candidate.name
+                stored_path: str
+                try:
+                    stored_path = str(candidate.relative_to(base_dir))
+                except Exception:
+                    stored_path = str(candidate)
+                update_documento_fileinfo(int(doc["id"]), stored_name, stored_path)
                 updated += 1
             except Exception as exc:  # pragma: no cover - DB safeguard
                 unresolved += 1

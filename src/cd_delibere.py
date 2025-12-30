@@ -14,6 +14,22 @@ import os
 logger = logging.getLogger("librosoci")
 
 
+def _get_cd_delibere_date_select(conn: sqlite3.Connection) -> str:
+    """Return a SQL expression selecting the delibera date as `data_votazione`.
+
+    Older databases may miss `data_votazione` or use a legacy `data` column.
+    """
+    try:
+        cols = {str(r["name"]).lower() for r in conn.execute("PRAGMA table_info(cd_delibere)")}
+    except Exception:
+        cols = set()
+    if "data_votazione" in cols:
+        return "d.data_votazione AS data_votazione"
+    if "data" in cols:
+        return "d.data AS data_votazione"
+    return "NULL AS data_votazione"
+
+
 def _archive_cd_delibera_attachment(delibera_id: int, source_path: str) -> str:
     from file_archiver import archive_file
 
@@ -61,9 +77,12 @@ def get_all_delibere(meeting_id: int = None) -> List[Dict]:
             logger.warning("Table cd_delibere doesn't exist yet")
             return []
         
+        with get_connection() as conn:
+            date_select = _get_cd_delibere_date_select(conn)
+
         if meeting_id:
-            sql = """
-                SELECT d.id, d.cd_id, d.numero, d.oggetto, d.esito, d.data_votazione, 
+            sql = f"""
+                SELECT d.id, d.cd_id, d.numero, d.oggetto, d.esito, {date_select},
                        d.favorevoli, d.contrari, d.astenuti, d.allegato_path, d.note, d.created_at
                 FROM cd_delibere d
                 WHERE d.cd_id = ?
@@ -71,8 +90,8 @@ def get_all_delibere(meeting_id: int = None) -> List[Dict]:
             """
             rows = fetch_all(sql, (meeting_id,))
         else:
-            sql = """
-                SELECT d.id, d.cd_id, d.numero, d.oggetto, d.esito, d.data_votazione, 
+            sql = f"""
+                SELECT d.id, d.cd_id, d.numero, d.oggetto, d.esito, {date_select},
                        d.favorevoli, d.contrari, d.astenuti, d.allegato_path, d.note, d.created_at
                 FROM cd_delibere d
                 ORDER BY d.cd_id DESC, d.numero DESC
@@ -93,10 +112,12 @@ def get_delibera_by_id(delibera_id: int) -> Optional[Dict]:
     Returns:
         Delibera dictionary or None if not found
     """
-    from database import fetch_one
+    from database import fetch_one, get_connection
     try:
-        sql = """
-            SELECT id, cd_id, numero, oggetto, esito, data_votazione, 
+        with get_connection() as conn:
+            date_select = _get_cd_delibere_date_select(conn).replace("d.", "")
+        sql = f"""
+            SELECT id, cd_id, numero, oggetto, esito, {date_select},
                    favorevoli, contrari, astenuti, allegato_path, note, created_at
             FROM cd_delibere WHERE id = ?
         """

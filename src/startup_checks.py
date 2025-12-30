@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import List, Sequence
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger("librosoci")
 
@@ -33,6 +34,33 @@ def collect_startup_issues() -> List[StartupIssue]:
 def _check_missing_documents() -> StartupIssue | None:
     """Ensure every document stored in DB exists on disk."""
     from database import get_all_documenti_with_member_names
+    from config import BASE_DIR
+
+    base_dir = Path(BASE_DIR)
+    project_root = base_dir.parent if base_dir.name.lower() == "src" else None
+
+    def _doc_path_exists(raw: str) -> bool:
+        normalized = (raw or "").strip()
+        if not normalized:
+            return False
+        try:
+            p = Path(os.path.normpath(normalized))
+        except Exception:
+            return False
+
+        if p.is_absolute():
+            return p.exists()
+
+        # Stored paths are historically relative (e.g. data\documents\...).
+        # Resolve them against the application BASE_DIR (stable across cwd changes).
+        if (base_dir / p).exists():
+            return True
+
+        # Dev layout compatibility: DB/logs may live under src/data while docs live under project-root/data.
+        if project_root and (project_root / p).exists():
+            return True
+
+        return False
 
     try:
         rows = get_all_documenti_with_member_names()
@@ -46,7 +74,7 @@ def _check_missing_documents() -> StartupIssue | None:
     missing: List[str] = []
     for doc in rows:
         path = (doc.get("percorso") or "").strip()
-        if path and os.path.exists(path):
+        if _doc_path_exists(path):
             continue
 
         nominativo = (doc.get("nominativo") or "").strip()

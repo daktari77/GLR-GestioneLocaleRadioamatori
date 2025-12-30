@@ -109,7 +109,8 @@ class TestSectionDocumentsRegistry(unittest.TestCase):
             hash_id="deadbeef00",
             categoria="Verbali CD",
             descrizione="Prova",
-            original_name="verbale.docx",
+            protocollo="PROT-123/2025",
+            verbale_numero="7",
             stored_name="deadbeef00.docx",
             relative_path="verbali_cd/deadbeef00.docx",
             uploaded_at="2025-12-24T10:00:00",
@@ -122,11 +123,24 @@ class TestSectionDocumentsRegistry(unittest.TestCase):
 
         found = get_section_document_by_relative_path("verbali_cd/deadbeef00.docx")
         self.assertIsNotNone(found)
+        # Colonne uniformate devono essere valorizzate via backfill/insert
+        self.assertTrue((found.get("percorso") or "").endswith("verbali_cd/deadbeef00.docx"))
+        self.assertEqual(found.get("tipo"), "documento")
+        self.assertEqual(found.get("protocollo"), "PROT-123/2025")
+        self.assertEqual(found.get("verbale_numero"), "7")
 
-        ok = update_section_document_record(int(found["id"]), categoria="Bilanci", descrizione="Aggiornata")
+        ok = update_section_document_record(
+            int(found["id"]),
+            categoria="Bilanci",
+            descrizione="Aggiornata",
+            protocollo="PROT-999/2025",
+            verbale_numero="8",
+        )
         self.assertTrue(ok)
         found2 = get_section_document_by_relative_path("verbali_cd/deadbeef00.docx")
         self.assertEqual(found2["categoria"], "Bilanci")
+        self.assertEqual(found2.get("protocollo"), "PROT-999/2025")
+        self.assertEqual(found2.get("verbale_numero"), "8")
 
         self.assertTrue(soft_delete_section_document_record(int(found2["id"])))
         rows_after = list_section_document_records(include_deleted=False)

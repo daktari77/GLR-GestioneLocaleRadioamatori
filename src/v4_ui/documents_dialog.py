@@ -14,7 +14,8 @@ import logging
 
 logger = logging.getLogger("librosoci")
 
-from documents_catalog import DOCUMENT_CATEGORIES, DEFAULT_DOCUMENT_CATEGORY
+from documents_catalog import DEFAULT_DOCUMENT_CATEGORY
+from preferences import get_document_categories
 from .document_metadata_prompt import ask_document_metadata
 
 class DocumentsDialog(tk.Toplevel):
@@ -87,6 +88,7 @@ class DocumentsDialog(tk.Toplevel):
         toolbar.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(toolbar, text="Carica documento", command=self._upload_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Carica privacy", command=self._upload_privacy).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Importa massivo", command=self._bulk_import).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Visualizza", command=self._view_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Modifica", command=self._edit_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_document).pack(side=tk.LEFT, padx=2)
@@ -210,7 +212,8 @@ class DocumentsDialog(tk.Toplevel):
             return
         values = self.tv_docs.item(selection[0], "values")
         selected_category = values[2] if len(values) > 2 and values[2] else DEFAULT_DOCUMENT_CATEGORY
-        self.category_var.set(selected_category if selected_category in DOCUMENT_CATEGORIES else DEFAULT_DOCUMENT_CATEGORY)
+        categories = get_document_categories()
+        self.category_var.set(selected_category if selected_category in categories else DEFAULT_DOCUMENT_CATEGORY)
 
     def _upload_document(self):
         """Upload a generic document."""
@@ -231,7 +234,7 @@ class DocumentsDialog(tk.Toplevel):
         metadata = ask_document_metadata(
             self,
             title="Dettagli documento",
-            categories=DOCUMENT_CATEGORIES,
+            categories=get_document_categories(),
             default_category=DEFAULT_DOCUMENT_CATEGORY,
             initial_category=self.category_var.get(),
             initial_description="",
@@ -269,7 +272,7 @@ class DocumentsDialog(tk.Toplevel):
         metadata = ask_document_metadata(
             self,
             title="Dettagli modulo privacy",
-            categories=DOCUMENT_CATEGORIES,
+            categories=get_document_categories(),
             default_category=DEFAULT_DOCUMENT_CATEGORY,
             initial_category=self.category_var.get(),
             initial_description="",
@@ -290,6 +293,52 @@ class DocumentsDialog(tk.Toplevel):
         else:
             messagebox.showerror("Errore", msg)
 
+    def _bulk_import(self):
+        from .bulk_import_dialog import BulkImportDialog
+
+        dlg = BulkImportDialog(
+            self,
+            title="Importa documenti (massivo)",
+            categories=get_document_categories(),
+            initial_category=self.category_var.get() or DEFAULT_DOCUMENT_CATEGORY,
+        )
+        self.wait_window(dlg)
+
+        if not dlg.result:
+            return
+        folder, categoria, move = dlg.result
+
+        from documents_manager import bulk_import_member_documents
+
+        try:
+            imported, failed, details = bulk_import_member_documents(
+                self.socio_id,
+                folder,
+                categoria,
+                move=move,
+            )
+        except Exception as exc:
+            messagebox.showerror("Import", f"Errore importazione:\n{exc}")
+            return
+
+        try:
+            if imported > 0 and (categoria or "").strip().lower() == "privacy":
+                from database import set_privacy_signed
+
+                set_privacy_signed(self.socio_id, True)
+        except Exception:
+            pass
+
+        self._refresh_documents()
+
+        if imported == 0 and failed == 0:
+            messagebox.showinfo("Import", "Nessun file trovato nella cartella selezionata.")
+            return
+
+        from .import_report import build_import_summary
+
+        messagebox.showinfo("Import", build_import_summary(imported, failed, details))
+
     def _edit_document(self):
         selection = self.tv_docs.selection()
         if not selection:
@@ -307,7 +356,7 @@ class DocumentsDialog(tk.Toplevel):
         metadata = ask_document_metadata(
             self,
             title="Modifica documento",
-            categories=DOCUMENT_CATEGORIES,
+            categories=get_document_categories(),
             default_category=DEFAULT_DOCUMENT_CATEGORY,
             initial_category=doc.get('categoria') or DEFAULT_DOCUMENT_CATEGORY,
             initial_description=doc.get('descrizione') or "",
@@ -344,20 +393,13 @@ class DocumentsDialog(tk.Toplevel):
 
     def _open_folder(self):
         from documents_manager import get_member_docs_dir
+        from utils import open_path
 
         folder = get_member_docs_dir(self.socio_id)
         if not os.path.isdir(folder):
             messagebox.showwarning("Documenti", "Cartella documenti non trovata")
             return
-        try:
-            if os.name == "nt":
-                os.startfile(folder)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.run(["open", folder], check=False)
-            else:
-                subprocess.run(["xdg-open", folder], check=False)
-        except Exception as exc:
-            messagebox.showerror("Documenti", f"Impossibile aprire la cartella:\n{exc}")
+        open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
     
     def _view_document(self):
         """Open selected document."""
@@ -371,16 +413,12 @@ class DocumentsDialog(tk.Toplevel):
         doc_id = int(selection[0])
         doc = next((d for d in docs if d['id'] == doc_id), None)
         
-        if doc and os.path.exists(doc['percorso']):
-            import os
-            import subprocess
-            try:
-                if os.name == 'nt':
-                    os.startfile(doc['percorso'])
-                else:
-                    subprocess.run(['xdg-open', doc['percorso']], check=True)
-            except Exception as e:
-                messagebox.showerror("Errore", f"Impossibile aprire il documento: {str(e)}")
+        from utils import open_path
+
+        if doc and doc.get('percorso'):
+            ok = open_path(doc['percorso'], on_error=lambda msg: messagebox.showerror("Errore", msg))
+            if not ok:
+                self._refresh_documents()
         else:
             messagebox.showerror("Errore", "File non trovato")
     

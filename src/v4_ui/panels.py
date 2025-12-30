@@ -11,11 +11,12 @@ import os
 import subprocess
 import sys
 import csv
+from collections.abc import Callable
 
-from documents_catalog import DOCUMENT_CATEGORIES, DEFAULT_DOCUMENT_CATEGORY
-from .document_metadata_prompt import ask_document_metadata
+from documents_catalog import DEFAULT_DOCUMENT_CATEGORY
+from preferences import get_document_categories, get_section_document_categories
+from .document_metadata_prompt import ask_document_metadata, ask_section_document_metadata
 from section_documents import (
-    SECTION_DOCUMENT_CATEGORIES,
     add_section_document,
     delete_section_document,
     ensure_section_index_file,
@@ -52,6 +53,28 @@ class DocumentPanel(ttk.Frame):
         self._build_ui()
         self._update_toolbar_states()
         self.refresh()
+
+    def reload_category_options(self, cfg: dict | None = None):
+        categories = tuple(get_document_categories(cfg))
+        try:
+            self.category_combo["values"] = categories
+        except Exception:
+            pass
+
+        try:
+            self.category_filter_combo["values"] = (self.category_filter_default,) + categories
+        except Exception:
+            pass
+
+        current_upload = (self.category_var.get() or "").strip()
+        if categories and current_upload not in categories:
+            fallback = DEFAULT_DOCUMENT_CATEGORY if DEFAULT_DOCUMENT_CATEGORY in categories else categories[0]
+            self.category_var.set(fallback)
+
+        current_filter = (self.category_filter_var.get() or "").strip()
+        if current_filter and current_filter != self.category_filter_default and current_filter not in categories:
+            self.category_filter_var.set(self.category_filter_default)
+            self._apply_filters()
     
     def _build_filters(self):
         """Create the filter bar for socio/category/search."""
@@ -70,7 +93,7 @@ class DocumentPanel(ttk.Frame):
         self.member_filter_combo.bind("<<ComboboxSelected>>", lambda _e: self._apply_filters())
 
         ttk.Label(filter_frame, text="Categoria:").pack(side=tk.LEFT, padx=(12, 4))
-        category_values = (self.category_filter_default,) + tuple(DOCUMENT_CATEGORIES)
+        category_values = (self.category_filter_default,) + tuple(get_document_categories())
         self.category_filter_combo = ttk.Combobox(
             filter_frame,
             textvariable=self.category_filter_var,
@@ -123,7 +146,7 @@ class DocumentPanel(ttk.Frame):
         self.category_combo = ttk.Combobox(
             member_toolbar,
             textvariable=self.category_var,
-            values=DOCUMENT_CATEGORIES,
+            values=get_document_categories(),
             state="readonly",
             width=24
         )
@@ -460,8 +483,9 @@ class DocumentPanel(ttk.Frame):
         if not doc:
             return
         current_category = doc.get("categoria") or DEFAULT_DOCUMENT_CATEGORY
-        if current_category not in DOCUMENT_CATEGORIES:
-            current_category = DEFAULT_DOCUMENT_CATEGORY
+        categories = tuple(get_document_categories())
+        if categories and current_category not in categories:
+            current_category = DEFAULT_DOCUMENT_CATEGORY if DEFAULT_DOCUMENT_CATEGORY in categories else categories[0]
         self.category_var.set(current_category)
 
     def _add_document(self):
@@ -485,7 +509,7 @@ class DocumentPanel(ttk.Frame):
         metadata = ask_document_metadata(
             self,
             title="Dettagli documento",
-            categories=DOCUMENT_CATEGORIES,
+            categories=get_document_categories(),
             default_category=DEFAULT_DOCUMENT_CATEGORY,
             initial_category=self.category_var.get(),
             initial_description="",
@@ -505,7 +529,12 @@ class DocumentPanel(ttk.Frame):
             messagebox.showerror("Documenti", message)
 
     def _prompt_category_choice(self) -> str | None:
-        dialog = _CategoryChoiceDialog(self, DEFAULT_DOCUMENT_CATEGORY)
+        dialog = _CategoryChoiceDialog(
+            self,
+            initial_category=DEFAULT_DOCUMENT_CATEGORY,
+            categories=get_document_categories(),
+            default_category=DEFAULT_DOCUMENT_CATEGORY,
+        )
         return dialog.result
 
     def _upload_privacy(self):
@@ -528,7 +557,7 @@ class DocumentPanel(ttk.Frame):
         metadata = ask_document_metadata(
             self,
             title="Dettagli modulo privacy",
-            categories=DOCUMENT_CATEGORIES,
+            categories=get_document_categories(),
             default_category=DEFAULT_DOCUMENT_CATEGORY,
             initial_category=self.category_var.get(),
             initial_description="",
@@ -573,7 +602,7 @@ class DocumentPanel(ttk.Frame):
         metadata = ask_document_metadata(
             self,
             title="Modifica documento",
-            categories=DOCUMENT_CATEGORIES,
+            categories=get_document_categories(),
             default_category=DEFAULT_DOCUMENT_CATEGORY,
             initial_category=doc.get("categoria") or DEFAULT_DOCUMENT_CATEGORY,
             initial_description=doc.get("descrizione") or "",
@@ -614,18 +643,16 @@ class DocumentPanel(ttk.Frame):
             return
 
         path = doc.get("percorso") or ""
-        if not path or not os.path.exists(path):
+        if not path:
             messagebox.showerror("Documenti", "File non trovato sul disco")
             self.refresh()
             return
 
-        try:
-            if os.name == "nt":
-                os.startfile(path)  # type: ignore[attr-defined]
-            else:
-                subprocess.run(["xdg-open", path], check=False)
-        except Exception as exc:
-            messagebox.showerror("Documenti", f"Impossibile aprire il documento:\n{exc}")
+        from utils import open_path
+
+        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+        if not ok:
+            self.refresh()
 
     def _open_document_location(self):
         doc = self._selected_doc()
@@ -638,6 +665,12 @@ class DocumentPanel(ttk.Frame):
             messagebox.showerror("Documenti", "Percorso del documento non disponibile")
             return
 
+        # If the file exists, prefer selecting it; otherwise open the folder.
+        from utils import open_path
+
+        if open_path(path, select_target=path, on_error=lambda msg: messagebox.showerror("Documenti", msg)):
+            return
+
         folder = os.path.dirname(path) or os.path.dirname(os.path.abspath(path))
         if not folder:
             messagebox.showerror("Documenti", "Impossibile determinare la cartella del documento")
@@ -647,23 +680,7 @@ class DocumentPanel(ttk.Frame):
             messagebox.showerror("Documenti", "File non trovato sul disco")
             return
 
-        try:
-            if os.name == "nt":
-                if os.path.exists(path):
-                    normalized = os.path.normpath(path)
-                    cmd = f'explorer /select,"{normalized}"'
-                    subprocess.run(cmd, check=False, shell=True)
-                else:
-                    os.startfile(folder)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                if os.path.exists(path):
-                    subprocess.run(["open", "-R", path], check=False)
-                else:
-                    subprocess.run(["open", folder], check=False)
-            else:
-                subprocess.run(["xdg-open", folder], check=False)
-        except Exception as exc:
-            messagebox.showerror("Documenti", f"Impossibile aprire la cartella:\n{exc}")
+        open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
 
     def _delete_document(self):
         doc = self._selected_doc()
@@ -776,14 +793,10 @@ class DocumentPanel(ttk.Frame):
             return
         try:
             from documents_manager import get_member_docs_dir
+            from utils import open_path
 
             folder = get_member_docs_dir(int(member_id))
-            if os.name == "nt":
-                os.startfile(folder)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.run(["open", folder], check=False)
-            else:
-                subprocess.run(["xdg-open", folder], check=False)
+            open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
         except Exception as exc:
             messagebox.showerror("Documenti", f"Impossibile aprire la cartella del socio:\n{exc}")
 
@@ -791,15 +804,24 @@ class DocumentPanel(ttk.Frame):
 class _CategoryChoiceDialog(simpledialog.Dialog):
     """Simple dialog to pick a document category."""
 
-    def __init__(self, parent, initial_category: str):
+    def __init__(self, parent, *, initial_category: str, categories: list[str] | tuple[str, ...], default_category: str):
         self._initial_category = initial_category
+        self._categories = tuple(categories)
+        self._default_category = default_category
         super().__init__(parent, title="Seleziona categoria")
 
     def body(self, master):
         ttk.Label(master, text="Categoria da applicare ai documenti selezionati:").grid(row=0, column=0, padx=10, pady=(10, 4))
-        self.combo = ttk.Combobox(master, values=DOCUMENT_CATEGORIES, state="readonly", width=32)
+        self.combo = ttk.Combobox(master, values=self._categories, state="readonly", width=32)
         self.combo.grid(row=1, column=0, padx=10, pady=(0, 10))
-        initial = self._initial_category if self._initial_category in DOCUMENT_CATEGORIES else DEFAULT_DOCUMENT_CATEGORY
+        if self._categories and self._initial_category in self._categories:
+            initial = self._initial_category
+        elif self._categories and self._default_category in self._categories:
+            initial = self._default_category
+        elif self._categories:
+            initial = self._categories[0]
+        else:
+            initial = self._default_category
         self.combo.set(initial)
         return self.combo
 
@@ -812,16 +834,38 @@ class SectionDocumentPanel(ttk.Frame):
 
     ALL_LABEL = "Tutte"
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, *, on_changed: Callable[[], None] | None = None, **kwargs):
         super().__init__(parent, **kwargs)
         self.docs = []
+        self._on_changed = on_changed
         self.filter_var = tk.StringVar(value=self.ALL_LABEL)
-        default_cat = SECTION_DOCUMENT_CATEGORIES[0] if SECTION_DOCUMENT_CATEGORIES else "Altro"
+        section_categories = tuple(get_section_document_categories())
+        default_cat = section_categories[0] if section_categories else "Altro"
         self.upload_category_var = tk.StringVar(value=default_cat)
         self._doc_path_map: dict[str, str] = {}
         self._doc_meta_map: dict[str, dict] = {}
         self._build_ui()
         self.refresh()
+
+    def reload_category_options(self, cfg: dict | None = None):
+        categories = tuple(get_section_document_categories(cfg))
+        try:
+            self.upload_category_combo["values"] = categories
+        except Exception:
+            pass
+        try:
+            self.filter_combo["values"] = (self.ALL_LABEL,) + categories
+        except Exception:
+            pass
+
+        current_upload = (self.upload_category_var.get() or "").strip()
+        if categories and current_upload not in categories:
+            self.upload_category_var.set(categories[0])
+
+        current_filter = (self.filter_var.get() or "").strip()
+        if current_filter and current_filter != self.ALL_LABEL and current_filter not in categories:
+            self.filter_var.set(self.ALL_LABEL)
+            self.refresh()
 
     def _build_ui(self):
         toolbar = ttk.Frame(self)
@@ -834,17 +878,18 @@ class SectionDocumentPanel(ttk.Frame):
         ttk.Button(toolbar, text="Elimina", command=self._delete_document).pack(side=tk.LEFT, padx=2)
 
         ttk.Label(toolbar, text="Carica in:").pack(side=tk.LEFT, padx=(15, 2))
+        section_categories = tuple(get_section_document_categories())
         self.upload_category_combo = ttk.Combobox(
             toolbar,
             textvariable=self.upload_category_var,
-            values=SECTION_DOCUMENT_CATEGORIES,
+            values=section_categories,
             state="readonly",
             width=24,
         )
         self.upload_category_combo.pack(side=tk.LEFT, padx=2)
 
         ttk.Label(toolbar, text="Filtro categoria:").pack(side=tk.LEFT, padx=(15, 2))
-        filter_values = (self.ALL_LABEL,) + tuple(SECTION_DOCUMENT_CATEGORIES)
+        filter_values = (self.ALL_LABEL,) + section_categories
         self.filter_combo = ttk.Combobox(
             toolbar,
             textvariable=self.filter_var,
@@ -863,27 +908,47 @@ class SectionDocumentPanel(ttk.Frame):
 
         self.tv_docs = ttk.Treeview(
             frame,
-            columns=("originale", "hash", "categoria", "descrizione", "dimensione", "modificato"),
+            columns=(
+                "descrizione",
+                "hash",
+                "categoria",
+                "protocollo",
+                "verbale_numero",
+                "dimensione",
+                "modificato",
+            ),
             show="headings",
             yscrollcommand=scrollbar.set,
         )
         scrollbar.config(command=self.tv_docs.yview)
 
-        self.tv_docs.heading("originale", text="Nome originale")
+        self.tv_docs.heading("descrizione", text="Descrizione")
         self.tv_docs.heading("hash", text="ID (hash)")
         self.tv_docs.heading("categoria", text="Categoria")
-        self.tv_docs.heading("descrizione", text="Descrizione")
+        self.tv_docs.heading("protocollo", text="Protocollo")
+        self.tv_docs.heading("verbale_numero", text="Verbale n.")
         self.tv_docs.heading("dimensione", text="Dimensione")
         self.tv_docs.heading("modificato", text="Ultima modifica")
 
-        self.tv_docs.column("originale", width=220)
+        self.tv_docs.column("descrizione", width=320)
         self.tv_docs.column("hash", width=110)
         self.tv_docs.column("categoria", width=140)
-        self.tv_docs.column("descrizione", width=240)
+        self.tv_docs.column("protocollo", width=120)
+        self.tv_docs.column("verbale_numero", width=100)
         self.tv_docs.column("dimensione", width=110, anchor="e")
         self.tv_docs.column("modificato", width=150)
 
         self.tv_docs.pack(fill=tk.BOTH, expand=True)
+
+        def _open_edit_for_event(event):
+            row_id = self.tv_docs.identify_row(event.y)
+            if row_id:
+                self.tv_docs.selection_set(row_id)
+                self.tv_docs.focus(row_id)
+            self._edit_document()
+
+        self.tv_docs.bind("<Double-1>", _open_edit_for_event)
+        self.tv_docs.bind("<Return>", lambda _e: self._edit_document())
 
     def refresh(self):
         """Reload section documents from disk applying current filter."""
@@ -908,9 +973,16 @@ class SectionDocumentPanel(ttk.Frame):
 
             path = str(doc.get("percorso") or "")
             absolute_path = str(doc.get("absolute_path") or path)
-            original_name = str(doc.get("original_name") or doc.get("nome_file") or "")
             hash_id = str(doc.get("hash_id") or "-")
-            descrizione = str(doc.get("descrizione") or "")
+            descrizione = str(
+                doc.get("descrizione")
+                or doc.get("description")
+                or doc.get("original_name")
+                or doc.get("nome_file")
+                or ""
+            )
+            protocollo = str(doc.get("protocollo") or "")
+            verbale_numero = str(doc.get("verbale_numero") or "")
 
             size_value = doc.get("size")
             if isinstance(size_value, (int, float)):
@@ -938,10 +1010,11 @@ class SectionDocumentPanel(ttk.Frame):
                 "",
                 tk.END,
                 values=(
-                    original_name,
+                    descrizione,
                     hash_id,
                     categoria,
-                    descrizione,
+                    protocollo,
+                    verbale_numero,
                     human_readable_size(size_int),
                     human_readable_mtime(mtime),
                 ),
@@ -965,23 +1038,34 @@ class SectionDocumentPanel(ttk.Frame):
         file_path = filedialog.askopenfilename(parent=self, title="Seleziona documento di sezione")
         if not file_path:
             return
-        default_cat = SECTION_DOCUMENT_CATEGORIES[0] if SECTION_DOCUMENT_CATEGORIES else "Altro"
-        metadata = ask_document_metadata(
+        section_categories = tuple(get_section_document_categories())
+        default_cat = section_categories[0] if section_categories else "Altro"
+        metadata = ask_section_document_metadata(
             self,
             title="Dettagli documento di sezione",
-            categories=SECTION_DOCUMENT_CATEGORIES,
+            categories=section_categories,
             default_category=default_cat,
             initial_category=self.upload_category_var.get(),
             initial_description="",
+            initial_protocollo="",
+            initial_verbale_numero="",
         )
         if not metadata:
             return
-        categoria, descrizione = metadata
+        categoria, descrizione, protocollo, verbale_numero = metadata
         self.upload_category_var.set(categoria)
         try:
-            dest = add_section_document(file_path, categoria, descrizione)
+            dest = add_section_document(
+                file_path,
+                categoria,
+                descrizione,
+                protocollo=protocollo,
+                verbale_numero=verbale_numero,
+            )
             messagebox.showinfo("Documenti", f"Documento caricato in {categoria}:\n{os.path.basename(dest)}")
             self.refresh()
+            if self._on_changed:
+                self._on_changed()
         except Exception as exc:
             messagebox.showerror("Documenti", f"Errore caricamento documento:\n{exc}")
 
@@ -990,17 +1074,11 @@ class SectionDocumentPanel(ttk.Frame):
         if not path:
             messagebox.showwarning("Documenti", "Selezionare un documento da aprire")
             return
-        if not os.path.exists(path):
-            messagebox.showerror("Documenti", "File non trovato sul disco")
+        from utils import open_path
+
+        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+        if not ok:
             self.refresh()
-            return
-        try:
-            if os.name == "nt":
-                os.startfile(path)  # type: ignore[attr-defined]
-            else:
-                subprocess.run(["xdg-open", path], check=False)
-        except Exception as exc:
-            messagebox.showerror("Documenti", f"Impossibile aprire il documento:\n{exc}")
 
     def _open_document_folder(self):
         path = self._selected_path()
@@ -1019,7 +1097,8 @@ class SectionDocumentPanel(ttk.Frame):
             return
 
         doc = self._selected_doc_entry()
-        default_cat = SECTION_DOCUMENT_CATEGORIES[0] if SECTION_DOCUMENT_CATEGORIES else "Altro"
+        section_categories = tuple(get_section_document_categories())
+        default_cat = section_categories[0] if section_categories else "Altro"
         category = str(doc.get("categoria") or default_cat) if doc else default_cat
 
         try:
@@ -1027,23 +1106,11 @@ class SectionDocumentPanel(ttk.Frame):
         except Exception as exc:
             logger.warning("Impossibile aggiornare l'indice per la categoria %s: %s", category, exc)
 
-        try:
-            if os.name == "nt":
-                if os.path.exists(path):
-                    normalized = os.path.normpath(path)
-                    cmd = f'explorer /select,"{normalized}"'
-                    subprocess.run(cmd, check=False, shell=True)
-                else:
-                    os.startfile(folder)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                if os.path.exists(path):
-                    subprocess.run(["open", "-R", path], check=False)
-                else:
-                    subprocess.run(["open", folder], check=False)
-            else:
-                subprocess.run(["xdg-open", folder], check=False)
-        except Exception as exc:
-            messagebox.showerror("Documenti", f"Impossibile aprire la cartella:\n{exc}")
+        from utils import open_path
+
+        if open_path(path, select_target=path, on_error=lambda msg: messagebox.showerror("Documenti", msg)):
+            return
+        open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
 
     def _edit_document(self):
         path = self._selected_path()
@@ -1055,22 +1122,33 @@ class SectionDocumentPanel(ttk.Frame):
             messagebox.showwarning("Documenti", "Documento non trovato nella lista")
             return
 
-        default_cat = SECTION_DOCUMENT_CATEGORIES[0] if SECTION_DOCUMENT_CATEGORIES else "Altro"
-        metadata = ask_document_metadata(
+        section_categories = tuple(get_section_document_categories())
+        default_cat = section_categories[0] if section_categories else "Altro"
+        metadata = ask_section_document_metadata(
             self,
             title="Modifica documento di sezione",
-            categories=SECTION_DOCUMENT_CATEGORIES,
+            categories=section_categories,
             default_category=default_cat,
             initial_category=str(doc.get("categoria") or default_cat),
             initial_description=str(doc.get("descrizione") or ""),
+            initial_protocollo=str(doc.get("protocollo") or ""),
+            initial_verbale_numero=str(doc.get("verbale_numero") or ""),
         )
         if not metadata:
             return
-        categoria, descrizione = metadata
+        categoria, descrizione, protocollo, verbale_numero = metadata
         try:
-            update_section_document_metadata(path, categoria, descrizione)
+            update_section_document_metadata(
+                path,
+                categoria,
+                descrizione,
+                protocollo=protocollo,
+                verbale_numero=verbale_numero,
+            )
             messagebox.showinfo("Documenti", "Documento aggiornato")
             self.refresh()
+            if self._on_changed:
+                self._on_changed()
         except ValueError as exc:
             messagebox.showerror("Documenti", str(exc))
         except FileNotFoundError as exc:
@@ -1090,12 +1168,13 @@ class SectionDocumentPanel(ttk.Frame):
             if delete_section_document(path):
                 self.refresh()
                 messagebox.showinfo("Documenti", "Documento eliminato")
+                if self._on_changed:
+                    self._on_changed()
             else:
                 messagebox.showwarning("Documenti", "Il file non esiste più.")
                 self.refresh()
         except Exception as exc:
             messagebox.showerror("Documenti", f"Errore eliminazione documento:\n{exc}")
-
 
 class SectionInfoPanel(ttk.Frame):
     """Panel for section information."""

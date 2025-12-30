@@ -224,11 +224,11 @@ Formati supportati: .txt, .html, .doc, .docx, .odt
         
         try:
             from templates_manager import get_template_by_id
-            import subprocess
+            from utils import open_path
             
             template = get_template_by_id(template_id)
             if template and os.path.exists(template['file_path']):
-                os.startfile(template['file_path'])
+                open_path(template['file_path'], on_error=lambda msg: messagebox.showerror("Errore", msg))
             else:
                 messagebox.showerror("Errore", "File template non trovato")
         except Exception as e:

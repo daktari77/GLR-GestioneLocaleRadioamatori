@@ -146,16 +146,38 @@ def open_path(
         if on_error is not None:
             on_error(message)
 
-    normalized = os.path.normpath(str(path or "").strip())
+    raw = str(path or "").strip()
+    normalized = os.path.normpath(raw)
     if not normalized:
         _emit_error("Percorso non valido")
         return False
 
+    # If a relative path is provided (common for legacy DB records), resolve it
+    # against the application BASE_DIR (stable across different working dirs).
+    try:
+        if not os.path.isabs(normalized):
+            from config import BASE_DIR
+
+            candidate = os.path.normpath(os.path.join(BASE_DIR, normalized))
+            if os.path.exists(candidate) or os.path.isdir(candidate):
+                normalized = candidate
+    except Exception:
+        # Best-effort only; keep original normalized path
+        pass
+
     if sys.platform.startswith("win"):
         if select_target:
             try:
-                if os.path.exists(select_target):
-                    subprocess.run(["explorer", f"/select,{os.path.normpath(select_target)}"], check=False)
+                st = os.path.normpath(str(select_target))
+                if not os.path.isabs(st):
+                    try:
+                        from config import BASE_DIR
+
+                        st = os.path.normpath(os.path.join(BASE_DIR, st))
+                    except Exception:
+                        pass
+                if os.path.exists(st):
+                    subprocess.run(["explorer", f"/select,{os.path.normpath(st)}"], check=False)
                     return True
             except Exception:
                 pass

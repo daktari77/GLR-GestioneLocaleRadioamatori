@@ -75,7 +75,7 @@ class App:
         
         # Create root window
         self.root = tk.Tk()
-        self.root.title(f"{APP_NAME} - Rev {APP_VERSION} - Build {BUILD_ID}")
+        self.root.title(f"{APP_NAME} - Revisione {APP_VERSION} - Build {BUILD_ID}")
         # Window sized to comfortably fit 20 rows while staying within 1900x850 footprint
         self.root.geometry("1300x860")
         # Enforce a minimum so layout widgets never collapse
@@ -112,7 +112,7 @@ class App:
     def _update_title(self):
         """Update window title with section information."""
         from config import APP_NAME, APP_VERSION, BUILD_ID
-        title = f"{APP_NAME} - Rev {APP_VERSION} (Build {BUILD_ID})"
+        title = f"{APP_NAME} - Revisione {APP_VERSION} (Build {BUILD_ID})"
         if self.cfg.get("nome_sezione"):
             code = self.cfg.get("codice_sezione") or ""
             title += f" — {self.cfg['nome_sezione']}"
@@ -162,6 +162,20 @@ class App:
             self.form_member.reload_role_options(self.cfg)
         except Exception as exc:
             logger.warning("Impossibile ricaricare le opzioni ruolo: %s", exc)
+
+        try:
+            panel = getattr(self, "panel_docs", None)
+            if panel is not None and hasattr(panel, "reload_category_options"):
+                panel.reload_category_options(self.cfg)
+        except Exception as exc:
+            logger.warning("Impossibile ricaricare le categorie documenti soci: %s", exc)
+
+        try:
+            panel = getattr(self, "section_docs_panel", None)
+            if panel is not None and hasattr(panel, "reload_category_options"):
+                panel.reload_category_options(self.cfg)
+        except Exception as exc:
+            logger.warning("Impossibile ricaricare le categorie documenti sezione: %s", exc)
         else:
             self._set_status_message("Preferenze aggiornate")
     
@@ -283,9 +297,7 @@ class App:
         self._add_tab_delimiter()
         self._create_ponti_tab()
         self._add_tab_delimiter()
-        self._create_cd_delibere_tab()
-        self._add_tab_delimiter()
-        self._create_cd_verbali_tab()
+        self._create_consiglio_direttivo_tab()
         self._add_tab_delimiter()
         self._create_calendar_tab()
         self._add_tab_delimiter()
@@ -328,6 +340,7 @@ class App:
         tools_menu.add_command(label="Esporta dati             Ctrl+E", command=self._show_export_dialog)
         tools_menu.add_command(label="Ricerca Duplicati        Ctrl+M", command=self._show_duplicates_dialog)
         tools_menu.add_command(label="Documentale socio        Ctrl+D", command=self._open_documentale)
+        tools_menu.add_command(label="Import documenti", command=self._import_documents_wizard)
         tools_menu.add_separator()
         tools_menu.add_command(label="Modifica campi comuni", command=self._show_batch_edit_dialog)
         tools_menu.add_separator()
@@ -361,13 +374,56 @@ class App:
             messagebox.showerror("Aiuto", f"File HELP non trovato:\n{help_path}")
             return
         try:
-            # On Windows opens with default associated app (Notepad/markdown viewer)
-            import os
+            from utils import open_path
 
-            os.startfile(str(help_path))
+            open_path(str(help_path), on_error=lambda msg: messagebox.showerror("Aiuto", msg))
         except Exception as exc:
             logger.error("Impossibile aprire l'help: %s", exc)
             messagebox.showerror("Aiuto", f"Impossibile aprire l'help:\n{exc}")
+
+    def _get_selected_member_for_import(self) -> tuple[int | None, str]:
+        """Return (member_id, display_name) for the currently selected socio."""
+        try:
+            selection = self.tv_soci.selection() if hasattr(self, "tv_soci") else ()
+            if not selection:
+                return (None, "")
+            member_id = self._get_member_id_from_item(selection[0])
+            if member_id is None:
+                return (None, "")
+
+            try:
+                from database import fetch_one
+
+                member = fetch_one(
+                    "SELECT id, nominativo, nome, cognome FROM soci WHERE id = ?",
+                    (member_id,),
+                )
+                member_dict = dict(member) if member else {"id": member_id}
+                return (int(member_id), self._format_member_display_name(member_dict))
+            except Exception:
+                return (int(member_id), f"Socio #{member_id}")
+        except Exception:
+            return (None, "")
+
+    def _import_documents_wizard(self):
+        """Open the 'Import documenti' wizard (Socio/Sezione + categoria)."""
+        try:
+            from .import_documents_wizard import ImportDocumentsWizard
+
+            dlg = ImportDocumentsWizard(self.root, get_selected_member=self._get_selected_member_for_import)
+            self.root.wait_window(dlg)
+
+            # Best-effort refresh: section docs view might be visible.
+            if dlg.result and dlg.result.get("target") == "sezione":
+                panel = getattr(self, "section_docs_panel", None)
+                if panel is not None and hasattr(panel, "refresh"):
+                    try:
+                        panel.refresh()
+                    except Exception:
+                        pass
+        except Exception as exc:
+            logger.error("Errore apertura wizard import documenti: %s", exc)
+            messagebox.showerror("Import documenti", f"Errore:\n{exc}")
     
     def _create_soci_tab(self):
         """Create the Soci (members) tab."""
@@ -614,10 +670,15 @@ class App:
         except Exception:
             return
         tab_text = (self.notebook.tab(tab_id, "text") or "").strip()
-        if tab_text == "Delibere":
-            self._refresh_cd_delibere()
-        elif tab_text == "Verbali":
-            self._refresh_cd_verbali()
+        if tab_text == "Consiglio Direttivo":
+            try:
+                self._refresh_cd_delibere()
+            except Exception:
+                pass
+            try:
+                self._refresh_cd_verbali_docs()
+            except Exception:
+                pass
         elif tab_text == "Statistiche" and hasattr(self, "stats_panel"):
             self.stats_panel.refresh()
 
@@ -639,6 +700,206 @@ class App:
                 tv.heading(c, command=lambda _c=c: _on_heading(_c))
             except Exception:
                 pass
+
+    def _create_consiglio_direttivo_tab(self):
+        """Create the consolidated Consiglio Direttivo area (Delibere/Verbali + documentale integration)."""
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="Consiglio Direttivo")
+
+        from .panels import SectionDocumentPanel
+
+        cd_notebook = ttk.Notebook(tab)
+        cd_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        delibere_tab = ttk.Frame(cd_notebook)
+        cd_notebook.add(delibere_tab, text="Delibere")
+        self._build_cd_delibere_view(delibere_tab)
+
+        verbali_tab = ttk.Frame(cd_notebook)
+        cd_notebook.add(verbali_tab, text="Verbali")
+        self._build_cd_verbali_docs_view(verbali_tab)
+
+        docs_tab = ttk.Frame(cd_notebook)
+        cd_notebook.add(docs_tab, text="Documenti")
+        self.cd_section_docs_panel = SectionDocumentPanel(docs_tab, on_changed=self._refresh_cd_verbali_docs)
+        self.cd_section_docs_panel.pack(fill=tk.BOTH, expand=True)
+
+        try:
+            from preferences import get_section_document_categories
+
+            cats = set(get_section_document_categories(self.cfg))
+            if "Verbali" in cats:
+                self.cd_section_docs_panel.filter_var.set("Verbali")
+                self.cd_section_docs_panel.upload_category_var.set("Verbali")
+                self.cd_section_docs_panel.refresh()
+        except Exception:
+            pass
+
+        try:
+            cd_notebook.bind("<<NotebookTabChanged>>", lambda _e: self._on_cd_area_tab_changed(cd_notebook))
+        except Exception:
+            pass
+
+    def _on_cd_area_tab_changed(self, cd_notebook: ttk.Notebook):
+        """Refresh CD subviews when switching inside the CD area."""
+        try:
+            tab_id = cd_notebook.select()
+        except Exception:
+            return
+        tab_text = (cd_notebook.tab(tab_id, "text") or "").strip()
+        if tab_text == "Delibere":
+            self._refresh_cd_delibere()
+        elif tab_text == "Verbali":
+            self._refresh_cd_verbali_docs()
+
+    def _build_cd_delibere_view(self, parent: ttk.Frame):
+        """Build the delibere view inside the consolidated CD area."""
+        toolbar = ttk.Frame(parent)
+        toolbar.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(toolbar, text="Nuova delibera", command=self._new_cd_delibera).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Modifica", command=self._edit_cd_delibera).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Elimina", command=self._delete_cd_delibera).pack(side=tk.LEFT, padx=2)
+
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
+        scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
+
+        self.tv_cd_delibere = ttk.Treeview(
+            frame,
+            columns=("id", "numero", "oggetto", "esito", "data"),
+            show="headings",
+            xscrollcommand=scrollbar_h.set,
+            yscrollcommand=scrollbar_v.set,
+        )
+        scrollbar_h.config(command=self.tv_cd_delibere.xview)
+        scrollbar_v.config(command=self.tv_cd_delibere.yview)
+
+        self.tv_cd_delibere.column("id", width=50)
+        self.tv_cd_delibere.column("numero", width=80)
+        self.tv_cd_delibere.column("oggetto", width=500)
+        self.tv_cd_delibere.column("esito", width=120)
+        self.tv_cd_delibere.column("data", width=110)
+
+        self.tv_cd_delibere.heading("id", text="ID")
+        self.tv_cd_delibere.heading("numero", text="Numero")
+        self.tv_cd_delibere.heading("oggetto", text="Oggetto")
+        self.tv_cd_delibere.heading("esito", text="Esito")
+        self.tv_cd_delibere.heading("data", text="Data votazione")
+
+        self.tv_cd_delibere.grid(row=0, column=0, sticky="nsew")
+        scrollbar_h.grid(row=1, column=0, sticky="ew")
+        scrollbar_v.grid(row=0, column=1, sticky="ns")
+
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        try:
+            self._make_treeview_sortable(self.tv_cd_delibere, ["id", "numero", "oggetto", "esito", "data"])
+        except Exception:
+            pass
+
+        self._refresh_cd_delibere()
+
+    def _build_cd_verbali_docs_view(self, parent: ttk.Frame):
+        """Build the verbali list sourced from section documents (documentale integration)."""
+        toolbar = ttk.Frame(parent)
+        toolbar.pack(fill=tk.X, padx=5, pady=5)
+        ttk.Button(toolbar, text="Aggiorna", command=self._refresh_cd_verbali_docs).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Apri", command=self._open_cd_verbale_doc).pack(side=tk.LEFT, padx=2)
+
+        frame = ttk.Frame(parent)
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
+        scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
+
+        self.tv_cd_verbali_docs = ttk.Treeview(
+            frame,
+            columns=("data", "numero", "protocollo", "descrizione", "file"),
+            show="headings",
+            xscrollcommand=scrollbar_h.set,
+            yscrollcommand=scrollbar_v.set,
+        )
+        scrollbar_h.config(command=self.tv_cd_verbali_docs.xview)
+        scrollbar_v.config(command=self.tv_cd_verbali_docs.yview)
+
+        self.tv_cd_verbali_docs.column("data", width=120)
+        self.tv_cd_verbali_docs.column("numero", width=110)
+        self.tv_cd_verbali_docs.column("protocollo", width=140)
+        self.tv_cd_verbali_docs.column("descrizione", width=420)
+        self.tv_cd_verbali_docs.column("file", width=240)
+
+        self.tv_cd_verbali_docs.heading("data", text="Data")
+        self.tv_cd_verbali_docs.heading("numero", text="Numero CD")
+        self.tv_cd_verbali_docs.heading("protocollo", text="Protocollo")
+        self.tv_cd_verbali_docs.heading("descrizione", text="Descrizione")
+        self.tv_cd_verbali_docs.heading("file", text="File")
+
+        self.tv_cd_verbali_docs.grid(row=0, column=0, sticky="nsew")
+        scrollbar_h.grid(row=1, column=0, sticky="ew")
+        scrollbar_v.grid(row=0, column=1, sticky="ns")
+
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        self._cd_verbali_doc_path_map: dict[str, str] = {}
+        try:
+            self._make_treeview_sortable(self.tv_cd_verbali_docs, ["data", "numero", "protocollo", "descrizione", "file"])
+        except Exception:
+            pass
+
+        self._refresh_cd_verbali_docs()
+
+    def _refresh_cd_verbali_docs(self):
+        """Refresh the verbali list using section documents (categoria contains 'verbale' or with verbale_numero)."""
+        tv = getattr(self, "tv_cd_verbali_docs", None)
+        if tv is None:
+            return
+
+        from section_documents import list_cd_verbali_documents
+
+        for item in tv.get_children():
+            tv.delete(item)
+
+        self._cd_verbali_doc_path_map = {}
+
+        verbali = list_cd_verbali_documents()
+
+        def _date_value(d: dict) -> str:
+            raw = str(d.get("uploaded_at") or "").strip()
+            return raw[:10] if len(raw) >= 10 else raw
+
+        for idx, doc in enumerate(verbali, start=1):
+            iid = str(doc.get("id") or f"v{idx}")
+            data = _date_value(doc)
+            numero = str(doc.get("verbale_numero") or "")
+            protocollo = str(doc.get("protocollo") or "")
+            descrizione = str(doc.get("descrizione") or "")
+            filename = str(doc.get("nome_file") or "")
+            tv.insert("", tk.END, iid=iid, values=(data, numero, protocollo, descrizione, filename))
+            abs_path = str(doc.get("absolute_path") or "")
+            if abs_path:
+                self._cd_verbali_doc_path_map[iid] = abs_path
+
+    def _open_cd_verbale_doc(self):
+        tv = getattr(self, "tv_cd_verbali_docs", None)
+        if tv is None:
+            return
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Verbali", "Selezionare un verbale da aprire")
+            return
+        path = self._cd_verbali_doc_path_map.get(sel[0])
+        if not path:
+            messagebox.showerror("Verbali", "Percorso documento non disponibile")
+            return
+        from utils import open_path
+
+        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Verbali", msg))
+        if not ok:
+            self._refresh_cd_verbali_docs()
 
     def _treeview_sort_column(self, tv, col, reverse=False):
         """Sort treeview `tv` by column `col`. Reverse if `reverse` True."""
@@ -700,60 +961,6 @@ class App:
         from cd_meetings_dialog import MeetingsListDialog
         MeetingsListDialog(self.root)
     
-    def _create_cd_delibere_tab(self):
-        """Create the CD Delibere (Resolutions) tab."""
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Delibere")
-        
-        # Toolbar
-        toolbar = ttk.Frame(tab)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text="Nuova delibera", command=self._new_cd_delibera).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Modifica", command=self._edit_cd_delibera).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina", command=self._delete_cd_delibera).pack(side=tk.LEFT, padx=2)
-        
-        # Delibere list
-        frame = ttk.Frame(tab)
-        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
-        scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
-        
-        self.tv_cd_delibere = ttk.Treeview(
-            frame,
-            columns=("id", "numero", "oggetto", "esito", "data"),
-            show="headings",
-            xscrollcommand=scrollbar_h.set,
-            yscrollcommand=scrollbar_v.set
-        )
-        scrollbar_h.config(command=self.tv_cd_delibere.xview)
-        scrollbar_v.config(command=self.tv_cd_delibere.yview)
-        
-        # Configure columns
-        self.tv_cd_delibere.column("id", width=50)
-        self.tv_cd_delibere.column("numero", width=80)
-        self.tv_cd_delibere.column("oggetto", width=500)
-        self.tv_cd_delibere.column("esito", width=120)
-        self.tv_cd_delibere.column("data", width=100)
-        
-        self.tv_cd_delibere.heading("id", text="ID")
-        self.tv_cd_delibere.heading("numero", text="Numero")
-        self.tv_cd_delibere.heading("oggetto", text="Oggetto")
-        self.tv_cd_delibere.heading("esito", text="Esito")
-        self.tv_cd_delibere.heading("data", text="Data votazione")
-        
-        self.tv_cd_delibere.grid(row=0, column=0, sticky="nsew")
-        scrollbar_h.grid(row=1, column=0, sticky="ew")
-        scrollbar_v.grid(row=0, column=1, sticky="ns")
-        
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-        # Enable sorting on delibere list
-        try:
-            self._make_treeview_sortable(self.tv_cd_delibere, ["id", "numero", "oggetto", "esito", "data"])
-        except Exception:
-            pass
-    
     def _refresh_cd_delibere(self):
         """Refresh the CD delibere list"""
         from cd_delibere import get_all_delibere
@@ -805,113 +1012,6 @@ class App:
                 self._refresh_cd_delibere()
             else:
                 messagebox.showerror("Errore", "Impossibile eliminare la delibera")
-    
-    def _create_cd_verbali_tab(self):
-        """Create the CD Verbali (Minutes) tab."""
-        tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Verbali")
-        
-        # Toolbar
-        toolbar = ttk.Frame(tab)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text="Nuovo verbale", command=self._new_cd_verbale).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Modifica", command=self._edit_cd_verbale).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina", command=self._delete_cd_verbale).pack(side=tk.LEFT, padx=2)
-        
-        # Verbali list
-        frame = ttk.Frame(tab)
-        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
-        scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
-        
-        self.tv_cd_verbali = ttk.Treeview(
-            frame,
-            columns=("id", "data", "presidente", "segretario", "documento"),
-            show="headings",
-            xscrollcommand=scrollbar_h.set,
-            yscrollcommand=scrollbar_v.set
-        )
-        scrollbar_h.config(command=self.tv_cd_verbali.xview)
-        scrollbar_v.config(command=self.tv_cd_verbali.yview)
-        
-        # Configure columns
-        self.tv_cd_verbali.column("id", width=50)
-        self.tv_cd_verbali.column("data", width=120)
-        self.tv_cd_verbali.column("presidente", width=200)
-        self.tv_cd_verbali.column("segretario", width=200)
-        self.tv_cd_verbali.column("documento", width=150)
-        
-        self.tv_cd_verbali.heading("id", text="ID")
-        self.tv_cd_verbali.heading("data", text="Data redazione")
-        self.tv_cd_verbali.heading("presidente", text="Presidente")
-        self.tv_cd_verbali.heading("segretario", text="Segretario")
-        self.tv_cd_verbali.heading("documento", text="Documento")
-        
-        self.tv_cd_verbali.grid(row=0, column=0, sticky="nsew")
-        scrollbar_h.grid(row=1, column=0, sticky="ew")
-        scrollbar_v.grid(row=0, column=1, sticky="ns")
-        
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-        # Enable sorting on verbali list
-        try:
-            self._make_treeview_sortable(self.tv_cd_verbali, ["id", "data", "presidente", "segretario", "documento"])
-        except Exception:
-            pass
-    
-    def _refresh_cd_verbali(self):
-        """Refresh the CD verbali list"""
-        from cd_verbali import get_all_verbali
-        
-        # Clear existing items
-        for item in self.tv_cd_verbali.get_children():
-            self.tv_cd_verbali.delete(item)
-        
-        # Load verbali
-        verbali = get_all_verbali()
-        for verbale in verbali:
-            documento = "✓" if verbale.get('documento_path') else "—"
-            self.tv_cd_verbali.insert("", tk.END, iid=verbale['id'], values=(
-                verbale['id'],
-                verbale.get('data_redazione', ''),
-                verbale.get('presidente', ''),
-                verbale.get('segretario', ''),
-                documento
-            ))
-    
-    def _new_cd_verbale(self):
-        """Open dialog to create a new verbale"""
-        from cd_verbali_dialog import VerbaleDialog
-        VerbaleDialog(self.root)
-        self._refresh_cd_verbali()
-    
-    def _edit_cd_verbale(self):
-        """Open dialog to edit selected verbale"""
-        selection = self.tv_cd_verbali.selection()
-        if not selection:
-            messagebox.showwarning("Selezione", "Selezionare un verbale da modificare")
-            return
-        
-        verbale_id = int(selection[0])
-        from cd_verbali_dialog import VerbaleDialog
-        VerbaleDialog(self.root, verbale_id=verbale_id)
-        self._refresh_cd_verbali()
-    
-    def _delete_cd_verbale(self):
-        """Delete selected verbale"""
-        selection = self.tv_cd_verbali.selection()
-        if not selection:
-            messagebox.showwarning("Selezione", "Selezionare un verbale da eliminare")
-            return
-        
-        if messagebox.askyesno("Conferma", "Eliminare il verbale selezionato?"):
-            verbale_id = int(selection[0])
-            from cd_verbali import delete_verbale
-            if delete_verbale(verbale_id):
-                self._refresh_cd_verbali()
-            else:
-                messagebox.showerror("Errore", "Impossibile eliminare il verbale")
 
     def _create_calendar_tab(self):
         """Create the Calendario tab with event list and actions."""
