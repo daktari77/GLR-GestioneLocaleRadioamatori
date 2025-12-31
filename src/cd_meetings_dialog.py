@@ -492,16 +492,33 @@ La Segreteria""",
         if not self.entry_oggetto.get() and key == 'convocazione_cd':
             self.entry_oggetto.delete(0, tk.END)
             self.entry_oggetto.insert(0, "Convocazione Consiglio Direttivo")
+
+    def _render_email_body(self, body: str, odg: str) -> str:
+        """Render common placeholders in email body from current UI fields."""
+        rendered = body
+
+        data = self.entry_date.get().strip() if hasattr(self, "entry_date") else ""
+        ora = self.entry_meta_ora_inizio.get().strip() if hasattr(self, "entry_meta_ora_inizio") else ""
+        luogo = self.entry_meta_luogo.get().strip() if hasattr(self, "entry_meta_luogo") else ""
+
+        if '{data}' in rendered and data:
+            rendered = rendered.replace('{data}', data)
+        if '{ora}' in rendered and ora:
+            rendered = rendered.replace('{ora}', ora)
+        if '{luogo}' in rendered and luogo:
+            rendered = rendered.replace('{luogo}', luogo)
+        if '{odg}' in rendered and odg:
+            rendered = rendered.replace('{odg}', odg)
+
+        return rendered
     
     def _preview_email(self):
         """Show email preview"""
         subject = self.entry_oggetto.get().strip()
         body = self.text_email.get('1.0', tk.END).strip()
-        odg = self.text_odg.get('1.0', tk.END).strip();
-        
-        # Replace ODG placeholder if present
-        if '{odg}' in body and odg:
-            body = body.replace('{odg}', odg)
+        odg = self.text_odg.get('1.0', tk.END).strip()
+
+        body = self._render_email_body(body, odg)
         
         # Show preview dialog
         preview = tk.Toplevel(self.dialog)
@@ -604,9 +621,7 @@ La Segreteria""",
             messagebox.showwarning("Attenzione", "Nessun destinatario trovato.", parent=self.dialog)
             return False
         
-        # Replace ODG placeholder if present
-        if '{odg}' in body and odg:
-            body = body.replace('{odg}', odg)
+        body = self._render_email_body(body, odg)
         
         # Build email list
         bcc_emails = [r[0] for r in recipients]
