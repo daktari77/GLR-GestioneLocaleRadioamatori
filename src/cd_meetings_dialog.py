@@ -162,6 +162,13 @@ La Segreteria""",
         self.label_presenze_hint = ttk.Label(self.presenze_frame, text="", foreground="gray")
         self.label_presenze_hint.grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
 
+        self.label_presenze_hint2 = ttk.Label(
+            self.presenze_frame,
+            text="Deleghe: solo per Assemblee soci.",
+            foreground="gray",
+        )
+        self.label_presenze_hint2.grid(row=0, column=3, sticky="e", padx=5, pady=(0, 5))
+
         ttk.Label(self.presenze_frame, text="Aventi diritto:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
         self.entry_aventi_diritto = ttk.Entry(self.presenze_frame, width=8)
         self.entry_aventi_diritto.grid(row=1, column=1, sticky="w", padx=5, pady=3)
@@ -231,6 +238,7 @@ La Segreteria""",
         self.odg_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
         
         ttk.Label(self.odg_frame, text="ODG (un punto per riga; usa [D] per punti che richiedono delibera):").pack(anchor="w", padx=5, pady=(0, 5))
+        ttk.Label(self.odg_frame, text="Esempio: [D] Approvazione bilancio", foreground="gray").pack(anchor="w", padx=5, pady=(0, 5))
         self.text_odg = scrolledtext.ScrolledText(self.odg_frame, height=8, wrap=tk.WORD)
         self.text_odg.pack(fill=tk.BOTH, expand=True)
         
