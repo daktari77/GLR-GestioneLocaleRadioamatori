@@ -500,6 +500,15 @@ La Segreteria""",
         data = self.entry_date.get().strip() if hasattr(self, "entry_date") else ""
         ora = self.entry_meta_ora_inizio.get().strip() if hasattr(self, "entry_meta_ora_inizio") else ""
         luogo = self.entry_meta_luogo.get().strip() if hasattr(self, "entry_meta_luogo") else ""
+        modalita = self.meta_modalita_var.get().strip().lower() if hasattr(self, "meta_modalita_var") else ""
+
+        # Small wording tweak for the default convocazione sentence.
+        # Do not add new templates: just adjust the existing phrase when present.
+        if '{luogo}' in rendered:
+            if modalita == 'online':
+                rendered = rendered.replace('presso {luogo}', 'tramite {luogo}')
+            elif modalita == 'ibrida':
+                rendered = rendered.replace('presso {luogo}', 'presso / tramite {luogo}')
 
         if '{data}' in rendered and data:
             rendered = rendered.replace('{data}', data)
