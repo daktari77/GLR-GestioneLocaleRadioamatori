@@ -7,11 +7,44 @@ Handles registration of CD meetings and related documents (verbali in .doc/.pdf 
 import sqlite3
 import logging
 import os
+import json
 from typing import List, Tuple, Optional, Dict
 from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger("librosoci")
+
+
+def _odg_text_to_json(odg_text: str | None) -> str | None:
+    if not odg_text:
+        return None
+    lines = [ln.strip() for ln in odg_text.splitlines() if ln.strip()]
+    if not lines:
+        return None
+    payload = {
+        "version": 1,
+        "items": [{"title": ln, "requires_delibera": False} for ln in lines],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _odg_json_to_text(odg_json: str | None) -> str | None:
+    if not odg_json:
+        return None
+    try:
+        payload = json.loads(odg_json)
+        items = payload.get("items")
+        if not isinstance(items, list):
+            return None
+        titles: list[str] = []
+        for item in items:
+            if isinstance(item, dict):
+                title = str(item.get("title") or "").strip()
+                if title:
+                    titles.append(title)
+        return "\n".join(titles) if titles else None
+    except Exception:
+        return None
 
 
 def _archive_cd_meeting_verbale(meeting_id: int, source_path: str) -> str:
@@ -69,9 +102,20 @@ def get_meeting_by_id(meeting_id: int) -> Optional[Dict]:
     """
     from database import fetch_one
     try:
-        sql = "SELECT id, numero_cd, data, titolo, note as odg, verbale_path, created_at FROM cd_riunioni WHERE id=?"
+        sql = """
+            SELECT id, numero_cd, data, titolo, note, odg_json, meta_json, presenze_json, verbale_path, created_at
+            FROM cd_riunioni
+            WHERE id=?
+        """
         row = fetch_one(sql, (meeting_id,))
-        return dict(row) if row else None
+        if not row:
+            return None
+        meeting = dict(row)
+        odg_text = (meeting.get("note") or "").strip() if meeting.get("note") else ""
+        if not odg_text:
+            odg_text = _odg_json_to_text(meeting.get("odg_json")) or ""
+        meeting["odg"] = odg_text
+        return meeting
     except Exception as e:
         logger.error("Failed to get meeting %s: %s", meeting_id, e)
         return None
@@ -95,14 +139,15 @@ def add_meeting(data: str, numero_cd: str | None = None, titolo: str | None = No
     
     try:
         original_verbale = verbale_path
+        odg_json = _odg_text_to_json(odg)
         # Insert first to obtain meeting_id; we will archive the file afterward.
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
-                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, verbale_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, odg_json, verbale_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql, (numero_cd, data, titolo, odg, None, now_iso()))
+            cursor.execute(sql, (numero_cd, data, titolo, odg, odg_json, None, now_iso()))
             meeting_id = cursor.lastrowid
             conn.commit()
         
@@ -161,6 +206,8 @@ def update_meeting(meeting_id: int, numero_cd: str | None = None, data: str | No
         if odg is not None:
             updates.append("note=?")
             values.append(odg)
+            updates.append("odg_json=?")
+            values.append(_odg_text_to_json(odg))
         if verbale_path is not None:
             verbale_path = _maybe_archive_if_external(int(meeting_id), verbale_path)
             updates.append("verbale_path=?")
