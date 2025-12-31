@@ -114,12 +114,32 @@ La Segreteria""",
         self.meta_frame.columnconfigure(3, weight=1)
 
         ttk.Label(self.meta_frame, text="Tipo:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
-        self.entry_meta_tipo = ttk.Entry(self.meta_frame, width=25)
-        self.entry_meta_tipo.grid(row=0, column=1, sticky="ew", padx=5, pady=3)
+        self.meta_tipo_var = tk.StringVar(value="riunione del CD")
+        self.combo_meta_tipo = ttk.Combobox(
+            self.meta_frame,
+            textvariable=self.meta_tipo_var,
+            state="readonly",
+            width=28,
+            values=(
+                "riunione del CD",
+                "riunione del CD straordinario",
+                "Assemblea ordinaria dei soci",
+                "Assemblea straordinaria dei soci",
+            ),
+        )
+        self.combo_meta_tipo.grid(row=0, column=1, sticky="ew", padx=5, pady=3)
+        self.combo_meta_tipo.bind("<<ComboboxSelected>>", lambda _e: self._on_meta_tipo_changed())
 
         ttk.Label(self.meta_frame, text="Modalità:").grid(row=0, column=2, sticky="w", padx=5, pady=3)
-        self.entry_meta_modalita = ttk.Entry(self.meta_frame, width=25)
-        self.entry_meta_modalita.grid(row=0, column=3, sticky="ew", padx=5, pady=3)
+        self.meta_modalita_var = tk.StringVar(value="presenza")
+        self.combo_meta_modalita = ttk.Combobox(
+            self.meta_frame,
+            textvariable=self.meta_modalita_var,
+            state="readonly",
+            width=18,
+            values=("presenza", "online", "ibrida"),
+        )
+        self.combo_meta_modalita.grid(row=0, column=3, sticky="ew", padx=5, pady=3)
 
         ttk.Label(self.meta_frame, text="Luogo / Link:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
         self.entry_meta_luogo = ttk.Entry(self.meta_frame, width=60)
@@ -139,30 +159,34 @@ La Segreteria""",
         self.presenze_frame.columnconfigure(1, weight=1)
         self.presenze_frame.columnconfigure(3, weight=1)
 
-        ttk.Label(self.presenze_frame, text="Aventi diritto:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.label_presenze_hint = ttk.Label(self.presenze_frame, text="", foreground="gray")
+        self.label_presenze_hint.grid(row=0, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
+
+        ttk.Label(self.presenze_frame, text="Aventi diritto:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
         self.entry_aventi_diritto = ttk.Entry(self.presenze_frame, width=8)
-        self.entry_aventi_diritto.grid(row=0, column=1, sticky="w", padx=5, pady=3)
+        self.entry_aventi_diritto.grid(row=1, column=1, sticky="w", padx=5, pady=3)
 
-        ttk.Label(self.presenze_frame, text="Presenti:").grid(row=0, column=2, sticky="w", padx=5, pady=3)
+        ttk.Label(self.presenze_frame, text="Presenti:").grid(row=1, column=2, sticky="w", padx=5, pady=3)
         self.entry_presenti = ttk.Entry(self.presenze_frame, width=8)
-        self.entry_presenti.grid(row=0, column=3, sticky="w", padx=5, pady=3)
+        self.entry_presenti.grid(row=1, column=3, sticky="w", padx=5, pady=3)
 
-        ttk.Label(self.presenze_frame, text="Deleghe:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.label_deleghe = ttk.Label(self.presenze_frame, text="Deleghe:")
+        self.label_deleghe.grid(row=2, column=0, sticky="w", padx=5, pady=3)
         self.entry_deleghe = ttk.Entry(self.presenze_frame, width=8)
-        self.entry_deleghe.grid(row=1, column=1, sticky="w", padx=5, pady=3)
+        self.entry_deleghe.grid(row=2, column=1, sticky="w", padx=5, pady=3)
 
-        ttk.Label(self.presenze_frame, text="Quorum richiesto:").grid(row=1, column=2, sticky="w", padx=5, pady=3)
+        ttk.Label(self.presenze_frame, text="Quorum richiesto:").grid(row=2, column=2, sticky="w", padx=5, pady=3)
         self.entry_quorum = ttk.Entry(self.presenze_frame, width=8)
-        self.entry_quorum.grid(row=1, column=3, sticky="w", padx=5, pady=3)
+        self.entry_quorum.grid(row=2, column=3, sticky="w", padx=5, pady=3)
 
         self.label_quorum_esito = ttk.Label(self.presenze_frame, text="", foreground="gray")
-        self.label_quorum_esito.grid(row=2, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
+        self.label_quorum_esito.grid(row=3, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
 
-        ttk.Label(self.presenze_frame, text="Note presenze/deleghe (testo libero):").grid(row=3, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 2))
+        ttk.Label(self.presenze_frame, text="Note presenze/deleghe (testo libero):").grid(row=4, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 2))
         self.text_presenze = scrolledtext.ScrolledText(self.presenze_frame, height=4, wrap=tk.WORD)
-        self.text_presenze.grid(row=4, column=0, columnspan=4, sticky="nsew", padx=5, pady=(0, 5))
+        self.text_presenze.grid(row=5, column=0, columnspan=4, sticky="nsew", padx=5, pady=(0, 5))
 
-        self.presenze_frame.rowconfigure(4, weight=1)
+        self.presenze_frame.rowconfigure(5, weight=1)
 
         for ent in (self.entry_aventi_diritto, self.entry_presenti, self.entry_deleghe, self.entry_quorum):
             ent.bind("<KeyRelease>", lambda _e: self._update_quorum_label())
@@ -242,6 +266,9 @@ La Segreteria""",
             self._on_template_selected()
             # Toggle visibility based on tipo_riunione
             self._toggle_tipo_riunione()
+
+        self._on_meta_tipo_changed()
+        self._set_presenze_enabled(enabled=bool(meeting_id))
         
         # Update recipient count
         self._update_recipient_count()
@@ -267,7 +294,7 @@ La Segreteria""",
     def _update_quorum_label(self):
         aventi = self._safe_int(self.entry_aventi_diritto.get())
         presenti = self._safe_int(self.entry_presenti.get())
-        deleghe = self._safe_int(self.entry_deleghe.get())
+        deleghe = self._safe_int(self.entry_deleghe.get()) if self._deleghe_enabled() else 0
         quorum = self._safe_int(self.entry_quorum.get())
 
         totale = None
@@ -282,6 +309,35 @@ La Segreteria""",
             self.label_quorum_esito.configure(text=f"Quorum OK: {totale} ≥ {quorum}", foreground="green")
         else:
             self.label_quorum_esito.configure(text=f"Quorum KO: {totale} < {quorum}", foreground="red")
+
+    def _deleghe_enabled(self) -> bool:
+        try:
+            return self.entry_deleghe.winfo_ismapped() and str(self.entry_deleghe.cget("state")) != "disabled"
+        except Exception:
+            return False
+
+    def _on_meta_tipo_changed(self):
+        tipo = (self.meta_tipo_var.get() or "").strip().lower()
+        is_assemblea = "assemblea" in tipo
+        if is_assemblea:
+            self.label_deleghe.grid()
+            self.entry_deleghe.grid()
+        else:
+            self.label_deleghe.grid_remove()
+            self.entry_deleghe.grid_remove()
+            self.entry_deleghe.delete(0, tk.END)
+        self._update_quorum_label()
+
+    def _set_presenze_enabled(self, enabled: bool):
+        hint = "" if enabled else "Compilabile dopo il salvataggio (in modifica riunione)."
+        self.label_presenze_hint.configure(text=hint)
+
+        state = "normal" if enabled else "disabled"
+        for w in (self.entry_aventi_diritto, self.entry_presenti, self.entry_deleghe, self.entry_quorum, self.text_presenze):
+            try:
+                w.configure(state=state)
+            except Exception:
+                pass
     
     def _set_today(self):
         """Set date to today"""
@@ -496,10 +552,10 @@ La Segreteria""",
                 try:
                     meta = json.loads(meta_json)
                     if isinstance(meta, dict):
-                        self.entry_meta_tipo.delete(0, tk.END)
-                        self.entry_meta_tipo.insert(0, (meta.get("tipo") or "").strip())
-                        self.entry_meta_modalita.delete(0, tk.END)
-                        self.entry_meta_modalita.insert(0, (meta.get("modalita") or "").strip())
+                        if (meta.get("tipo") or "").strip():
+                            self.meta_tipo_var.set((meta.get("tipo") or "").strip())
+                        if (meta.get("modalita") or "").strip():
+                            self.meta_modalita_var.set((meta.get("modalita") or "").strip())
                         self.entry_meta_luogo.delete(0, tk.END)
                         self.entry_meta_luogo.insert(0, (meta.get("luogo_link") or "").strip())
                         self.entry_meta_ora_inizio.delete(0, tk.END)
@@ -508,6 +564,8 @@ La Segreteria""",
                         self.entry_meta_ora_fine.insert(0, (meta.get("ora_fine") or "").strip())
                 except Exception:
                     pass
+
+            self._on_meta_tipo_changed()
 
             # Load presenze_json
             presenze_json = meeting.get("presenze_json")
@@ -735,8 +793,8 @@ La Segreteria""",
 
         meta_payload = {
             "version": 1,
-            "tipo": self.entry_meta_tipo.get().strip(),
-            "modalita": self.entry_meta_modalita.get().strip(),
+            "tipo": self.meta_tipo_var.get().strip(),
+            "modalita": self.meta_modalita_var.get().strip(),
             "luogo_link": self.entry_meta_luogo.get().strip(),
             "ora_inizio": self.entry_meta_ora_inizio.get().strip(),
             "ora_fine": self.entry_meta_ora_fine.get().strip(),
@@ -748,7 +806,7 @@ La Segreteria""",
         counts = {
             "aventi_diritto": self._safe_int(self.entry_aventi_diritto.get()),
             "presenti": self._safe_int(self.entry_presenti.get()),
-            "deleghe": self._safe_int(self.entry_deleghe.get()),
+            "deleghe": self._safe_int(self.entry_deleghe.get()) if self._deleghe_enabled() else None,
             "quorum_richiesto": self._safe_int(self.entry_quorum.get()),
         }
         counts = {k: v for k, v in counts.items() if v is not None}
