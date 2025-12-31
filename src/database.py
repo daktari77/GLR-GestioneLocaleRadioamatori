@@ -248,6 +248,20 @@ CREATE TABLE IF NOT EXISTS cd_verbali (
 )
 """
 
+CREATE_CD_MANDATI = """
+CREATE TABLE IF NOT EXISTS cd_mandati (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    composizione_json TEXT,
+    note TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
 CREATE_CALENDAR_EVENTS = """
 CREATE TABLE IF NOT EXISTS calendar_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -404,6 +418,8 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cd_delibere_cd ON cd_delibere(cd_id)",
     "CREATE INDEX IF NOT EXISTS idx_cd_verbali_cd ON cd_verbali(cd_id)",
     "CREATE INDEX IF NOT EXISTS idx_cd_riunioni_data ON cd_riunioni(data)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_mandati_active ON cd_mandati(is_active)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_mandati_periodo ON cd_mandati(start_date, end_date)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_stato ON ponti(stato_corrente)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_auth_scadenza ON ponti_authorizations(data_scadenza)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_interventi_data ON ponti_interventi(data)",
@@ -471,6 +487,15 @@ def init_db():
         except sqlite3.OperationalError as exc:
             logger.warning("Impossibile eseguire backfill cd_delibere: %s", exc)
         conn.execute(CREATE_CD_VERBALI)
+        conn.execute(CREATE_CD_MANDATI)
+        _ensure_column(conn, "cd_mandati", "label", "TEXT")
+        _ensure_column(conn, "cd_mandati", "start_date", "TEXT")
+        _ensure_column(conn, "cd_mandati", "end_date", "TEXT")
+        _ensure_column(conn, "cd_mandati", "composizione_json", "TEXT")
+        _ensure_column(conn, "cd_mandati", "note", "TEXT")
+        _ensure_column(conn, "cd_mandati", "is_active", "INTEGER DEFAULT 1")
+        _ensure_column(conn, "cd_mandati", "created_at", "TEXT")
+        _ensure_column(conn, "cd_mandati", "updated_at", "TEXT")
         conn.execute(CREATE_CALENDAR_EVENTS)
         conn.execute(CREATE_PONTI)
         conn.execute(CREATE_PONTI_STATUS_HISTORY)

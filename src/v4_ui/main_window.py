@@ -808,6 +808,10 @@ class App:
         toolbar.pack(fill=tk.X, padx=5, pady=5)
         ttk.Button(toolbar, text="Aggiorna", command=self._refresh_cd_verbali_docs).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Apri", command=self._open_cd_verbale_doc).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Mandato CD...", command=self._open_cd_mandato_wizard).pack(side=tk.LEFT, padx=8)
+
+        self._lbl_cd_mandato = ttk.Label(toolbar, text="")
+        self._lbl_cd_mandato.pack(side=tk.LEFT, padx=8)
 
         frame = ttk.Frame(parent)
         frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -860,12 +864,37 @@ class App:
 
         from section_documents import list_cd_verbali_documents
 
+        start_date = None
+        end_date = None
+        label = ""
+        try:
+            from cd_mandati import get_active_cd_mandato
+
+            mandato = get_active_cd_mandato()
+            if mandato:
+                start_date = mandato.get("start_date")
+                end_date = mandato.get("end_date")
+                label = str(mandato.get("label") or "").strip()
+        except Exception:
+            mandato = None
+
+        try:
+            lbl = getattr(self, "_lbl_cd_mandato", None)
+            if lbl is not None:
+                if start_date and end_date:
+                    shown = label or f"{str(start_date)[:4]}-{str(end_date)[:4]}"
+                    lbl.config(text=f"Mandato: {shown} ({start_date} → {end_date})")
+                else:
+                    lbl.config(text="Mandato: (non impostato)")
+        except Exception:
+            pass
+
         for item in tv.get_children():
             tv.delete(item)
 
         self._cd_verbali_doc_path_map = {}
 
-        verbali = list_cd_verbali_documents()
+        verbali = list_cd_verbali_documents(start_date=start_date, end_date=end_date)
 
         def _date_value(d: dict) -> str:
             raw = str(d.get("uploaded_at") or "").strip()
@@ -882,6 +911,15 @@ class App:
             abs_path = str(doc.get("absolute_path") or "")
             if abs_path:
                 self._cd_verbali_doc_path_map[iid] = abs_path
+
+    def _open_cd_mandato_wizard(self):
+        try:
+            from .cd_mandato_wizard import CdMandatoWizard
+
+            CdMandatoWizard(self.root, on_saved=lambda _r=None: self._refresh_cd_verbali_docs())
+        except Exception as exc:
+            logger.error("Errore apertura wizard mandato CD: %s", exc)
+            messagebox.showerror("Mandato CD", f"Impossibile aprire il wizard:\n{exc}")
 
     def _open_cd_verbale_doc(self):
         tv = getattr(self, "tv_cd_verbali_docs", None)

@@ -503,14 +503,17 @@ def list_section_documents() -> List[Dict[str, object]]:
     return docs
 
 
-def list_cd_verbali_documents() -> list[dict]:
+def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | None = None) -> list[dict]:
     """Return section documents that should be considered CD verbali.
 
     Heuristic rules:
     - Categoria contains "verbale"/"verbali" (case-insensitive), OR
     - A non-empty `verbale_numero` is present.
 
-    Result is sorted descending by date (uploaded_at if present).
+    Optionally filters by date range (inclusive) using the ISO date derived
+    from `uploaded_at` (or `data_caricamento` backfilled in DB).
+
+    Result is sorted descending by date.
     """
 
     docs = list_section_documents()
@@ -525,6 +528,21 @@ def list_cd_verbali_documents() -> list[dict]:
     def _date_value(d: dict) -> str:
         raw = str(d.get("uploaded_at") or "").strip()
         return raw[:10] if len(raw) >= 10 else raw
+
+    start_iso = (start_date or "").strip() or None
+    end_iso = (end_date or "").strip() or None
+    if start_iso or end_iso:
+        filtered: list[dict] = []
+        for d in verbali:
+            dv = _date_value(d)
+            if not dv:
+                continue
+            if start_iso and dv < start_iso:
+                continue
+            if end_iso and dv > end_iso:
+                continue
+            filtered.append(d)
+        verbali = filtered
 
     verbali.sort(
         key=lambda d: (

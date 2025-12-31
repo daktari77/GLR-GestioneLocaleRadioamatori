@@ -73,6 +73,10 @@ class TestDatabaseBasics(unittest.TestCase):
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cd_riunioni'")
         self.assertIsNotNone(cursor.fetchone())
 
+        # Check cd_mandati table exists (mandato Consiglio Direttivo)
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cd_mandati'")
+        self.assertIsNotNone(cursor.fetchone())
+
         # Check new ponti tables exist
         for table_name in (
             "ponti",
