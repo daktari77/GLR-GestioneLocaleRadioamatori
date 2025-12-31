@@ -120,7 +120,16 @@ def get_meeting_by_id(meeting_id: int) -> Optional[Dict]:
         logger.error("Failed to get meeting %s: %s", meeting_id, e)
         return None
 
-def add_meeting(data: str, numero_cd: str | None = None, titolo: str | None = None, odg: str | None = None, verbale_path: str | None = None) -> int:
+
+def add_meeting(
+    data: str,
+    numero_cd: str | None = None,
+    titolo: str | None = None,
+    odg: str | None = None,
+    verbale_path: str | None = None,
+    meta_json: str | dict | None = None,
+    presenze_json: str | dict | None = None,
+) -> int:
     """
     Add a new CD meeting.
     
@@ -140,14 +149,18 @@ def add_meeting(data: str, numero_cd: str | None = None, titolo: str | None = No
     try:
         original_verbale = verbale_path
         odg_json = _odg_text_to_json(odg)
+        if isinstance(meta_json, dict):
+            meta_json = json.dumps(meta_json, ensure_ascii=False)
+        if isinstance(presenze_json, dict):
+            presenze_json = json.dumps(presenze_json, ensure_ascii=False)
         # Insert first to obtain meeting_id; we will archive the file afterward.
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
-                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, odg_json, verbale_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, meta_json, odg_json, presenze_json, verbale_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql, (numero_cd, data, titolo, odg, odg_json, None, now_iso()))
+            cursor.execute(sql, (numero_cd, data, titolo, odg, meta_json, odg_json, presenze_json, None, now_iso()))
             meeting_id = cursor.lastrowid
             conn.commit()
         
@@ -173,7 +186,17 @@ def add_meeting(data: str, numero_cd: str | None = None, titolo: str | None = No
         logger.error("Failed to add meeting: %s", e)
         return -1
 
-def update_meeting(meeting_id: int, numero_cd: str | None = None, data: str | None = None, titolo: str | None = None, odg: str | None = None, verbale_path: str | None = None) -> bool:
+
+def update_meeting(
+    meeting_id: int,
+    numero_cd: str | None = None,
+    data: str | None = None,
+    titolo: str | None = None,
+    odg: str | None = None,
+    verbale_path: str | None = None,
+    meta_json: str | dict | None = None,
+    presenze_json: str | dict | None = None,
+) -> bool:
     """
     Update an existing meeting.
     
@@ -208,6 +231,18 @@ def update_meeting(meeting_id: int, numero_cd: str | None = None, data: str | No
             values.append(odg)
             updates.append("odg_json=?")
             values.append(_odg_text_to_json(odg))
+        if meta_json is not None:
+            updates.append("meta_json=?")
+            if isinstance(meta_json, dict):
+                values.append(json.dumps(meta_json, ensure_ascii=False))
+            else:
+                values.append(meta_json)
+        if presenze_json is not None:
+            updates.append("presenze_json=?")
+            if isinstance(presenze_json, dict):
+                values.append(json.dumps(presenze_json, ensure_ascii=False))
+            else:
+                values.append(presenze_json)
         if verbale_path is not None:
             verbale_path = _maybe_archive_if_external(int(meeting_id), verbale_path)
             updates.append("verbale_path=?")

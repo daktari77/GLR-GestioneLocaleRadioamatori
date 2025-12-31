@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import logging
 from datetime import datetime
+import json
 import urllib.parse
 import webbrowser
 
@@ -104,6 +105,67 @@ La Segreteria""",
         ttk.Label(main_frame, text="Oggetto:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
         self.entry_oggetto = ttk.Entry(main_frame, width=60)
         self.entry_oggetto.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
+
+        # Metadati riunione
+        row += 1
+        self.meta_frame = ttk.LabelFrame(main_frame, text="Metadati riunione", padding=5)
+        self.meta_frame.grid(row=row, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
+        self.meta_frame.columnconfigure(1, weight=1)
+        self.meta_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(self.meta_frame, text="Tipo:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.entry_meta_tipo = ttk.Entry(self.meta_frame, width=25)
+        self.entry_meta_tipo.grid(row=0, column=1, sticky="ew", padx=5, pady=3)
+
+        ttk.Label(self.meta_frame, text="Modalità:").grid(row=0, column=2, sticky="w", padx=5, pady=3)
+        self.entry_meta_modalita = ttk.Entry(self.meta_frame, width=25)
+        self.entry_meta_modalita.grid(row=0, column=3, sticky="ew", padx=5, pady=3)
+
+        ttk.Label(self.meta_frame, text="Luogo / Link:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.entry_meta_luogo = ttk.Entry(self.meta_frame, width=60)
+        self.entry_meta_luogo.grid(row=1, column=1, columnspan=3, sticky="ew", padx=5, pady=3)
+
+        ttk.Label(self.meta_frame, text="Ora inizio:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
+        self.entry_meta_ora_inizio = ttk.Entry(self.meta_frame, width=10)
+        self.entry_meta_ora_inizio.grid(row=2, column=1, sticky="w", padx=5, pady=3)
+        ttk.Label(self.meta_frame, text="Ora fine:").grid(row=2, column=2, sticky="w", padx=5, pady=3)
+        self.entry_meta_ora_fine = ttk.Entry(self.meta_frame, width=10)
+        self.entry_meta_ora_fine.grid(row=2, column=3, sticky="w", padx=5, pady=3)
+
+        # Presenze / Quorum
+        row += 1
+        self.presenze_frame = ttk.LabelFrame(main_frame, text="Presenze / Quorum", padding=5)
+        self.presenze_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
+        self.presenze_frame.columnconfigure(1, weight=1)
+        self.presenze_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(self.presenze_frame, text="Aventi diritto:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.entry_aventi_diritto = ttk.Entry(self.presenze_frame, width=8)
+        self.entry_aventi_diritto.grid(row=0, column=1, sticky="w", padx=5, pady=3)
+
+        ttk.Label(self.presenze_frame, text="Presenti:").grid(row=0, column=2, sticky="w", padx=5, pady=3)
+        self.entry_presenti = ttk.Entry(self.presenze_frame, width=8)
+        self.entry_presenti.grid(row=0, column=3, sticky="w", padx=5, pady=3)
+
+        ttk.Label(self.presenze_frame, text="Deleghe:").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.entry_deleghe = ttk.Entry(self.presenze_frame, width=8)
+        self.entry_deleghe.grid(row=1, column=1, sticky="w", padx=5, pady=3)
+
+        ttk.Label(self.presenze_frame, text="Quorum richiesto:").grid(row=1, column=2, sticky="w", padx=5, pady=3)
+        self.entry_quorum = ttk.Entry(self.presenze_frame, width=8)
+        self.entry_quorum.grid(row=1, column=3, sticky="w", padx=5, pady=3)
+
+        self.label_quorum_esito = ttk.Label(self.presenze_frame, text="", foreground="gray")
+        self.label_quorum_esito.grid(row=2, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
+
+        ttk.Label(self.presenze_frame, text="Note presenze/deleghe (testo libero):").grid(row=3, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 2))
+        self.text_presenze = scrolledtext.ScrolledText(self.presenze_frame, height=4, wrap=tk.WORD)
+        self.text_presenze.grid(row=4, column=0, columnspan=4, sticky="nsew", padx=5, pady=(0, 5))
+
+        self.presenze_frame.rowconfigure(4, weight=1)
+
+        for ent in (self.entry_aventi_diritto, self.entry_presenti, self.entry_deleghe, self.entry_quorum):
+            ent.bind("<KeyRelease>", lambda _e: self._update_quorum_label())
         
         # Selezione soci
         row += 1
@@ -192,6 +254,34 @@ La Segreteria""",
         ttk.Button(button_frame, text="Annulla", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Anteprima e-mail", command=self._preview_email).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Salva", command=self._save).pack(side=tk.LEFT, padx=5)
+
+    def _safe_int(self, s: str) -> int | None:
+        s = (s or "").strip()
+        if not s:
+            return None
+        try:
+            return int(s)
+        except Exception:
+            return None
+
+    def _update_quorum_label(self):
+        aventi = self._safe_int(self.entry_aventi_diritto.get())
+        presenti = self._safe_int(self.entry_presenti.get())
+        deleghe = self._safe_int(self.entry_deleghe.get())
+        quorum = self._safe_int(self.entry_quorum.get())
+
+        totale = None
+        if presenti is not None or deleghe is not None:
+            totale = (presenti or 0) + (deleghe or 0)
+
+        if quorum is None or totale is None:
+            self.label_quorum_esito.configure(text="Quorum: (inserisci presenti/deleghe e quorum)", foreground="gray")
+            return
+
+        if totale >= quorum:
+            self.label_quorum_esito.configure(text=f"Quorum OK: {totale} ≥ {quorum}", foreground="green")
+        else:
+            self.label_quorum_esito.configure(text=f"Quorum KO: {totale} < {quorum}", foreground="red")
     
     def _set_today(self):
         """Set date to today"""
@@ -399,6 +489,54 @@ La Segreteria""",
             if meeting.get('odg'):
                 self.text_odg.delete("1.0", tk.END)
                 self.text_odg.insert("1.0", meeting.get('odg', ''))
+
+            # Load meta_json
+            meta_json = meeting.get("meta_json")
+            if meta_json:
+                try:
+                    meta = json.loads(meta_json)
+                    if isinstance(meta, dict):
+                        self.entry_meta_tipo.delete(0, tk.END)
+                        self.entry_meta_tipo.insert(0, (meta.get("tipo") or "").strip())
+                        self.entry_meta_modalita.delete(0, tk.END)
+                        self.entry_meta_modalita.insert(0, (meta.get("modalita") or "").strip())
+                        self.entry_meta_luogo.delete(0, tk.END)
+                        self.entry_meta_luogo.insert(0, (meta.get("luogo_link") or "").strip())
+                        self.entry_meta_ora_inizio.delete(0, tk.END)
+                        self.entry_meta_ora_inizio.insert(0, (meta.get("ora_inizio") or "").strip())
+                        self.entry_meta_ora_fine.delete(0, tk.END)
+                        self.entry_meta_ora_fine.insert(0, (meta.get("ora_fine") or "").strip())
+                except Exception:
+                    pass
+
+            # Load presenze_json
+            presenze_json = meeting.get("presenze_json")
+            if presenze_json:
+                try:
+                    pres = json.loads(presenze_json)
+                    if isinstance(pres, dict):
+                        counts = pres.get("counts") if isinstance(pres.get("counts"), dict) else {}
+                        if counts:
+                            if counts.get("aventi_diritto") is not None:
+                                self.entry_aventi_diritto.delete(0, tk.END)
+                                self.entry_aventi_diritto.insert(0, str(counts.get("aventi_diritto")))
+                            if counts.get("presenti") is not None:
+                                self.entry_presenti.delete(0, tk.END)
+                                self.entry_presenti.insert(0, str(counts.get("presenti")))
+                            if counts.get("deleghe") is not None:
+                                self.entry_deleghe.delete(0, tk.END)
+                                self.entry_deleghe.insert(0, str(counts.get("deleghe")))
+                            if counts.get("quorum_richiesto") is not None:
+                                self.entry_quorum.delete(0, tk.END)
+                                self.entry_quorum.insert(0, str(counts.get("quorum_richiesto")))
+                        raw_text = pres.get("raw_text")
+                        if isinstance(raw_text, str) and raw_text.strip():
+                            self.text_presenze.delete("1.0", tk.END)
+                            self.text_presenze.insert("1.0", raw_text)
+                except Exception:
+                    pass
+
+            self._update_quorum_label()
     
     def _send_email(self, subject, body, odg):
         """Generate EML file and/or mailto URL"""
@@ -594,6 +732,36 @@ La Segreteria""",
         corpo_email = self.text_email.get("1.0", tk.END).strip()
         verbale_path = self.entry_verbale_path.get().strip() if hasattr(self, 'entry_verbale_path') else None
         delibere_text = self.text_delibere.get("1.0", tk.END).strip() if hasattr(self, 'text_delibere') else None
+
+        meta_payload = {
+            "version": 1,
+            "tipo": self.entry_meta_tipo.get().strip(),
+            "modalita": self.entry_meta_modalita.get().strip(),
+            "luogo_link": self.entry_meta_luogo.get().strip(),
+            "ora_inizio": self.entry_meta_ora_inizio.get().strip(),
+            "ora_fine": self.entry_meta_ora_fine.get().strip(),
+        }
+        # drop empty values to keep JSON tidy
+        meta_payload = {k: v for k, v in meta_payload.items() if v not in (None, "")}
+        meta_json = json.dumps(meta_payload, ensure_ascii=False) if meta_payload else None
+
+        counts = {
+            "aventi_diritto": self._safe_int(self.entry_aventi_diritto.get()),
+            "presenti": self._safe_int(self.entry_presenti.get()),
+            "deleghe": self._safe_int(self.entry_deleghe.get()),
+            "quorum_richiesto": self._safe_int(self.entry_quorum.get()),
+        }
+        counts = {k: v for k, v in counts.items() if v is not None}
+        presenze_payload = {
+            "version": 1,
+            "counts": counts,
+            "raw_text": self.text_presenze.get("1.0", tk.END).strip(),
+        }
+        if not presenze_payload["raw_text"]:
+            presenze_payload.pop("raw_text", None)
+        if not presenze_payload["counts"]:
+            presenze_payload.pop("counts", None)
+        presenze_json = json.dumps(presenze_payload, ensure_ascii=False) if len(presenze_payload) > 1 else None
         
         if not data:
             messagebox.showwarning("Validazione", "Inserire la data della riunione.", parent=self.dialog)
@@ -619,14 +787,31 @@ La Segreteria""",
             # Save meeting first
             if self.meeting_id:
                 from cd_meetings import update_meeting
-                if update_meeting(self.meeting_id, numero_cd=numero_cd if numero_cd else None, data=data, titolo=oggetto if oggetto else None, odg=odg if odg else None, verbale_path=verbale_path):
+                if update_meeting(
+                    self.meeting_id,
+                    numero_cd=numero_cd if numero_cd else None,
+                    data=data,
+                    titolo=oggetto if oggetto else None,
+                    odg=odg if odg else None,
+                    verbale_path=verbale_path,
+                    meta_json=meta_json,
+                    presenze_json=presenze_json,
+                ):
                     meeting_id = self.meeting_id
                 else:
                     messagebox.showerror("Errore", "Errore durante l'aggiornamento.", parent=self.dialog)
                     return
             else:
                 from cd_meetings import add_meeting
-                meeting_id = add_meeting(data, numero_cd=numero_cd if numero_cd else None, titolo=oggetto if oggetto else None, odg=odg if odg else None, verbale_path=verbale_path)
+                meeting_id = add_meeting(
+                    data,
+                    numero_cd=numero_cd if numero_cd else None,
+                    titolo=oggetto if oggetto else None,
+                    odg=odg if odg else None,
+                    verbale_path=verbale_path,
+                    meta_json=meta_json,
+                    presenze_json=presenze_json,
+                )
                 if meeting_id <= 0:
                     messagebox.showerror("Errore", "Errore durante la creazione della riunione.", parent=self.dialog)
                     return
