@@ -117,11 +117,9 @@ if (Test-Path $prodDb) {
 Write-Info "Deploying EXE to production -> $prodExe"
 if (-not $DryRun) {
     $maxRetries = 5
-    $success = $false
     for ($i = 1; $i -le $maxRetries; $i++) {
         try {
             Copy-Item -Path $sourceExe -Destination $prodExe -Force -ErrorAction Stop
-            $success = $true
             break
         } catch {
             if ($i -lt $maxRetries) {

@@ -31,3 +31,6 @@ data/*.db
 data/*.db-journal
 src/data/*.db
 src/data/*.db-journal
+
+# Local notes
+tests/to-do

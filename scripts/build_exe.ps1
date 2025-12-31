@@ -26,6 +26,7 @@ param(
     [switch]$Windowed,
     [string]$SeedDataDir = "data_seed_portable",
     [string]$DistFolderName = "",
+    [string]$IconPath = "",
     [switch]$PruneOldTestBuilds,
     [int]$KeepTestBuilds = 3
 )
@@ -117,6 +118,65 @@ New-Item -ItemType Directory -Path $distBase -Force | Out-Null
 $buildArgs = @('--noconfirm','--onefile','--name', $ExeName, '--log-level=WARN')
 if ($Windowed) { $buildArgs += '--windowed' }
 
+function Invoke-PythonArgs([string[]]$pyArgs) {
+    if ($pythonExe -eq 'py -3') {
+        & py -3 @pyArgs
+    } else {
+        & $pythonExe @pyArgs
+    }
+    return $LASTEXITCODE
+}
+
+function Resolve-IconIco([string]$repoRootPath) {
+    # Priority:
+    # 1) Explicit -IconPath
+    # 2) assets/gestionale.ico
+    # 3) Generate assets/gestionale.ico from assets/gestionale.png (requires Pillow)
+
+    if (-not [string]::IsNullOrWhiteSpace($IconPath)) {
+        $p = Resolve-Path -LiteralPath $IconPath -ErrorAction SilentlyContinue
+        if ($p) { return $p.Path }
+        Write-Warn "IconPath not found: $IconPath"
+        return $null
+    }
+
+    $assetsDir = Join-Path $repoRootPath 'assets'
+    $ico = Join-Path $assetsDir 'gestionale.ico'
+    $png = Join-Path $assetsDir 'gestionale.png'
+
+    if (Test-Path $ico) {
+        return (Resolve-Path -LiteralPath $ico).Path
+    }
+
+    if (Test-Path $png) {
+        try {
+            $script = Join-Path $repoRootPath 'scripts\make_icon_ico.py'
+            if (Test-Path $script) {
+                Write-Info "Generating ICO from PNG: $png -> $ico"
+                $exitCode = Invoke-PythonArgs @($script, $png, $ico)
+                if ($exitCode -eq 0 -and (Test-Path $ico)) {
+                    return (Resolve-Path -LiteralPath $ico).Path
+                }
+                Write-Warn "Icon generation failed (exit $exitCode). Install Pillow or provide assets/gestionale.ico."
+            } else {
+                Write-Warn "Missing converter script: $script"
+            }
+        } catch {
+            Write-Warn "Icon generation error: $($_.Exception.Message)"
+        }
+    }
+
+    return $null
+}
+
+$iconIcoResolved = Resolve-IconIco -repoRootPath $repoRoot
+if ($iconIcoResolved) {
+    Write-Info "Using icon: $iconIcoResolved"
+    $buildArgs += @('--icon', $iconIcoResolved)
+} else {
+    Write-Warn "No icon configured. To set it, provide assets/gestionale.ico (or assets/gestionale.png + Pillow)."
+}
+
 function Copy-SeedData([string]$seedDirName, [string]$destDir) {
     $seedPath = Join-Path $src $seedDirName
     if (-not (Test-Path $seedPath)) {
@@ -162,7 +222,7 @@ Copy-SeedData $SeedDataDir $distBase
 Write-Info "Build complete. Dist directory: $distBase"
 Write-Info "Portable folder contains EXE + seeded 'data' (no soci.db) for a clean first-run test."
 
-function Prune-OldTestBuilds([string]$distRootPath, [string]$currentDistPath, [int]$keep) {
+function Remove-OldTestBuilds([string]$distRootPath, [string]$currentDistPath, [int]$keep) {
     if ([string]::IsNullOrWhiteSpace($distRootPath) -or -not (Test-Path $distRootPath)) { return }
     if ($keep -lt 1) { $keep = 1 }
 
@@ -195,7 +255,7 @@ function Prune-OldTestBuilds([string]$distRootPath, [string]$currentDistPath, [i
 # Auto-prune old test builds when building a dist_portable_test_* folder
 $distLeaf = Split-Path -Leaf $distBase
 if ($PruneOldTestBuilds -or ($distLeaf -like 'dist_portable_test_*')) {
-    Prune-OldTestBuilds -distRootPath $distRoot -currentDistPath $distBase -keep $KeepTestBuilds
+    Remove-OldTestBuilds -distRootPath $distRoot -currentDistPath $distBase -keep $KeepTestBuilds
 }
 
 Pop-Location
