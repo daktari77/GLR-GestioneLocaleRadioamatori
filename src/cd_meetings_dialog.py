@@ -114,15 +114,15 @@ La Segreteria""",
         self.meta_frame.columnconfigure(3, weight=1)
 
         ttk.Label(self.meta_frame, text="Tipo:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
-        self.meta_tipo_var = tk.StringVar(value="riunione del CD")
+        self.meta_tipo_var = tk.StringVar(value="Riunione del CD")
         self.combo_meta_tipo = ttk.Combobox(
             self.meta_frame,
             textvariable=self.meta_tipo_var,
             state="readonly",
             width=28,
             values=(
-                "riunione del CD",
-                "riunione del CD straordinario",
+                "Riunione del CD",
+                "Riunione del CD straordinario",
                 "Assemblea ordinaria dei soci",
                 "Assemblea straordinaria dei soci",
             ),
@@ -230,7 +230,7 @@ La Segreteria""",
         self.odg_frame = ttk.LabelFrame(main_frame, text="Ordine del Giorno", padding=5)
         self.odg_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
         
-        ttk.Label(self.odg_frame, text="ODG (un punto per riga):").pack(anchor="w", padx=5, pady=(0, 5))
+        ttk.Label(self.odg_frame, text="ODG (un punto per riga; usa [D] per punti che richiedono delibera):").pack(anchor="w", padx=5, pady=(0, 5))
         self.text_odg = scrolledtext.ScrolledText(self.odg_frame, height=8, wrap=tk.WORD)
         self.text_odg.pack(fill=tk.BOTH, expand=True)
         

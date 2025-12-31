@@ -21,9 +21,25 @@ def _odg_text_to_json(odg_text: str | None) -> str | None:
     lines = [ln.strip() for ln in odg_text.splitlines() if ln.strip()]
     if not lines:
         return None
+
+    items: list[dict] = []
+    for ln in lines:
+        raw = ln.strip()
+        up = raw.upper()
+        requires = False
+        for prefix in ("[D]", "[DEL]", "DEL:", "D:", "!"):
+            if up.startswith(prefix):
+                requires = True
+                raw = raw[len(prefix):].strip()
+                break
+        if not raw:
+            continue
+        items.append({"title": raw, "requires_delibera": requires})
+    if not items:
+        return None
     payload = {
         "version": 1,
-        "items": [{"title": ln, "requires_delibera": False} for ln in lines],
+        "items": items,
     }
     return json.dumps(payload, ensure_ascii=False)
 
@@ -41,7 +57,10 @@ def _odg_json_to_text(odg_json: str | None) -> str | None:
             if isinstance(item, dict):
                 title = str(item.get("title") or "").strip()
                 if title:
-                    titles.append(title)
+                    if bool(item.get("requires_delibera")):
+                        titles.append(f"[D] {title}")
+                    else:
+                        titles.append(title)
         return "\n".join(titles) if titles else None
     except Exception:
         return None
