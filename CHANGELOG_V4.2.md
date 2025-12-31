@@ -5,6 +5,10 @@
 
 ---
 
+## 0.4.2e · 31 Dicembre 2025
+
+- **Portable**: build con icona (assets/gestionale.ico, generabile da PNG via Pillow) + cleanup script build/deploy.
+
 ## 0.4.2b · 16 Dicembre 2025
 
 - **Import Magazzino**: controllo preventivo su duplicati/mancanze per `numero inventario` e `marca` con elenco immediato delle righe bloccanti.
