@@ -39,7 +39,7 @@ class DocumentPanel(ttk.Frame):
         self.member_filter_map: dict[str, int | None] = {"Tutti i soci": None}
         self.active_member_filter_id: int | None = None
         self.pending_member_filter: int | None = None
-        self.category_filter_default = "Tutte le categorie"
+        self.category_filter_default = "Tutti i tipi"
         self.member_filter_var = tk.StringVar(value="Tutti i soci")
         self.category_filter_var = tk.StringVar(value=self.category_filter_default)
         self.search_var = tk.StringVar()
@@ -92,7 +92,7 @@ class DocumentPanel(ttk.Frame):
         self.member_filter_combo.pack(side=tk.LEFT, padx=2)
         self.member_filter_combo.bind("<<ComboboxSelected>>", lambda _e: self._apply_filters())
 
-        ttk.Label(filter_frame, text="Categoria:").pack(side=tk.LEFT, padx=(12, 4))
+        ttk.Label(filter_frame, text="Tipo:").pack(side=tk.LEFT, padx=(12, 4))
         category_values = (self.category_filter_default,) + tuple(get_document_categories())
         self.category_filter_combo = ttk.Combobox(
             filter_frame,
@@ -114,7 +114,21 @@ class DocumentPanel(ttk.Frame):
     def _build_ui(self):
         """Build document panel UI"""
         toolbar = ttk.Frame(self)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
+        toolbar.pack(fill=tk.X, padx=5, pady=(5, 5))
+
+        # Keep per-document category update controls here (doc-level action).
+        self.btn_update_category = ttk.Button(toolbar, text="Aggiorna tipo", command=self._update_document_category)
+        self.btn_update_category.pack(side=tk.RIGHT, padx=(4, 0))
+        self.category_var = tk.StringVar(value=DEFAULT_DOCUMENT_CATEGORY)
+        self.category_combo = ttk.Combobox(
+            toolbar,
+            textvariable=self.category_var,
+            values=get_document_categories(),
+            state="readonly",
+            width=24,
+        )
+        self.category_combo.pack(side=tk.RIGHT, padx=2)
+        ttk.Label(toolbar, text="Tipo:").pack(side=tk.RIGHT, padx=(12, 2))
         
         self.btn_open = ttk.Button(toolbar, text="Apri", command=self._open_document)
         self.btn_open.pack(side=tk.LEFT, padx=2)
@@ -126,33 +140,10 @@ class DocumentPanel(ttk.Frame):
         self.btn_edit.pack(side=tk.LEFT, padx=2)
         self.btn_bulk_delete = ttk.Button(toolbar, text="Elimina selezionati", command=self._delete_selected_documents)
         self.btn_bulk_delete.pack(side=tk.LEFT, padx=(12, 2))
-        self.btn_bulk_category = ttk.Button(toolbar, text="Imposta categoria", command=self._bulk_update_category)
+        self.btn_bulk_category = ttk.Button(toolbar, text="Imposta tipo", command=self._bulk_update_category)
         self.btn_bulk_category.pack(side=tk.LEFT, padx=2)
         self.btn_export = ttk.Button(toolbar, text="Esporta CSV", command=self._export_selected_documents)
         self.btn_export.pack(side=tk.LEFT, padx=2)
-
-        member_toolbar = ttk.Frame(self)
-        member_toolbar.pack(fill=tk.X, padx=5, pady=(0, 5))
-        ttk.Label(member_toolbar, text="Azioni socio selezionato:").pack(side=tk.LEFT, padx=(0, 6))
-        self.btn_add = ttk.Button(member_toolbar, text="Aggiungi documento", command=self._add_document)
-        self.btn_add.pack(side=tk.LEFT, padx=2)
-        self.btn_privacy = ttk.Button(member_toolbar, text="Carica privacy", command=self._upload_privacy)
-        self.btn_privacy.pack(side=tk.LEFT, padx=2)
-        self.btn_member_folder = ttk.Button(member_toolbar, text="Apri cartella socio", command=self._open_member_folder)
-        self.btn_member_folder.pack(side=tk.LEFT, padx=2)
-
-        ttk.Label(member_toolbar, text="Categoria: ").pack(side=tk.LEFT, padx=(20, 2))
-        self.category_var = tk.StringVar(value=DEFAULT_DOCUMENT_CATEGORY)
-        self.category_combo = ttk.Combobox(
-            member_toolbar,
-            textvariable=self.category_var,
-            values=get_document_categories(),
-            state="readonly",
-            width=24
-        )
-        self.category_combo.pack(side=tk.LEFT, padx=2)
-        self.btn_update_category = ttk.Button(member_toolbar, text="Aggiorna categoria", command=self._update_document_category)
-        self.btn_update_category.pack(side=tk.LEFT, padx=4)
 
         info_label = ttk.Label(self, textvariable=self.info_var, foreground="gray40")
         info_label.pack(fill=tk.X, padx=5)
@@ -178,8 +169,8 @@ class DocumentPanel(ttk.Frame):
         self.tv_docs.heading("id", text="ID")
         self.tv_docs.heading("socio", text="Socio")
         self.tv_docs.heading("descrizione", text="Descrizione")
-        self.tv_docs.heading("categoria", text="Categoria")
-        self.tv_docs.heading("tipo", text="Tipo")
+        self.tv_docs.heading("categoria", text="Tipo")
+        self.tv_docs.heading("tipo", text="Tipo doc")
         self.tv_docs.heading("nome", text="Nome File")
         self.tv_docs.heading("data", text="Data")
         self.tv_docs.heading("info", text="Informazioni file")
@@ -800,6 +791,19 @@ class DocumentPanel(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Documenti", f"Impossibile aprire la cartella del socio:\n{exc}")
 
+    # Public wrappers used by the Soci tab (main window)
+    def add_document_for_socio(self, socio_id: int):
+        self.set_socio(int(socio_id))
+        self._add_document()
+
+    def upload_privacy_for_socio(self, socio_id: int):
+        self.set_socio(int(socio_id))
+        self._upload_privacy()
+
+    def open_member_folder_for_socio(self, socio_id: int):
+        self.set_socio(int(socio_id))
+        self._open_member_folder()
+
 
 class _CategoryChoiceDialog(simpledialog.Dialog):
     """Simple dialog to pick a document category."""
@@ -808,10 +812,10 @@ class _CategoryChoiceDialog(simpledialog.Dialog):
         self._initial_category = initial_category
         self._categories = tuple(categories)
         self._default_category = default_category
-        super().__init__(parent, title="Seleziona categoria")
+        super().__init__(parent, title="Seleziona tipo")
 
     def body(self, master):
-        ttk.Label(master, text="Categoria da applicare ai documenti selezionati:").grid(row=0, column=0, padx=10, pady=(10, 4))
+        ttk.Label(master, text="Tipo da applicare ai documenti selezionati:").grid(row=0, column=0, padx=10, pady=(10, 4))
         self.combo = ttk.Combobox(master, values=self._categories, state="readonly", width=32)
         self.combo.grid(row=1, column=0, padx=10, pady=(0, 10))
         if self._categories and self._initial_category in self._categories:
@@ -832,7 +836,7 @@ class _CategoryChoiceDialog(simpledialog.Dialog):
 class SectionDocumentPanel(ttk.Frame):
     """Panel for section-wide documents stored under data/section_docs."""
 
-    ALL_LABEL = "Tutte"
+    ALL_LABEL = "Tutti"
 
     def __init__(self, parent, *, on_changed: Callable[[], None] | None = None, **kwargs):
         super().__init__(parent, **kwargs)
@@ -877,7 +881,7 @@ class SectionDocumentPanel(ttk.Frame):
         ttk.Button(toolbar, text="Modifica", command=self._edit_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_document).pack(side=tk.LEFT, padx=2)
 
-        ttk.Label(toolbar, text="Carica in:").pack(side=tk.LEFT, padx=(15, 2))
+        ttk.Label(toolbar, text="Tipo:").pack(side=tk.LEFT, padx=(15, 2))
         section_categories = tuple(get_section_document_categories())
         self.upload_category_combo = ttk.Combobox(
             toolbar,
@@ -888,7 +892,7 @@ class SectionDocumentPanel(ttk.Frame):
         )
         self.upload_category_combo.pack(side=tk.LEFT, padx=2)
 
-        ttk.Label(toolbar, text="Filtro categoria:").pack(side=tk.LEFT, padx=(15, 2))
+        ttk.Label(toolbar, text="Filtro tipo:").pack(side=tk.LEFT, padx=(15, 2))
         filter_values = (self.ALL_LABEL,) + section_categories
         self.filter_combo = ttk.Combobox(
             toolbar,
@@ -924,7 +928,7 @@ class SectionDocumentPanel(ttk.Frame):
 
         self.tv_docs.heading("descrizione", text="Descrizione")
         self.tv_docs.heading("hash", text="ID (hash)")
-        self.tv_docs.heading("categoria", text="Categoria")
+        self.tv_docs.heading("categoria", text="Tipo")
         self.tv_docs.heading("protocollo", text="Protocollo")
         self.tv_docs.heading("verbale_numero", text="Verbale n.")
         self.tv_docs.heading("dimensione", text="Dimensione")

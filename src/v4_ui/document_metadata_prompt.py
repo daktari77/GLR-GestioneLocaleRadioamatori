@@ -27,7 +27,7 @@ class DocumentMetadataDialog(simpledialog.Dialog):
         super().__init__(parent, title)
 
     def body(self, master):  # type: ignore[override]
-        ttk.Label(master, text="Categoria:").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(master, text="Tipo:").grid(row=0, column=0, sticky="w", pady=(0, 4))
         self.category_var = tk.StringVar(value=self._initial_category)
         self.category_combo = ttk.Combobox(
             master,
@@ -100,7 +100,7 @@ class SectionDocumentMetadataDialog(simpledialog.Dialog):
         super().__init__(parent, title)
 
     def body(self, master):  # type: ignore[override]
-        ttk.Label(master, text="Categoria:").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(master, text="Tipo:").grid(row=0, column=0, sticky="w", pady=(0, 4))
         self.category_var = tk.StringVar(value=self._initial_category)
         self.category_combo = ttk.Combobox(
             master,

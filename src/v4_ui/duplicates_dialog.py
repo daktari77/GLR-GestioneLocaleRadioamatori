@@ -288,6 +288,13 @@ class DuplicatesDialog:
     
     def _render_field_selectors(self, group):
         """Build the selector widgets used to choose source values per field."""
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.winfo_toplevel())
+        except Exception:
+            pass
+
         self._init_selection_canvas()
         self.field_checkbox_vars = {}
         self.field_selection_labels = {}
@@ -325,10 +332,10 @@ class DuplicatesDialog:
         rows_container.grid_columnconfigure(2, weight=0, minsize=160)
         rows_container.grid_columnconfigure(3, weight=2, minsize=260)
         
-        ttk.Label(rows_container, text="Campo", font=("Segoe UI", 9, "bold"), anchor=tk.W).grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Label(rows_container, text="Valore A", font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", padx=4, pady=2)
-        ttk.Label(rows_container, text="Scelta", font=("Segoe UI", 9, "bold"), anchor=tk.CENTER).grid(row=0, column=2, padx=4, pady=2)
-        ttk.Label(rows_container, text="Valore B", font=("Segoe UI", 9, "bold")).grid(row=0, column=3, sticky="w", padx=4, pady=2)
+        ttk.Label(rows_container, text="Campo", font="AppBold", anchor=tk.W).grid(row=0, column=0, sticky="w", padx=4, pady=2)
+        ttk.Label(rows_container, text="Valore A", font="AppBold").grid(row=0, column=1, sticky="w", padx=4, pady=2)
+        ttk.Label(rows_container, text="Scelta", font="AppBold", anchor=tk.CENTER).grid(row=0, column=2, padx=4, pady=2)
+        ttk.Label(rows_container, text="Valore B", font="AppBold").grid(row=0, column=3, sticky="w", padx=4, pady=2)
         
         for row_index, field in enumerate(self.merge_fields, start=1):
             ttk.Label(rows_container, text=field, anchor=tk.W).grid(row=row_index, column=0, sticky="w", padx=4, pady=2)
@@ -383,15 +390,15 @@ class DuplicatesDialog:
             rows_container.grid_columnconfigure(col_idx, weight=1, minsize=160)
         rows_container.grid_columnconfigure(preview_col, weight=1, minsize=220)
 
-        ttk.Label(rows_container, text="Campo", font=("Segoe UI", 9, "bold"), anchor=tk.W).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+        ttk.Label(rows_container, text="Campo", font="AppBold", anchor=tk.W).grid(row=0, column=0, sticky="w", padx=6, pady=2)
         for idx, member in enumerate(group):
             ttk.Label(
                 rows_container,
                 text=f"Membro #{idx+1}\n(ID {member.get('id', '—')})",
                 anchor=tk.CENTER,
-                font=("Segoe UI", 9, "bold")
+                font="AppBold"
             ).grid(row=0, column=idx + 1, padx=6, pady=2, sticky="we")
-        ttk.Label(rows_container, text="Anteprima", font=("Segoe UI", 9, "bold")).grid(row=0, column=preview_col, sticky="w", padx=6, pady=2)
+        ttk.Label(rows_container, text="Anteprima", font="AppBold").grid(row=0, column=preview_col, sticky="w", padx=6, pady=2)
         
         for row_index, field in enumerate(self.merge_fields, start=1):
             ttk.Label(rows_container, text=field, anchor=tk.W).grid(row=row_index, column=0, sticky="w", padx=4, pady=2)

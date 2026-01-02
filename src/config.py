@@ -11,7 +11,7 @@ from datetime import datetime
 # Versione / Build
 # --------------------------
 APP_NAME = "GLR - Gestione Locale Radioamatori"
-APP_VERSION = "0.4.3c"
+APP_VERSION = "0.4.3e"
 __version__ = APP_VERSION
 AUTHOR = "Michele Martino - IU2GLR"
 

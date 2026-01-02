@@ -102,7 +102,7 @@ def get_all_meetings() -> List[Dict]:
     """
     from database import fetch_all
     try:
-        sql = "SELECT id, numero_cd, data, titolo, verbale_path, created_at FROM cd_riunioni ORDER BY data DESC"
+        sql = "SELECT id, numero_cd, data, titolo, meta_json, verbale_path, created_at FROM cd_riunioni ORDER BY data DESC"
         rows = fetch_all(sql)
         return [dict(row) for row in rows]
     except Exception as e:

@@ -41,6 +41,13 @@ class ImportWizard:
         self.win.geometry("760x680")
         self.win.transient(parent)
         self.win.grab_set()
+
+        try:
+            from v4_ui.styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.win.winfo_toplevel())
+        except Exception:
+            pass
         
         # Wizard pages
         self.current_page = 0
@@ -160,9 +167,9 @@ class ImportWizard:
         # Header
         header_frame = ttk.Frame(scrollable_frame)
         header_frame.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Label(header_frame, text="✓", font=("Segoe UI", 9, "bold"), width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Label(header_frame, text="Campo DB", font=("Segoe UI", 9, "bold"), width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Label(header_frame, text="Colonna CSV", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="✓", font="AppBold", width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Label(header_frame, text="Campo database", font="AppBold", width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="Colonna CSV", font="AppBold").pack(side=tk.LEFT, padx=5)
         
         # Create mapping widgets
         self._create_mapping_widgets(scrollable_frame)
@@ -237,9 +244,12 @@ class ImportWizard:
         # Info text
         info_frame = ttk.Frame(frame)
         info_frame.pack(fill=tk.X, pady=5)
-        info_text = ttk.Label(info_frame, 
+        info_text = ttk.Label(
+            info_frame,
             text="✓ = Campo sarà aggiornato durante l'importazione",
-            foreground="blue", font=("Segoe UI", 9))
+            foreground="blue",
+            font="AppNormal",
+        )
         info_text.pack()
         
         # Scrollable frame
@@ -276,9 +286,9 @@ class ImportWizard:
         # Header
         header_frame = ttk.Frame(scrollable_frame)
         header_frame.pack(fill=tk.X, padx=10, pady=5)
-        ttk.Label(header_frame, text="✓", font=("Segoe UI", 9, "bold"), width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Label(header_frame, text="Campo database", font=("Segoe UI", 9, "bold"), width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Label(header_frame, text="Colonna CSV", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="✓", font="AppBold", width=3).pack(side=tk.LEFT, padx=2)
+        ttk.Label(header_frame, text="Campo database", font="AppBold", width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Label(header_frame, text="Colonna CSV", font="AppBold").pack(side=tk.LEFT, padx=5)
         
         # CSV column options
         csv_options = [""] + self.headers
@@ -328,7 +338,7 @@ class ImportWizard:
         note_frame.pack(fill=tk.X, pady=10)
         note_text = ttk.Label(note_frame, 
             text="Nota: Il campo 'Attivo' applica la regola basata su Voto e Q0. Selezionalo solo se vuoi aggiornare lo stato.",
-            foreground="red", font=("Segoe UI", 9), justify=tk.LEFT)
+            foreground="red", font="AppNormal", justify=tk.LEFT)
         note_text.pack()
     
     def _build_page_import(self):

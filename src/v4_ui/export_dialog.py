@@ -61,7 +61,7 @@ class ExportDialog(tk.Toplevel):
     def _build_ui(self):
         """Build the dialog UI."""
         # Header
-        header = ttk.Label(self, text="Seleziona i campi da esportare:", font=("Arial", 10, "bold"))
+        header = ttk.Label(self, text="Seleziona i campi da esportare:", font=("Segoe UI", 10, "bold"))
         header.pack(pady=10, padx=10)
         
         # Buttons for presets

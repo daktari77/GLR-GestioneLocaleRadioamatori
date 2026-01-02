@@ -19,19 +19,10 @@ from pathlib import Path
 from typing import Dict, Iterable, List
 
 from config import SEC_DOCS
+from document_types_catalog import DEFAULT_SECTION_CATEGORY, SECTION_DOCUMENT_CATEGORIES
 
 SECTION_DOCUMENT_ROOT = Path(SEC_DOCS)
 SECTION_METADATA_FILE = SECTION_DOCUMENT_ROOT / "metadata.json"
-SECTION_DOCUMENT_CATEGORIES: tuple[str, ...] = (
-    "Verbali CD",
-    "Bilanci",
-    "Regolamenti",
-    "Modulistica",
-    "Documenti ARI",
-    "Quote ARI",
-    "Altro",
-)
-DEFAULT_SECTION_CATEGORY = SECTION_DOCUMENT_CATEGORIES[0]
 SECTION_DOCUMENT_INDEX_FILENAME = "elenco_documenti.txt"
 METADATA_SCHEMA_VERSION = 1
 

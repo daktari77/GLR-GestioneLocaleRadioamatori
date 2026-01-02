@@ -90,7 +90,7 @@ Il Tesoriere""",
         # Title
         title_frame = ttk.Frame(self.win)
         title_frame.pack(fill=tk.X, padx=10, pady=10)
-        ttk.Label(title_frame, text="📧 Gestione Email", font=("Arial", 14, "bold")).pack(anchor="w")
+        ttk.Label(title_frame, text="📧 Gestione Email", font=("Segoe UI", 14, "bold")).pack(anchor="w")
         
         notebook = ttk.Notebook(self.win)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -101,7 +101,7 @@ Il Tesoriere""",
         
         # Data
         row = 0
-        ttk.Label(main_frame, text="Data:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(main_frame, text="Data:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
         self.entry_data = ttk.Entry(main_frame, width=15)
         self.entry_data.grid(row=row, column=1, sticky="w", padx=5, pady=5)
         self.entry_data.insert(0, datetime.now().strftime("%d/%m/%Y"))
@@ -109,13 +109,13 @@ Il Tesoriere""",
         
         # Oggetto
         row += 1
-        ttk.Label(main_frame, text="Oggetto:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(main_frame, text="Oggetto:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
         self.entry_oggetto = ttk.Entry(main_frame, width=60)
         self.entry_oggetto.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
         
         # Selezione soci
         row += 1
-        ttk.Label(main_frame, text="Destinatari:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(main_frame, text="Destinatari:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
         self.destinatari_var = tk.StringVar(value="attivi")
         dest_frame = ttk.Frame(main_frame)
         dest_frame.grid(row=row, column=1, columnspan=3, sticky="w", padx=5, pady=5)
@@ -127,7 +127,7 @@ Il Tesoriere""",
         
         # Template selector
         row += 1
-        ttk.Label(main_frame, text="Testo email:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="nw", padx=5, pady=5)
+        ttk.Label(main_frame, text="Testo email:", font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="nw", padx=5, pady=5)
         template_frame = ttk.Frame(main_frame)
         template_frame.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
         
@@ -274,7 +274,7 @@ Il Tesoriere""",
         dialog.geometry("600x400")
         dialog.transient(self.win)
         
-        ttk.Label(dialog, text=f"Destinatari selezionati: {len(recipients)}", font=("Arial", 10, "bold")).pack(padx=10, pady=10)
+        ttk.Label(dialog, text=f"Destinatari selezionati: {len(recipients)}", font=("Segoe UI", 10, "bold")).pack(padx=10, pady=10)
         
         # Treeview with scrollbar
         frame = ttk.Frame(dialog)
@@ -340,7 +340,7 @@ Il Tesoriere""",
         dialog.geometry("700x400")
         dialog.transient(self.win)
         
-        ttk.Label(dialog, text="Seleziona una riunione da cui copiare l'ODG:", font=("Arial", 10, "bold")).pack(padx=10, pady=10)
+        ttk.Label(dialog, text="Seleziona una riunione da cui copiare l'ODG:", font=("Segoe UI", 10, "bold")).pack(padx=10, pady=10)
         
         # Treeview
         frame = ttk.Frame(dialog)
@@ -396,13 +396,13 @@ Il Tesoriere""",
         dialog.geometry("700x500")
         dialog.transient(self.win)
         
-        ttk.Label(dialog, text="Oggetto:", font=("Arial", 10, "bold")).pack(anchor='w', padx=10, pady=(10, 0))
+        ttk.Label(dialog, text="Oggetto:", font=("Segoe UI", 10, "bold")).pack(anchor='w', padx=10, pady=(10, 0))
         subject_text = tk.Text(dialog, height=2, wrap=tk.WORD)
         subject_text.pack(fill=tk.X, padx=10, pady=5)
         subject_text.insert('1.0', subject)
         subject_text.config(state='disabled')
         
-        ttk.Label(dialog, text="Corpo:", font=("Arial", 10, "bold")).pack(anchor='w', padx=10, pady=(10, 0))
+        ttk.Label(dialog, text="Corpo:", font=("Segoe UI", 10, "bold")).pack(anchor='w', padx=10, pady=(10, 0))
         body_text = scrolledtext.ScrolledText(dialog, height=20, wrap=tk.WORD)
         body_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         body_text.insert('1.0', body)

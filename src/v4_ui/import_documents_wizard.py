@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Wizard for importing documents.
 
-Allows choosing the target (Socio vs Sezione) and then a category coming from
+Allows choosing the target (Socio vs Sezione) and then a type coming from
 the existing catalogs. The import itself reuses the existing bulk import
 functions in the business layer.
 """
@@ -19,7 +19,7 @@ class ImportDocumentsWizard(tk.Toplevel):
 
     The wizard asks:
     1) target: socio / sezione
-    2) category (from the existing catalogs)
+    2) type (from the existing catalogs)
     3) source folder + copy/move
 
     For the "Socio" target, the import is executed against the currently
@@ -85,9 +85,9 @@ class ImportDocumentsWizard(tk.Toplevel):
         )
         self.step_frames.append(f0)
 
-        # Step 1: category
+        # Step 1: type
         f1 = ttk.Frame(self.steps_frame)
-        ttk.Label(f1, text="Seleziona la categoria:").grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ttk.Label(f1, text="Seleziona il tipo:").grid(row=0, column=0, sticky="w", pady=(0, 8))
 
         self.member_info_label = ttk.Label(f1, text="")
         self.member_info_label.grid(row=1, column=0, sticky="w", pady=(0, 6))

@@ -45,6 +45,13 @@ class PreferencesDialog(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
     def _build_ui(self) -> None:
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.winfo_toplevel())
+        except Exception:
+            pass
+
         container = ttk.Frame(self, padding=10)
         container.pack(fill=tk.BOTH, expand=True)
 
@@ -67,12 +74,12 @@ class PreferencesDialog(tk.Toplevel):
         notebook.add(backup_frame, text="Backup")
 
         categories_frame = ttk.Frame(notebook, padding=10)
-        notebook.add(categories_frame, text="Categorie documenti")
+        notebook.add(categories_frame, text="Tipi documenti")
 
         ttk.Label(
             roles_frame,
             text="Voci predefinite (sempre disponibili):",
-            font=("Segoe UI", 9, "bold"),
+            font="AppBold",
         ).pack(anchor="w")
 
         defaults_box = tk.Text(roles_frame, height=6, width=40, state="disabled", wrap=tk.WORD)
@@ -103,7 +110,7 @@ class PreferencesDialog(tk.Toplevel):
         ttk.Label(current_preview, textvariable=self.preview_var, wraplength=380).pack(anchor="w", padx=6, pady=4)
 
         # Client posta
-        ttk.Label(mail_frame, text="Percorso Thunderbird Portable", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(mail_frame, text="Percorso Thunderbird Portable", font="AppBold").grid(row=0, column=0, sticky="w")
         self.th_path_var = tk.StringVar(value=(self.current_cfg.get("thunderbird_path") or ""))
         entry = ttk.Entry(mail_frame, textvariable=self.th_path_var, width=60)
         entry.grid(row=1, column=0, sticky="ew", pady=(4, 4))
@@ -112,7 +119,7 @@ class PreferencesDialog(tk.Toplevel):
         mail_frame.columnconfigure(0, weight=1)
 
         # Backup
-        ttk.Label(backup_frame, text="Cartella backup locale", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(backup_frame, text="Cartella backup locale", font="AppBold").grid(row=0, column=0, sticky="w")
         self.backup_dir_var = tk.StringVar(value=(self.current_cfg.get("backup_dir") or ""))
         backup_entry = ttk.Entry(backup_frame, textvariable=self.backup_dir_var, width=60)
         backup_entry.grid(row=1, column=0, sticky="ew", pady=(4, 4))
@@ -125,7 +132,7 @@ class PreferencesDialog(tk.Toplevel):
 
         ttk.Separator(backup_frame, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 10))
 
-        ttk.Label(backup_frame, text="Repository backup (cloud)", font=("Segoe UI", 9, "bold")).grid(row=4, column=0, sticky="w")
+        ttk.Label(backup_frame, text="Repository backup (cloud)", font="AppBold").grid(row=4, column=0, sticky="w")
         self.backup_repo_dir_var = tk.StringVar(value=(self.current_cfg.get("backup_repo_dir") or ""))
         repo_entry = ttk.Entry(backup_frame, textvariable=self.backup_repo_dir_var, width=60)
         repo_entry.grid(row=5, column=0, sticky="ew", pady=(4, 4))
@@ -161,11 +168,11 @@ class PreferencesDialog(tk.Toplevel):
         self._update_preview()
 
     def _build_categories_tab(self, frame: ttk.Frame) -> None:
-        """Build the 'Categorie documenti' preferences tab."""
+        """Build the 'Tipi documenti' preferences tab."""
         ttk.Label(
             frame,
-            text="Categorie documenti Soci",
-            font=("Segoe UI", 9, "bold"),
+            text="Tipi documenti Soci",
+            font="AppBold",
         ).grid(row=0, column=0, sticky="w")
 
         defaults_member = tk.Text(frame, height=5, width=46, state="disabled", wrap=tk.WORD)
@@ -174,7 +181,7 @@ class PreferencesDialog(tk.Toplevel):
         defaults_member.insert("1.0", "\n".join(DOCUMENT_CATEGORIES))
         defaults_member.configure(state="disabled")
 
-        ttk.Label(frame, text="Categorie personalizzate Soci (una per riga):").grid(row=2, column=0, sticky="w")
+        ttk.Label(frame, text="Tipi personalizzati Soci (uno per riga):").grid(row=2, column=0, sticky="w")
         self.custom_doc_categories_text = tk.Text(frame, height=6, width=56)
         self.custom_doc_categories_text.grid(row=3, column=0, sticky="nsew", pady=(4, 8))
         self.custom_doc_categories_text.bind("<KeyRelease>", self._update_categories_preview)
@@ -184,7 +191,7 @@ class PreferencesDialog(tk.Toplevel):
             self.custom_doc_categories_text.insert("1.0", "\n".join(member_custom))
 
         self.member_categories_preview_var = tk.StringVar(value=self._format_member_categories_preview(self.current_cfg))
-        member_preview = ttk.LabelFrame(frame, text="Anteprima categorie Soci")
+        member_preview = ttk.LabelFrame(frame, text="Anteprima tipi Soci")
         member_preview.grid(row=4, column=0, sticky="ew", pady=(0, 10))
         ttk.Label(member_preview, textvariable=self.member_categories_preview_var, wraplength=420).pack(
             anchor="w", padx=6, pady=4
@@ -194,8 +201,8 @@ class PreferencesDialog(tk.Toplevel):
 
         ttk.Label(
             frame,
-            text="Categorie documenti Sezione",
-            font=("Segoe UI", 9, "bold"),
+            text="Tipi documenti Sezione",
+            font="AppBold",
         ).grid(row=6, column=0, sticky="w")
 
         defaults_section = tk.Text(frame, height=6, width=46, state="disabled", wrap=tk.WORD)
@@ -204,7 +211,7 @@ class PreferencesDialog(tk.Toplevel):
         defaults_section.insert("1.0", "\n".join(SECTION_DOCUMENT_CATEGORIES))
         defaults_section.configure(state="disabled")
 
-        ttk.Label(frame, text="Categorie personalizzate Sezione (una per riga):").grid(row=8, column=0, sticky="w")
+        ttk.Label(frame, text="Tipi personalizzati Sezione (uno per riga):").grid(row=8, column=0, sticky="w")
         self.custom_section_categories_text = tk.Text(frame, height=6, width=56)
         self.custom_section_categories_text.grid(row=9, column=0, sticky="nsew", pady=(4, 8))
         self.custom_section_categories_text.bind("<KeyRelease>", self._update_categories_preview)
@@ -214,7 +221,7 @@ class PreferencesDialog(tk.Toplevel):
             self.custom_section_categories_text.insert("1.0", "\n".join(section_custom))
 
         self.section_categories_preview_var = tk.StringVar(value=self._format_section_categories_preview(self.current_cfg))
-        section_preview = ttk.LabelFrame(frame, text="Anteprima categorie Sezione")
+        section_preview = ttk.LabelFrame(frame, text="Anteprima tipi Sezione")
         section_preview.grid(row=10, column=0, sticky="ew")
         ttk.Label(section_preview, textvariable=self.section_categories_preview_var, wraplength=420).pack(
             anchor="w", padx=6, pady=4

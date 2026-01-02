@@ -5,6 +5,68 @@ Manages colors, fonts, and widget styling
 """
 
 from tkinter import font as tkfont
+import tkinter as tk
+
+
+def configure_global_fonts(root, *, family: str = "Segoe UI", size: int = 9) -> None:
+    """Configure Tk named fonts so the whole UI uses a consistent base font.
+
+    This affects both Tk widgets and ttk widgets that inherit from Tk named fonts.
+    """
+
+    if root is None:
+        return
+
+    # Tk uses named fonts; not all of them exist on every platform.
+    candidates = (
+        "TkDefaultFont",
+        "TkTextFont",
+        "TkMenuFont",
+        "TkHeadingFont",
+        "TkCaptionFont",
+        "TkSmallCaptionFont",
+        "TkIconFont",
+        "TkTooltipFont",
+    )
+
+    for name in candidates:
+        try:
+            f = tkfont.nametofont(name)
+        except Exception:
+            continue
+        try:
+            f.configure(family=family, size=size)
+        except Exception:
+            continue
+
+
+def ensure_app_named_fonts(root) -> None:
+    """Create/update app-level named fonts derived from TkDefaultFont."""
+
+    if root is None:
+        return
+
+    try:
+        base = tkfont.nametofont("TkDefaultFont")
+    except Exception:
+        return
+
+    base_actual = base.actual()
+
+    def _upsert(name: str, *, weight: str):
+        try:
+            f = tkfont.nametofont(name)
+        except tk.TclError:
+            f = tkfont.Font(master=root, name=name, exists=False)
+        cfg = dict(base_actual)
+        cfg["weight"] = weight
+        try:
+            f.configure(**cfg)
+        except Exception:
+            pass
+
+    _upsert("AppNormal", weight="normal")
+    _upsert("AppBold", weight="bold")
 
 class Theme:
     """Base theme class"""

@@ -75,6 +75,16 @@ class App:
         
         # Create root window
         self.root = tk.Tk()
+
+        # Global typography (Tk/ttk): keep it consistent across the whole app
+        try:
+            from .styles import configure_global_fonts, ensure_app_named_fonts
+
+            configure_global_fonts(self.root, family="Segoe UI", size=9)
+            ensure_app_named_fonts(self.root)
+        except Exception:
+            pass
+
         self.root.title(f"{APP_NAME} - Revisione {APP_VERSION} - Build {BUILD_ID}")
         # Window sized to comfortably fit 20 rows while staying within 1900x850 footprint
         self.root.geometry("1300x860")
@@ -309,6 +319,24 @@ class App:
         self._create_statusbar()
         if self.startup_issues:
             self.root.after(300, self._show_startup_issues)
+
+    @staticmethod
+    def _select_notebook_tab_by_text(notebook: ttk.Notebook, label: str) -> bool:
+        """Select a notebook tab by its visible label."""
+        try:
+            wanted = (label or "").strip()
+            if not wanted:
+                return False
+            for tab_id in notebook.tabs():
+                try:
+                    if (notebook.tab(tab_id, "text") or "").strip() == wanted:
+                        notebook.select(tab_id)
+                        return True
+                except Exception:
+                    continue
+        except Exception:
+            return False
+        return False
     
     def _build_menu(self):
         """Build the menu bar."""
@@ -339,7 +367,6 @@ class App:
         tools_menu.add_command(label="Importa dati CSV", command=self._show_import_wizard)
         tools_menu.add_command(label="Esporta dati             Ctrl+E", command=self._show_export_dialog)
         tools_menu.add_command(label="Ricerca Duplicati        Ctrl+M", command=self._show_duplicates_dialog)
-        tools_menu.add_command(label="Documentale socio        Ctrl+D", command=self._open_documentale)
         tools_menu.add_command(label="Import documenti", command=self._import_documents_wizard)
         tools_menu.add_separator()
         tools_menu.add_command(label="Modifica campi comuni", command=self._show_batch_edit_dialog)
@@ -439,14 +466,8 @@ class App:
         ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
         ttk.Button(toolbar, text="🗑️ Cestino", command=self._show_trash).pack(side=tk.LEFT, padx=2)
         ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Documentale", command=self._open_documentale).pack(side=tk.LEFT, padx=2)
-        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
         ttk.Button(toolbar, text="Modifica campi", command=self._show_batch_edit_dialog).pack(side=tk.LEFT, padx=2)
         ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Esporta", command=self._show_export_dialog).pack(side=tk.LEFT, padx=2)
-        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Nuova riunione CD", command=self._new_cd_meeting).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Gestisci riunioni CD", command=self._open_cd_meetings_list).pack(side=tk.LEFT, padx=2)
         ttk.Label(toolbar, text="  |  Cerca:").pack(side=tk.LEFT, padx=2)
 
         # Search field
@@ -460,7 +481,7 @@ class App:
         filter_toolbar = ttk.Frame(tab)
         filter_toolbar.pack(fill=tk.X, padx=5, pady=2)
 
-        ttk.Label(filter_toolbar, text="Filtri:", font=("Arial", 9)).pack(side=tk.LEFT, padx=5)
+        ttk.Label(filter_toolbar, text="Filtri:", font="AppNormal").pack(side=tk.LEFT, padx=5)
 
         # Privacy filter
         self.privacy_filter_var = tk.StringVar(value="tutti")
@@ -589,6 +610,14 @@ class App:
             ttk.Button(button_frame, text="Salva", command=self._save_member).pack(side=tk.RIGHT, padx=2)
             ttk.Button(button_frame, text="Annulla", command=self._cancel_edit).pack(side=tk.RIGHT, padx=2)
 
+        # Azioni legate al socio selezionato (documenti), visibili nel tab Soci.
+        socio_actions = ttk.Frame(bottom_area)
+        socio_actions.pack(fill=tk.X, expand=False, padx=0, pady=(0, 5))
+        ttk.Label(socio_actions, text="Azioni socio selezionato:").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(socio_actions, text="Aggiungi documento", command=self._socio_add_document).pack(side=tk.LEFT, padx=2)
+        ttk.Button(socio_actions, text="Carica privacy", command=self._socio_upload_privacy).pack(side=tk.LEFT, padx=2)
+        ttk.Button(socio_actions, text="Apri cartella socio", command=self._socio_open_member_folder).pack(side=tk.LEFT, padx=2)
+
         # Inline document preview placed right below the Note field
         docs_preview_frame = ttk.LabelFrame(bottom_area, text="Documenti del socio")
         docs_preview_frame.pack(fill=tk.X, expand=False, padx=0, pady=(0, 5))
@@ -620,8 +649,8 @@ class App:
         heading_config: dict[str, tuple[str, int, TreeviewAnchor]] = {
             "id": ("ID", 45, "center"),
             "descrizione": ("Descrizione", 220, "w"),
-            "categoria": ("Categoria", 140, "w"),
-            "tipo": ("Tipo", 90, "center"),
+            "categoria": ("Tipo", 140, "w"),
+            "tipo": ("Tipo doc", 90, "center"),
             "nome": ("Nome file", 220, "w"),
             "data": ("Data", 110, "center"),
             "info": ("Informazioni file", 180, "w"),
@@ -630,6 +659,12 @@ class App:
             title, width, anchor = heading_config[col]
             self.docs_preview_tree.heading(col, text=title)
             self.docs_preview_tree.column(col, width=width, anchor=anchor)
+
+        # Soft color cue for missing files in the preview.
+        try:
+            self.docs_preview_tree.tag_configure("missing", foreground="#b00020")
+        except Exception:
+            pass
 
         self.docs_preview_tree.pack(fill=tk.X, expand=False)
     
@@ -640,14 +675,14 @@ class App:
         
         from .panels import DocumentPanel, SectionDocumentPanel
 
-        docs_notebook = ttk.Notebook(tab)
-        docs_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.docs_notebook = ttk.Notebook(tab)
+        self.docs_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        self.section_docs_panel = SectionDocumentPanel(docs_notebook)
-        docs_notebook.add(self.section_docs_panel, text="Documenti sezione")
+        self.section_docs_panel = SectionDocumentPanel(self.docs_notebook)
+        self.docs_notebook.add(self.section_docs_panel, text="Documenti sezione")
 
-        self.panel_docs = DocumentPanel(docs_notebook, show_all_documents=True)
-        docs_notebook.add(self.panel_docs, text="Documenti soci")
+        self.panel_docs = DocumentPanel(self.docs_notebook, show_all_documents=True)
+        self.docs_notebook.add(self.panel_docs, text="Documenti soci")
 
     def _create_magazzino_tab(self):
         """Create the inventory (magazzino) tab."""
@@ -707,6 +742,14 @@ class App:
         self.notebook.add(tab, text="Consiglio Direttivo")
 
         from .panels import SectionDocumentPanel
+
+        # CD actions toolbar (single access point for Riunioni CD)
+        cd_toolbar = ttk.Frame(tab)
+        cd_toolbar.pack(fill=tk.X, padx=5, pady=(5, 0))
+        ttk.Button(cd_toolbar, text="Nuova riunione CD", command=self._new_cd_meeting).pack(side=tk.LEFT, padx=2)
+        ttk.Button(cd_toolbar, text="Gestisci riunioni CD", command=self._open_cd_meetings_list).pack(
+            side=tk.LEFT, padx=2
+        )
 
         cd_notebook = ttk.Notebook(tab)
         cd_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -788,6 +831,14 @@ class App:
         self.tv_cd_delibere.heading("esito", text="Esito")
         self.tv_cd_delibere.heading("data", text="Data votazione")
 
+        # Soft color cues by outcome.
+        try:
+            self.tv_cd_delibere.tag_configure("esito_ok", background="#e9f7ef")
+            self.tv_cd_delibere.tag_configure("esito_ko", background="#f8d7da")
+            self.tv_cd_delibere.tag_configure("esito_pending", background="#fff3cd", foreground="#856404")
+        except Exception:
+            pass
+
         self.tv_cd_delibere.grid(row=0, column=0, sticky="nsew")
         scrollbar_h.grid(row=1, column=0, sticky="ew")
         scrollbar_v.grid(row=0, column=1, sticky="ns")
@@ -840,6 +891,11 @@ class App:
         self.tv_cd_verbali_docs.heading("protocollo", text="Protocollo")
         self.tv_cd_verbali_docs.heading("descrizione", text="Descrizione")
         self.tv_cd_verbali_docs.heading("file", text="File")
+
+        try:
+            self.tv_cd_verbali_docs.tag_configure("missing", foreground="#b00020")
+        except Exception:
+            pass
 
         self.tv_cd_verbali_docs.grid(row=0, column=0, sticky="nsew")
         scrollbar_h.grid(row=1, column=0, sticky="ew")
@@ -900,6 +956,11 @@ class App:
             raw = str(d.get("uploaded_at") or "").strip()
             return raw[:10] if len(raw) >= 10 else raw
 
+        try:
+            import os
+        except Exception:  # pragma: no cover
+            os = None
+
         for idx, doc in enumerate(verbali, start=1):
             iid = str(doc.get("id") or f"v{idx}")
             data = _date_value(doc)
@@ -907,8 +968,16 @@ class App:
             protocollo = str(doc.get("protocollo") or "")
             descrizione = str(doc.get("descrizione") or "")
             filename = str(doc.get("nome_file") or "")
-            tv.insert("", tk.END, iid=iid, values=(data, numero, protocollo, descrizione, filename))
             abs_path = str(doc.get("absolute_path") or "")
+
+            tags: tuple[str, ...] = ()
+            try:
+                if (not abs_path) or (os is not None and not os.path.exists(abs_path)):
+                    tags = ("missing",)
+            except Exception:
+                pass
+
+            tv.insert("", tk.END, iid=iid, values=(data, numero, protocollo, descrizione, filename), tags=tags)
             if abs_path:
                 self._cd_verbali_doc_path_map[iid] = abs_path
 
@@ -1007,16 +1076,37 @@ class App:
         for item in self.tv_cd_delibere.get_children():
             self.tv_cd_delibere.delete(item)
         
+        def _esito_tag(esito_value: object) -> tuple[str, ...]:
+            s = str(esito_value or "").strip().lower()
+            if not s:
+                return ("esito_pending",)
+            ok_words = ("approv", "favorev", "ok", "si", "sì")
+            ko_words = ("resp", "boc", "no", "contr")
+            if any(w in s for w in ok_words):
+                return ("esito_ok",)
+            if any(w in s for w in ko_words):
+                return ("esito_ko",)
+            if "rinv" in s or "sosp" in s or "att" in s:
+                return ("esito_pending",)
+            return ()
+
         # Load delibere
         delibere = get_all_delibere()
         for delibera in delibere:
-            self.tv_cd_delibere.insert("", tk.END, iid=delibera['id'], values=(
-                delibera['id'],
-                delibera.get('numero', ''),
-                delibera.get('oggetto', ''),
-                delibera.get('esito', ''),
-                delibera.get('data_votazione', '')
-            ))
+            esito = delibera.get('esito', '')
+            self.tv_cd_delibere.insert(
+                "",
+                tk.END,
+                iid=delibera['id'],
+                values=(
+                    delibera['id'],
+                    delibera.get('numero', ''),
+                    delibera.get('oggetto', ''),
+                    esito,
+                    delibera.get('data_votazione', '')
+                ),
+                tags=_esito_tag(esito),
+            )
     
     def _new_cd_delibera(self):
         """Open dialog to create a new delibera"""
@@ -1530,7 +1620,6 @@ Gestione Soci:
   Ctrl+N        Nuovo socio
   Ctrl+S        Salva modifiche
   Ctrl+Del      Elimina socio selezionato
-  Ctrl+D        Documentale socio selezionato
   Ctrl+M        Ricerca duplicati
   
 Navigazione:
@@ -1772,7 +1861,7 @@ Generale:
         toolbar = ttk.Frame(trash_win)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(toolbar, text="Soci eliminati (soft delete)", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(toolbar, text="Soci eliminati (soft delete)", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="Svuota cestino", command=lambda: self._empty_trash(trash_tree)).pack(side=tk.RIGHT, padx=2)
         ttk.Button(toolbar, text="Ripristina", command=lambda: self._restore_member(trash_tree, trash_win)).pack(side=tk.RIGHT, padx=2)
         ttk.Button(toolbar, text="Elimina definitivamente", command=lambda: self._hard_delete_member(trash_tree)).pack(side=tk.RIGHT, padx=2)
@@ -2395,24 +2484,84 @@ Generale:
         if not selection:
             messagebox.showwarning("Selezione", "Selezionare un socio")
             return
-        
+
+        member_id = self._get_member_id_from_item(selection[0])
+        if member_id is None:
+            messagebox.showerror("Documenti", "Impossibile determinare l'ID del socio selezionato.")
+            return
+
+        self._navigate_to_member_documents(member_id)
+
+    def _navigate_to_member_documents(self, member_id: int):
+        """Navigate to Documenti → Documenti soci and pre-filter the panel to the given socio."""
         try:
-            from database import fetch_one
+            panel = getattr(self, "panel_docs", None)
+            if panel is not None and hasattr(panel, "set_socio"):
+                try:
+                    panel.set_socio(int(member_id))
+                except Exception:
+                    pass
 
-            member_id = self._get_member_id_from_item(selection[0])
-            if member_id is None:
-                messagebox.showerror("Documentale", "Impossibile determinare l'ID del socio selezionato.")
-                return
-
-            member = fetch_one("SELECT id, nominativo, nome, cognome FROM soci WHERE id = ?", (member_id,))
-            if member:
-                member_dict = dict(member) if not isinstance(member, dict) else member
-                from v4_ui.documents_dialog import DocumentsDialog
-                display_name = self._format_member_display_name(member_dict)
-                DocumentsDialog(self.root, member_dict['id'], display_name)
+            self._select_notebook_tab_by_text(self.notebook, "Documenti")
+            docs_nb = getattr(self, "docs_notebook", None)
+            if isinstance(docs_nb, ttk.Notebook):
+                self._select_notebook_tab_by_text(docs_nb, "Documenti soci")
         except Exception as e:
-            messagebox.showerror("Errore", f"Errore nell'apertura del documentale: {e}")
-            logger.error("Failed to open documentale: %s", e)
+            messagebox.showerror("Documenti", f"Errore nell'apertura dei documenti: {e}")
+            logger.error("Failed to navigate to documents: %s", e)
+
+    def _get_target_member_id_for_actions(self) -> int | None:
+        """Return selected socio id (prefer selection, fallback to current_member_id)."""
+        try:
+            selection = self.tv_soci.selection()
+            if len(selection) == 1:
+                member_id = self._get_member_id_from_item(selection[0])
+                if member_id is not None:
+                    return int(member_id)
+        except Exception:
+            pass
+        if getattr(self, "current_member_id", None):
+            try:
+                return int(self.current_member_id)
+            except Exception:
+                return None
+        return None
+
+    def _socio_add_document(self):
+        member_id = self._get_target_member_id_for_actions()
+        if not member_id:
+            messagebox.showwarning("Documenti", "Selezionare un socio")
+            return
+        self._navigate_to_member_documents(member_id)
+        panel = getattr(self, "panel_docs", None)
+        if panel is None or not hasattr(panel, "add_document_for_socio"):
+            messagebox.showerror("Documenti", "Pannello documenti non disponibile")
+            return
+        panel.add_document_for_socio(int(member_id))
+
+    def _socio_upload_privacy(self):
+        member_id = self._get_target_member_id_for_actions()
+        if not member_id:
+            messagebox.showwarning("Documenti", "Selezionare un socio")
+            return
+        self._navigate_to_member_documents(member_id)
+        panel = getattr(self, "panel_docs", None)
+        if panel is None or not hasattr(panel, "upload_privacy_for_socio"):
+            messagebox.showerror("Documenti", "Pannello documenti non disponibile")
+            return
+        panel.upload_privacy_for_socio(int(member_id))
+
+    def _socio_open_member_folder(self):
+        member_id = self._get_target_member_id_for_actions()
+        if not member_id:
+            messagebox.showwarning("Documenti", "Selezionare un socio")
+            return
+        self._navigate_to_member_documents(member_id)
+        panel = getattr(self, "panel_docs", None)
+        if panel is None or not hasattr(panel, "open_member_folder_for_socio"):
+            messagebox.showerror("Documenti", "Pannello documenti non disponibile")
+            return
+        panel.open_member_folder_for_socio(int(member_id))
 
     @staticmethod
     def _format_member_display_name(member: Mapping[str, object] | None) -> str:
@@ -2633,18 +2782,4 @@ Generale:
             logger.error(f"Error showing update status wizard: {e}")
             messagebox.showerror("Errore", f"Errore apertura wizard: {e}")
     
-    def _show_reports_dialog(self):
-        """Show reports dialog"""
-        try:
-            from database import fetch_all
-            from export_dialogs import ReportsDialog
-            
-            # Get current members
-            members = fetch_all(
-                f"SELECT {', '.join(self.COLONNE)} FROM soci WHERE deleted_at IS NULL"
-            )
-            members_list = [dict(m) for m in members]
-            
-            ReportsDialog(self.root, members_list, self.cfg)
-        except Exception as e:
-            messagebox.showerror("Errore", f"Errore: {e}")
+

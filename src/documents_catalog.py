@@ -1,45 +1,13 @@
-"""Document categories shared across the GLR Gestione Locale Radioamatori UI."""
+"""Member document type catalog.
+
+Kept for backward compatibility.
+The single source of truth for document types is now `document_types_catalog.py`.
+"""
+
 from __future__ import annotations
 
-from typing import Iterable, Tuple
+from typing import Iterable
 
-# Categories exposed in combo-boxes across the UI. The order matters because the
-# first element becomes the default selection when widgets are instantiated.
-DOCUMENT_CATEGORIES: Tuple[str, ...] = (
-    "Privacy",
-    "Documenti Identità",
-    "Deleghe",
-    "Certificazioni",
-    "Ricevute",
-    "Altro",
-)
-
-DEFAULT_DOCUMENT_CATEGORY: str = DOCUMENT_CATEGORIES[0]
-
-
-def normalize_category(value: str | None) -> str:
-    """Return a catalog-safe category name, falling back to the default."""
-    if not value:
-        return DEFAULT_DOCUMENT_CATEGORY
-
-    candidate = value.strip()
-    if not candidate:
-        return DEFAULT_DOCUMENT_CATEGORY
-
-    lower_map = {cat.lower(): cat for cat in DOCUMENT_CATEGORIES}
-    return lower_map.get(candidate.lower(), DEFAULT_DOCUMENT_CATEGORY)
-
-
-def ensure_category(value: str | None, extra_allowed: Iterable[str] | None = None) -> str:
-    """Validate or expand the categories list at runtime.
-
-    Widgets may provide custom entries (e.g., via config). To avoid breaking the
-    catalog we optionally accept `extra_allowed`; if `value` matches one of those
-    additional entries (case insensitive) we return it untouched, otherwise we
-    fall back to the normalized catalog category.
-    """
-    if extra_allowed:
-        extra_map = {c.lower(): c for c in extra_allowed if c}
-        if value and value.strip().lower() in extra_map:
-            return extra_map[value.strip().lower()]
-    return normalize_category(value)
+from document_types_catalog import DOCUMENT_CATEGORIES, DEFAULT_DOCUMENT_CATEGORY
+from document_types_catalog import ensure_member_document_type as ensure_category
+from document_types_catalog import normalize_member_document_type as normalize_category

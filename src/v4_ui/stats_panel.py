@@ -20,8 +20,15 @@ class StatsPanel(ttk.Frame):
     
     def _build_ui(self):
         """Build the statistics UI."""
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.winfo_toplevel())
+        except Exception:
+            pass
+
         # Title
-        title = ttk.Label(self, text="Statistiche soci", font=("Arial", 11, "bold"))
+        title = ttk.Label(self, text="Statistiche soci", font=("Segoe UI", 11, "bold"))
         title.pack(pady=10)
         
         # Main frame with grid layout
@@ -29,38 +36,38 @@ class StatsPanel(ttk.Frame):
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Row 1: Active/Inactive
-        ttk.Label(main_frame, text="Totale soci:", font=("Arial", 9)).grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        self.label_total = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"))
+        ttk.Label(main_frame, text="Totale soci:", font="AppNormal").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        self.label_total = ttk.Label(main_frame, text="0", font="AppBold")
         self.label_total.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="Attivi:", font=("Arial", 9)).grid(row=0, column=2, sticky="w", padx=5, pady=5)
-        self.label_active = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"), foreground="green")
+        ttk.Label(main_frame, text="Attivi:", font="AppNormal").grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        self.label_active = ttk.Label(main_frame, text="0", font="AppBold", foreground="green")
         self.label_active.grid(row=0, column=3, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="Inattivi:", font=("Arial", 9)).grid(row=0, column=4, sticky="w", padx=5, pady=5)
-        self.label_inactive = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"), foreground="red")
+        ttk.Label(main_frame, text="Inattivi:", font="AppNormal").grid(row=0, column=4, sticky="w", padx=5, pady=5)
+        self.label_inactive = ttk.Label(main_frame, text="0", font="AppBold", foreground="red")
         self.label_inactive.grid(row=0, column=5, sticky="w", padx=5, pady=5)
         
         # Row 2: Voting rights
-        ttk.Label(main_frame, text="Diritto voto:", font=("Arial", 9)).grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.label_with_vote = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"), foreground="blue")
+        ttk.Label(main_frame, text="Diritto voto:", font="AppNormal").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.label_with_vote = ttk.Label(main_frame, text="0", font="AppBold", foreground="blue")
         self.label_with_vote.grid(row=1, column=1, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="% Voto:", font=("Arial", 9)).grid(row=1, column=2, sticky="w", padx=5, pady=5)
-        self.label_vote_pct = ttk.Label(main_frame, text="0%", font=("Arial", 9, "bold"))
+        ttk.Label(main_frame, text="% Voto:", font="AppNormal").grid(row=1, column=2, sticky="w", padx=5, pady=5)
+        self.label_vote_pct = ttk.Label(main_frame, text="0%", font="AppBold")
         self.label_vote_pct.grid(row=1, column=3, sticky="w", padx=5, pady=5)
         
         # Row 3: Privacy
-        ttk.Label(main_frame, text="Privacy firmato:", font=("Arial", 9)).grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        self.label_privacy_signed = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"), foreground="green")
+        ttk.Label(main_frame, text="Privacy firmato:", font="AppNormal").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        self.label_privacy_signed = ttk.Label(main_frame, text="0", font="AppBold", foreground="green")
         self.label_privacy_signed.grid(row=2, column=1, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="Senza privacy:", font=("Arial", 9)).grid(row=2, column=2, sticky="w", padx=5, pady=5)
-        self.label_no_privacy = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"), foreground="red")
+        ttk.Label(main_frame, text="Senza privacy:", font="AppNormal").grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        self.label_no_privacy = ttk.Label(main_frame, text="0", font="AppBold", foreground="red")
         self.label_no_privacy.grid(row=2, column=3, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="% Privacy:", font=("Arial", 9)).grid(row=2, column=4, sticky="w", padx=5, pady=5)
-        self.label_privacy_pct = ttk.Label(main_frame, text="0%", font=("Arial", 9, "bold"))
+        ttk.Label(main_frame, text="% Privacy:", font="AppNormal").grid(row=2, column=4, sticky="w", padx=5, pady=5)
+        self.label_privacy_pct = ttk.Label(main_frame, text="0%", font="AppBold")
         self.label_privacy_pct.grid(row=2, column=5, sticky="w", padx=5, pady=5)
         
         # Separator
@@ -68,12 +75,12 @@ class StatsPanel(ttk.Frame):
         sep.grid(row=3, column=0, columnspan=6, sticky="ew", padx=5, pady=10)
         
         # Row 4: Documents
-        ttk.Label(main_frame, text="Con documenti:", font=("Arial", 9)).grid(row=4, column=0, sticky="w", padx=5, pady=5)
-        self.label_with_docs = ttk.Label(main_frame, text="0", font=("Arial", 9, "bold"))
+        ttk.Label(main_frame, text="Con documenti:", font="AppNormal").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        self.label_with_docs = ttk.Label(main_frame, text="0", font="AppBold")
         self.label_with_docs.grid(row=4, column=1, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="% Documenti:", font=("Arial", 9)).grid(row=4, column=2, sticky="w", padx=5, pady=5)
-        self.label_docs_pct = ttk.Label(main_frame, text="0%", font=("Arial", 9, "bold"))
+        ttk.Label(main_frame, text="% Documenti:", font="AppNormal").grid(row=4, column=2, sticky="w", padx=5, pady=5)
+        self.label_docs_pct = ttk.Label(main_frame, text="0%", font="AppBold")
         self.label_docs_pct.grid(row=4, column=3, sticky="w", padx=5, pady=5)
         
         # Refresh button

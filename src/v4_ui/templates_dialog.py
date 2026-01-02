@@ -36,7 +36,7 @@ class TemplatesDialog(tk.Toplevel):
         # Header
         header = ttk.Frame(self, padding=10)
         header.pack(fill=tk.X)
-        ttk.Label(header, text="Template Documenti", font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+        ttk.Label(header, text="Template Documenti", font=("Segoe UI", 12, "bold")).pack(side=tk.LEFT)
         
         # Toolbar
         toolbar = ttk.Frame(self, padding=(10, 0, 10, 10))
@@ -283,7 +283,7 @@ class AddTemplateDialog(tk.Toplevel):
         ttk.Label(main_frame, text="Placeholder:").grid(row=3, column=0, sticky="w", pady=5)
         self.placeholders_var = tk.StringVar()
         ttk.Entry(main_frame, textvariable=self.placeholders_var, width=40).grid(row=3, column=1, pady=5)
-        ttk.Label(main_frame, text="(separati da virgola)", font=("Arial", 8)).grid(row=4, column=1, sticky="w")
+        ttk.Label(main_frame, text="(separati da virgola)", font=("Segoe UI", 8)).grid(row=4, column=1, sticky="w")
         
         # File selection
         ttk.Label(main_frame, text="File Template:").grid(row=5, column=0, sticky="w", pady=5)

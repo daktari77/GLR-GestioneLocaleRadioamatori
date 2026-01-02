@@ -31,6 +31,13 @@ class UpdateStatusWizard:
         self.win.geometry("800x700")
         self.win.transient(parent)
         self.win.grab_set()
+
+        try:
+            from v4_ui.styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.win.winfo_toplevel())
+        except Exception:
+            pass
         
         # Pages
         self.current_page = 0
@@ -147,8 +154,13 @@ class UpdateStatusWizard:
                     "1. Mappa la colonna identificativa (Matricola o Nominativo)\n"
                     "2. Mappa i campi che vuoi aggiornare (Voto, Q0, Q1, Q2)\n"
                     "3. I valori nel CSV sovrascriveranno TUTTI i valori esistenti")
-        ttk.Label(help_frame, text=help_text, foreground="blue", 
-                 font=("Segoe UI", 9), justify=tk.LEFT).pack(anchor="w", padx=10)
+        ttk.Label(
+            help_frame,
+            text=help_text,
+            foreground="blue",
+            font="AppNormal",
+            justify=tk.LEFT,
+        ).pack(anchor="w", padx=10)
         
         # Mapping area
         map_frame = ttk.LabelFrame(frame, text="Mapping Colonne")
@@ -170,8 +182,8 @@ class UpdateStatusWizard:
         hdr_frame = ttk.Frame(scroll_frame)
         hdr_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(hdr_frame, text="Campo Database", width=25, font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=5)
-        ttk.Label(hdr_frame, text="Colonna CSV", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(hdr_frame, text="Campo Database", width=25, font="AppBold").pack(side=tk.LEFT, padx=5)
+        ttk.Label(hdr_frame, text="Colonna CSV", font="AppBold").pack(side=tk.LEFT, padx=5)
         
         # Create mapping widgets
         self.mapping_widgets = {}
@@ -192,7 +204,7 @@ class UpdateStatusWizard:
             row_frame.pack(fill=tk.X, padx=5, pady=3)
             
             # Label
-            label_font = ("Segoe UI", 9, "bold") if is_bold else ("Segoe UI", 9)
+            label_font = "AppBold" if is_bold else "AppNormal"
             ttk.Label(row_frame, text=field_label, width=25, font=label_font).pack(side=tk.LEFT, padx=5)
             
             # Combobox
@@ -229,7 +241,7 @@ class UpdateStatusWizard:
         if self.csv_path:
             import os
             ttk.Label(summary_frame, text=f"📄 File: {os.path.basename(self.csv_path)}", 
-                     font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=10, pady=5)
+                     font="AppBold").pack(anchor="w", padx=10, pady=5)
             ttk.Label(summary_frame, text=f"📊 Righe da processare: {len(self.rows)}").pack(anchor="w", padx=10, pady=5)
             
             # Show mapped fields
@@ -246,7 +258,7 @@ class UpdateStatusWizard:
         warning_frame = ttk.Frame(frame)
         warning_frame.pack(fill=tk.X, pady=10, padx=20)
         ttk.Label(warning_frame, text="⚠️ Premi 'Aggiorna' per sovrascrivere i campi Voto e Quote", 
-                 foreground="red", font=("Segoe UI", 9, "bold")).pack()
+                 foreground="red", font="AppBold").pack()
         
         # Progress
         prog_frame = ttk.Frame(frame)

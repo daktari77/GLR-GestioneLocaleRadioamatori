@@ -52,7 +52,7 @@ class BulkImportDialog(tk.Toplevel):
             wraplength=420,
         ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
-        ttk.Label(container, text="Categoria:").grid(row=1, column=0, sticky="w")
+        ttk.Label(container, text="Tipo:").grid(row=1, column=0, sticky="w")
         self.category_combo = ttk.Combobox(
             container,
             textvariable=self.category_var,

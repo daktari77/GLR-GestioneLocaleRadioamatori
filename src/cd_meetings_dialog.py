@@ -39,6 +39,364 @@ Cordiali saluti,
 La Segreteria""",
         "libero": ""
     }
+
+    def _load_custom_email_templates(self) -> dict[str, str]:
+        """Load custom email templates from config.
+
+        Supported formats in config (best-effort):
+        - {"email_templates": {"Nome": "Testo...", ...}}
+        - {"email_templates": [{"name": "Nome", "body": "Testo..."}, ...]}
+        """
+        try:
+            from config_manager import load_config
+
+            cfg = load_config() or {}
+            raw = cfg.get("email_templates")
+            out: dict[str, str] = {}
+
+            if isinstance(raw, dict):
+                for name, body in raw.items():
+                    if not isinstance(name, str):
+                        continue
+                    if not isinstance(body, str):
+                        continue
+                    n = name.strip()
+                    if not n:
+                        continue
+                    out[n] = body
+                return out
+
+            if isinstance(raw, list):
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    name = item.get("name")
+                    body = item.get("body")
+                    if not isinstance(name, str) or not isinstance(body, str):
+                        continue
+                    n = name.strip()
+                    if not n:
+                        continue
+                    out[n] = body
+                return out
+        except Exception:
+            return {}
+
+        return {}
+
+    class EmailTemplatesWizard:
+        """Wizard/dialog to manage custom email templates stored in config ('email_templates')."""
+
+        RESERVED_DEFAULT_NAMES = {
+            "Testo libero",
+            "Convocazione CD",
+            "Comunicazione Generale",
+        }
+
+        def __init__(self, parent, get_defaults, on_saved=None):
+            self.parent = parent
+            self.get_defaults = get_defaults
+            self.on_saved = on_saved
+
+            self.win = tk.Toplevel(parent)
+            self.win.title("Wizard template email")
+            self.win.geometry("760x520")
+            self.win.transient(parent)
+            self.win.grab_set()
+
+            self.custom: dict[str, str] = self._load_custom_templates_dict()
+            defaults = (self.get_defaults() or {}) if callable(self.get_defaults) else {}
+            self.defaults: dict[str, str] = defaults if isinstance(defaults, dict) else {}
+
+            self._editing_original_name: str | None = None
+
+            self._build_ui()
+            self._refresh_listbox()
+
+        def _load_custom_templates_dict(self) -> dict[str, str]:
+            try:
+                from config_manager import load_config
+
+                cfg = load_config() or {}
+                raw = cfg.get("email_templates")
+                out: dict[str, str] = {}
+
+                if isinstance(raw, dict):
+                    for k, v in raw.items():
+                        if isinstance(k, str) and isinstance(v, str) and k.strip():
+                            out[k.strip()] = v
+                    return out
+
+                if isinstance(raw, list):
+                    for item in raw:
+                        if not isinstance(item, dict):
+                            continue
+                        name = item.get("name")
+                        body = item.get("body")
+                        if isinstance(name, str) and isinstance(body, str) and name.strip():
+                            out[name.strip()] = body
+                    return out
+            except Exception:
+                return {}
+
+            return {}
+
+        def _save_custom_templates_dict(self, data: dict[str, str]) -> bool:
+            try:
+                from config_manager import load_config, save_config
+
+                cfg = load_config() or {}
+                cfg["email_templates"] = dict(sorted((data or {}).items(), key=lambda kv: (kv[0] or "").strip().lower()))
+                save_config(cfg)
+                return True
+            except Exception as e:
+                messagebox.showerror("Errore", f"Impossibile salvare la configurazione:\n{e}", parent=self.win)
+                return False
+
+        def _build_ui(self) -> None:
+            top = ttk.Frame(self.win, padding=8)
+            top.pack(fill=tk.BOTH, expand=True)
+
+            header = ttk.Label(top, text="Template personalizzati (salvati in configurazione)", font=("Arial", 10, "bold"))
+            header.pack(anchor="w", pady=(0, 6))
+
+            self.manage_frame = ttk.Frame(top)
+            self.manage_frame.pack(fill=tk.BOTH, expand=True)
+
+            left = ttk.Frame(self.manage_frame)
+            left.pack(side=tk.LEFT, fill=tk.Y)
+
+            ttk.Label(left, text="I tuoi template:").pack(anchor="w")
+            self.listbox = tk.Listbox(left, height=16, width=30)
+            self.listbox.pack(fill=tk.Y, expand=False, pady=(4, 8))
+            self.listbox.bind("<<ListboxSelect>>", lambda _e: self._update_preview())
+
+            btns = ttk.Frame(left)
+            btns.pack(fill=tk.X)
+            ttk.Button(btns, text="Nuovo...", command=self._new_from_base).pack(fill=tk.X, pady=2)
+            ttk.Button(btns, text="Modifica...", command=self._edit_selected).pack(fill=tk.X, pady=2)
+            ttk.Button(btns, text="Elimina", command=self._delete_selected).pack(fill=tk.X, pady=2)
+
+            right = ttk.Frame(self.manage_frame)
+            right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+
+            ttk.Label(right, text="Crea da base:").pack(anchor="w")
+            self.base_var = tk.StringVar(value="Vuoto")
+            self.base_combo = ttk.Combobox(right, textvariable=self.base_var, state="readonly", width=40)
+            self.base_combo.pack(anchor="w", pady=(4, 6))
+            self._refresh_base_combo_values()
+            ttk.Button(right, text="Crea da questa base", command=self._new_from_base).pack(anchor="w", pady=(0, 10))
+
+            ttk.Label(right, text="Anteprima:").pack(anchor="w")
+            self.preview = scrolledtext.ScrolledText(right, height=14, wrap=tk.WORD)
+            self.preview.pack(fill=tk.BOTH, expand=True)
+            self.preview.configure(state="disabled")
+
+            footer = ttk.Frame(top)
+            footer.pack(fill=tk.X, pady=(8, 0))
+            ttk.Button(footer, text="Chiudi", command=self.win.destroy).pack(side=tk.RIGHT)
+
+            # Edit frame (hidden by default)
+            self.edit_frame = ttk.Frame(top)
+
+            row1 = ttk.Frame(self.edit_frame)
+            row1.pack(fill=tk.X)
+            ttk.Label(row1, text="Nome template:").pack(side=tk.LEFT)
+            self.name_entry = ttk.Entry(row1, width=50)
+            self.name_entry.pack(side=tk.LEFT, padx=8)
+
+            hint = "Placeholder disponibili: {data} {ora} {luogo} {odg} {messaggio}"
+            ttk.Label(self.edit_frame, text=hint, foreground="gray").pack(anchor="w", pady=(6, 2))
+
+            ttk.Label(self.edit_frame, text="Corpo template:").pack(anchor="w")
+            self.body_text = scrolledtext.ScrolledText(self.edit_frame, height=14, wrap=tk.WORD)
+            self.body_text.pack(fill=tk.BOTH, expand=True)
+
+            edit_footer = ttk.Frame(self.edit_frame)
+            edit_footer.pack(fill=tk.X, pady=(8, 0))
+            ttk.Button(edit_footer, text="Annulla", command=self._back_to_manage).pack(side=tk.RIGHT, padx=5)
+            ttk.Button(edit_footer, text="Salva", command=self._save_current).pack(side=tk.RIGHT)
+
+        def _refresh_base_combo_values(self) -> None:
+            values = ["Vuoto"]
+            for k in ("Convocazione CD", "Comunicazione Generale"):
+                if k in self.defaults:
+                    values.append(k)
+            self.base_combo["values"] = tuple(values)
+            if self.base_var.get() not in values:
+                self.base_var.set(values[0] if values else "Vuoto")
+
+        def _refresh_listbox(self) -> None:
+            self.listbox.delete(0, tk.END)
+            for name in sorted(self.custom.keys(), key=lambda s: (s or "").strip().lower()):
+                self.listbox.insert(tk.END, name)
+            self._update_preview()
+
+        def _get_selected_name(self) -> str | None:
+            try:
+                sel = self.listbox.curselection()
+                if not sel:
+                    return None
+                return self.listbox.get(sel[0])
+            except Exception:
+                return None
+
+        def _update_preview(self) -> None:
+            name = self._get_selected_name()
+            text = ""
+            if name and name in self.custom:
+                text = self.custom.get(name) or ""
+            self.preview.configure(state="normal")
+            self.preview.delete("1.0", tk.END)
+            self.preview.insert("1.0", text)
+            self.preview.configure(state="disabled")
+
+        def _new_from_base(self) -> None:
+            base_name = (self.base_var.get() or "Vuoto").strip()
+            body = ""
+            if base_name and base_name != "Vuoto":
+                body = self.defaults.get(base_name, "")
+            self._open_edit(name="", body=body, original=None)
+
+        def _edit_selected(self) -> None:
+            name = self._get_selected_name()
+            if not name:
+                messagebox.showinfo("Info", "Seleziona un template da modificare.", parent=self.win)
+                return
+            self._open_edit(name=name, body=self.custom.get(name, ""), original=name)
+
+        def _delete_selected(self) -> None:
+            name = self._get_selected_name()
+            if not name:
+                messagebox.showinfo("Info", "Seleziona un template da eliminare.", parent=self.win)
+                return
+            ok = messagebox.askyesno("Conferma", f"Eliminare il template '{name}'?", parent=self.win)
+            if not ok:
+                return
+            self.custom.pop(name, None)
+            if self._save_custom_templates_dict(self.custom):
+                self._refresh_listbox()
+                if callable(self.on_saved):
+                    self.on_saved()
+
+        def _open_edit(self, name: str, body: str, original: str | None) -> None:
+            self._editing_original_name = original
+            self.manage_frame.pack_forget()
+            self.edit_frame.pack(fill=tk.BOTH, expand=True)
+
+            self.name_entry.delete(0, tk.END)
+            self.name_entry.insert(0, name or "")
+            self.body_text.delete("1.0", tk.END)
+            self.body_text.insert("1.0", body or "")
+
+        def _back_to_manage(self) -> None:
+            self.edit_frame.pack_forget()
+            self.manage_frame.pack(fill=tk.BOTH, expand=True)
+            self._editing_original_name = None
+            self._refresh_listbox()
+
+        def _save_current(self) -> None:
+            name = (self.name_entry.get() or "").strip()
+            body = (self.body_text.get("1.0", tk.END) or "").rstrip()
+
+            if not name:
+                messagebox.showwarning("Validazione", "Inserire un nome per il template.", parent=self.win)
+                return
+            if name in self.RESERVED_DEFAULT_NAMES:
+                messagebox.showwarning(
+                    "Validazione",
+                    "Nome non valido: coincide con un template di sistema. Scegli un nome diverso.",
+                    parent=self.win,
+                )
+                return
+
+            if self._editing_original_name and self._editing_original_name != name:
+                self.custom.pop(self._editing_original_name, None)
+
+            if name in self.custom and (self._editing_original_name != name):
+                ok = messagebox.askyesno("Conferma", f"Il template '{name}' esiste già. Sovrascrivere?", parent=self.win)
+                if not ok:
+                    return
+
+            self.custom[name] = body
+            if self._save_custom_templates_dict(self.custom):
+                if callable(self.on_saved):
+                    self.on_saved()
+                self._back_to_manage()
+
+    def _build_template_text_map(self) -> dict[str, str]:
+        base: dict[str, str] = {
+            "Testo libero": self.TEMPLATES.get("libero", ""),
+            "Convocazione CD": self.TEMPLATES.get("convocazione_cd", ""),
+            "Comunicazione Generale": self.TEMPLATES.get("comunicazione_generale", ""),
+        }
+
+        custom = self._load_custom_email_templates()
+        for name in sorted((custom or {}).keys(), key=lambda s: (s or "").strip().lower()):
+            body = (custom or {}).get(name)
+            n = (name or "").strip()
+            if not n:
+                continue
+            if n in base:
+                continue
+            base[n] = body or ""
+
+        return base
+
+    def _refresh_template_combo(self, keep_selection: bool = True) -> None:
+        try:
+            current = self.template_var.get() if (keep_selection and hasattr(self, "template_var")) else None
+            self._template_text_by_name = self._build_template_text_map()
+            if hasattr(self, "template_combo"):
+                self.template_combo["values"] = tuple(self._template_text_by_name.keys())
+
+            if current and current in self._template_text_by_name:
+                self.template_var.set(current)
+            else:
+                # Keep default behavior: new meeting -> Convocazione CD, edit -> Testo libero
+                default_name = "Testo libero" if self.meeting_id else "Convocazione CD"
+                if default_name in self._template_text_by_name:
+                    self.template_var.set(default_name)
+                elif self._template_text_by_name:
+                    self.template_var.set(next(iter(self._template_text_by_name.keys())))
+
+        except Exception:
+            pass
+
+    def _open_templates_wizard(self) -> None:
+        try:
+            self.EmailTemplatesWizard(
+                parent=self.dialog,
+                get_defaults=lambda: {
+                    "Convocazione CD": self.TEMPLATES.get("convocazione_cd", ""),
+                    "Comunicazione Generale": self.TEMPLATES.get("comunicazione_generale", ""),
+                },
+                on_saved=lambda: self._refresh_template_combo(keep_selection=True),
+            )
+        except Exception as e:
+            messagebox.showerror("Errore", f"Impossibile aprire il wizard template:\n{e}", parent=self.dialog)
+
+    def _is_meta_tipo_assemblea(self) -> bool:
+        try:
+            tipo = (self.meta_tipo_var.get() or "").strip().lower()
+            return "assemblea" in tipo
+        except Exception:
+            return False
+
+    def _update_presenze_visibility(self):
+        """Presenze/Quorum: visible only in edit AND for Assemblea soci."""
+        should_show = bool(self.meeting_id) and self._is_meta_tipo_assemblea()
+
+        try:
+            if should_show:
+                self.presenze_frame.grid()
+            else:
+                self.presenze_frame.grid_remove()
+        except Exception:
+            pass
+
+        # Even if hidden, keep widgets disabled to prevent accidental edits.
+        self._set_presenze_enabled(enabled=should_show)
     
     def __init__(self, parent, meeting_id=None):
         """
@@ -56,7 +414,7 @@ La Segreteria""",
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Nuova riunione CD" if not meeting_id else "Modifica riunione CD")
         # More compact default size; content remains scrollable.
-        self.dialog.geometry("760x620")
+        self.dialog.geometry("760x990")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
@@ -223,10 +581,19 @@ La Segreteria""",
         ttk.Label(self.template_frame, text="Template:").pack(side=tk.LEFT, padx=5)
         self.template_var = tk.StringVar()
         self.template_combo = ttk.Combobox(self.template_frame, textvariable=self.template_var, width=30, state="readonly")
-        self.template_combo['values'] = ('Testo libero', 'Convocazione CD', 'Comunicazione Generale')
-        self.template_combo.current(0 if meeting_id else 1)  # Default to Convocazione CD for new meetings
+
+        self._template_text_by_name = self._build_template_text_map()
+        self.template_combo['values'] = tuple(self._template_text_by_name.keys())
+
+        default_template_name = "Testo libero" if meeting_id else "Convocazione CD"
+        if default_template_name in self._template_text_by_name:
+            self.template_var.set(default_template_name)
+        elif self._template_text_by_name:
+            self.template_var.set(next(iter(self._template_text_by_name.keys())))
         self.template_combo.pack(side=tk.LEFT, padx=5)
         self.template_combo.bind('<<ComboboxSelected>>', self._on_template_selected)
+
+        ttk.Button(self.template_frame, text="Wizard template...", command=self._open_templates_wizard).pack(side=tk.LEFT, padx=8)
         
         # Corpo email
         row += 1
@@ -280,7 +647,7 @@ La Segreteria""",
             self._toggle_tipo_riunione()
 
         self._on_meta_tipo_changed()
-        self._set_presenze_enabled(enabled=bool(meeting_id))
+        self._update_presenze_visibility()
         
         # Update recipient count
         self._update_recipient_count()
@@ -376,8 +743,7 @@ La Segreteria""",
             return False
 
     def _on_meta_tipo_changed(self):
-        tipo = (self.meta_tipo_var.get() or "").strip().lower()
-        is_assemblea = "assemblea" in tipo
+        is_assemblea = self._is_meta_tipo_assemblea()
         if is_assemblea:
             self.label_deleghe.grid()
             self.entry_deleghe.grid()
@@ -385,6 +751,7 @@ La Segreteria""",
             self.label_deleghe.grid_remove()
             self.entry_deleghe.grid_remove()
             self.entry_deleghe.delete(0, tk.END)
+        self._update_presenze_visibility()
         self._update_quorum_label()
 
     def _set_presenze_enabled(self, enabled: bool):
@@ -637,21 +1004,18 @@ La Segreteria""",
     def _on_template_selected(self, event=None):
         """Load template text when selected"""
         template_name = self.template_var.get()
-        
-        template_map = {
-            'Testo libero': 'libero',
-            'Convocazione CD': 'convocazione_cd',
-            'Comunicazione Generale': 'comunicazione_generale'
-        }
-        
-        key = template_map.get(template_name, 'libero')
-        template_text = self.TEMPLATES.get(key, '')
+
+        template_text = ""
+        try:
+            template_text = (self._template_text_by_name or {}).get(template_name, "")
+        except Exception:
+            template_text = ""
         
         self.text_email.delete('1.0', tk.END)
         self.text_email.insert('1.0', template_text)
         
         # Suggest oggetto if not set
-        if not self.entry_oggetto.get() and key == 'convocazione_cd':
+        if not self.entry_oggetto.get() and template_name == 'Convocazione CD':
             self.entry_oggetto.delete(0, tk.END)
             self.entry_oggetto.insert(0, "Convocazione Consiglio Direttivo")
 
@@ -1356,23 +1720,25 @@ La Segreteria""",
         meta_payload = {k: v for k, v in meta_payload.items() if v not in (None, "")}
         meta_json = json.dumps(meta_payload, ensure_ascii=False) if meta_payload else None
 
-        counts = {
-            "aventi_diritto": self._safe_int(self.entry_aventi_diritto.get()),
-            "presenti": self._safe_int(self.entry_presenti.get()),
-            "deleghe": self._safe_int(self.entry_deleghe.get()) if self._deleghe_enabled() else None,
-            "quorum_richiesto": self._safe_int(self.entry_quorum.get()),
-        }
-        counts = {k: v for k, v in counts.items() if v is not None}
-        presenze_payload = {
-            "version": 1,
-            "counts": counts,
-            "raw_text": self.text_presenze.get("1.0", tk.END).strip(),
-        }
-        if not presenze_payload["raw_text"]:
-            presenze_payload.pop("raw_text", None)
-        if not presenze_payload["counts"]:
-            presenze_payload.pop("counts", None)
-        presenze_json = json.dumps(presenze_payload, ensure_ascii=False) if len(presenze_payload) > 1 else None
+        presenze_json = None
+        if bool(self.meeting_id) and self._is_meta_tipo_assemblea():
+            counts = {
+                "aventi_diritto": self._safe_int(self.entry_aventi_diritto.get()),
+                "presenti": self._safe_int(self.entry_presenti.get()),
+                "deleghe": self._safe_int(self.entry_deleghe.get()) if self._deleghe_enabled() else None,
+                "quorum_richiesto": self._safe_int(self.entry_quorum.get()),
+            }
+            counts = {k: v for k, v in counts.items() if v is not None}
+            presenze_payload = {
+                "version": 1,
+                "counts": counts,
+                "raw_text": self.text_presenze.get("1.0", tk.END).strip(),
+            }
+            if not presenze_payload["raw_text"]:
+                presenze_payload.pop("raw_text", None)
+            if not presenze_payload["counts"]:
+                presenze_payload.pop("counts", None)
+            presenze_json = json.dumps(presenze_payload, ensure_ascii=False) if len(presenze_payload) > 1 else None
         
         if not data:
             messagebox.showwarning("Validazione", "Inserire la data della riunione.", parent=self.dialog)
@@ -1559,7 +1925,7 @@ class MeetingsListDialog:
         
         self.tv = ttk.Treeview(
             tree_frame,
-            columns=("id", "numero_cd", "data", "titolo", "verbale"),
+            columns=("id", "numero_cd", "data", "tipo", "titolo", "verbale"),
             show="headings",
             xscrollcommand=scrollbar_h.set,
             yscrollcommand=scrollbar_v.set,
@@ -1572,12 +1938,14 @@ class MeetingsListDialog:
         self.tv.column("id", width=40, anchor="center")
         self.tv.column("numero_cd", width=70, anchor="center")
         self.tv.column("data", width=100, anchor="center")
-        self.tv.column("titolo", width=300, anchor="w")
+        self.tv.column("tipo", width=220, anchor="w")
+        self.tv.column("titolo", width=260, anchor="w")
         self.tv.column("verbale", width=80, anchor="center")
         
         self.tv.heading("id", text="ID")
         self.tv.heading("numero_cd", text="N. CD")
         self.tv.heading("data", text="Data")
+        self.tv.heading("tipo", text="Tipo")
         self.tv.heading("titolo", text="Titolo")
         self.tv.heading("verbale", text="Verbale")
         
@@ -1603,10 +1971,22 @@ class MeetingsListDialog:
         meetings = get_all_meetings()
         for meeting in meetings:
             verbale = "✓" if meeting.get('verbale_path') else "—"
+
+            tipo = ""
+            meta_json = meeting.get("meta_json")
+            if isinstance(meta_json, str) and meta_json.strip():
+                try:
+                    meta = json.loads(meta_json)
+                    if isinstance(meta, dict):
+                        tipo = str(meta.get("tipo") or "").strip()
+                except Exception:
+                    tipo = ""
+
             self.tv.insert("", tk.END, iid=meeting['id'], values=(
                 meeting['id'],
                 meeting.get('numero_cd', '—'),
                 meeting.get('data', ''),
+                tipo,
                 meeting.get('titolo', '—'),
                 verbale
             ))

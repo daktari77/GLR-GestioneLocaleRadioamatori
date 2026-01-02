@@ -6,8 +6,7 @@ from __future__ import annotations
 from typing import Iterable, Sequence
 
 from config_manager import load_config, save_config
-from documents_catalog import DOCUMENT_CATEGORIES
-from section_documents import SECTION_DOCUMENT_CATEGORIES
+from document_types_catalog import DOCUMENT_CATEGORIES, SECTION_DOCUMENT_CATEGORIES
 
 DEFAULT_ROLE_OPTIONS: list[str] = [
     "Socio",

@@ -43,6 +43,13 @@ class MagazzinoImportDialog:
         self.win.transient(parent)
         self.win.grab_set()
 
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.win.winfo_toplevel())
+        except Exception:
+            pass
+
         self.pages = [
             ("Seleziona sorgente", self._build_page_file),
             ("Mappa i campi", self._build_page_mapping),
@@ -146,7 +153,7 @@ class MagazzinoImportDialog:
 
             label = ttk.Label(row, text=field["label"], width=24, anchor="w")
             if field["required"]:
-                label.configure(font=("Segoe UI", 9, "bold"))
+                label.configure(font="AppBold")
             label.pack(side=tk.LEFT)
 
             combo = ttk.Combobox(row, state="readonly", width=40)
