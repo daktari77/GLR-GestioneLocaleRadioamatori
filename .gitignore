@@ -32,5 +32,8 @@ data/*.db-journal
 src/data/*.db
 src/data/*.db-journal
 
+# Local runtime config (machine-specific)
+src/data/section_config.json
+
 # Local notes
 tests/to-do
