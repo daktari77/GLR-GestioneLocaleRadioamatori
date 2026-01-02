@@ -122,7 +122,7 @@ def get_meeting_by_id(meeting_id: int) -> Optional[Dict]:
     from database import fetch_one
     try:
         sql = """
-            SELECT id, numero_cd, data, titolo, note, odg_json, meta_json, presenze_json, verbale_path, created_at
+            SELECT id, numero_cd, data, titolo, note, tipo_riunione, odg_json, meta_json, presenze_json, verbale_path, created_at
             FROM cd_riunioni
             WHERE id=?
         """
@@ -145,6 +145,7 @@ def add_meeting(
     numero_cd: str | None = None,
     titolo: str | None = None,
     odg: str | None = None,
+    tipo_riunione: str | None = None,
     verbale_path: str | None = None,
     meta_json: str | dict | None = None,
     presenze_json: str | dict | None = None,
@@ -176,10 +177,10 @@ def add_meeting(
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
-                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, meta_json, odg_json, presenze_json, verbale_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, tipo_riunione, meta_json, odg_json, presenze_json, verbale_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql, (numero_cd, data, titolo, odg, meta_json, odg_json, presenze_json, None, now_iso()))
+            cursor.execute(sql, (numero_cd, data, titolo, odg, tipo_riunione, meta_json, odg_json, presenze_json, None, now_iso()))
             meeting_id = cursor.lastrowid
             conn.commit()
         
@@ -212,6 +213,7 @@ def update_meeting(
     data: str | None = None,
     titolo: str | None = None,
     odg: str | None = None,
+    tipo_riunione: str | None = None,
     verbale_path: str | None = None,
     meta_json: str | dict | None = None,
     presenze_json: str | dict | None = None,
@@ -245,6 +247,9 @@ def update_meeting(
         if titolo is not None:
             updates.append("titolo=?")
             values.append(titolo)
+        if tipo_riunione is not None:
+            updates.append("tipo_riunione=?")
+            values.append(tipo_riunione)
         if odg is not None:
             updates.append("note=?")
             values.append(odg)

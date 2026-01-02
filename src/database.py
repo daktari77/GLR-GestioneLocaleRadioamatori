@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS cd_riunioni (
     data TEXT NOT NULL,
     titolo TEXT,
     note TEXT,
+    tipo_riunione TEXT,
     meta_json TEXT,
     odg_json TEXT,
     presenze_json TEXT,
@@ -467,6 +468,8 @@ def init_db():
         conn.execute(CREATE_CD_RIUNIONI)
         # Ensure numero_cd column exists in cd_riunioni
         _ensure_column(conn, "cd_riunioni", "numero_cd", "TEXT")
+        # Tipo riunione: futura/passata (per riabilitare invio email in modifica)
+        _ensure_column(conn, "cd_riunioni", "tipo_riunione", "TEXT")
         # MVP Riunione CD (v0.4.3+): JSON structured fields
         _ensure_column(conn, "cd_riunioni", "meta_json", "TEXT")
         _ensure_column(conn, "cd_riunioni", "odg_json", "TEXT")

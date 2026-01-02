@@ -73,10 +73,10 @@ class TestDatabaseBasics(unittest.TestCase):
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cd_riunioni'")
         self.assertIsNotNone(cursor.fetchone())
 
-        # Check cd_riunioni has MVP JSON columns
+        # Check cd_riunioni has MVP columns
         cursor.execute("PRAGMA table_info(cd_riunioni)")
         cols = {row[1] for row in cursor.fetchall()}  # row[1] is column name
-        for col in ("meta_json", "odg_json", "presenze_json"):
+        for col in ("meta_json", "odg_json", "presenze_json", "tipo_riunione"):
             self.assertIn(col, cols, msg=f"Missing column cd_riunioni.{col}")
 
         # Check cd_mandati table exists (mandato Consiglio Direttivo)
