@@ -1,3 +1,3 @@
 matricola;nominativo;nominativo2;nome;cognome;codicefiscale;data_nascita;luogo_nascita;indirizzo;cap;citta;provincia;email;telefono;note;attivo;voto;familiare;socio;q0;q1;q2
-001;IU2TEST;;Mario;Rossi;RSSMRA80A01H501U;1980-01-01;Milano;Via Roma 1;20100;Milano;MI;mario.rossi@example.com;;Esempio socio base;1;1;;HAM;10;;
+001;IU2TEST;;Mario;Rossi;RSSMRA80A01H501U;1980-01-01;Milano;Via Roma 1;20100;Milano;MI;;;Esempio socio base;1;1;;HAM;10;;
 002;IW2ABC;;Laura;Bianchi;BNCLRA85C41F205Z;1985-03-01;Bergamo;Via Verdi 10;24100;Bergamo;BG;laura.bianchi@example.com;035000000;Esempio socio base;1;0;;HAM;10;;

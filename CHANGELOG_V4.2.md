@@ -9,6 +9,11 @@
 
 - **Portable**: build con icona (assets/gestionale.ico, generabile da PNG via Pillow) + cleanup script build/deploy.
 
+## 0.4.5a · 5 Gennaio 2026
+
+- **Betatest**: release “robusta” focalizzata su stabilità e distribuibilità.
+- **Tooling**: `build_exe.ps1` più deterministico (niente cartelle dist vuote su failure) e output PyInstaller meno fuorviante su PowerShell.
+
 ## 0.4.3g · 5 Gennaio 2026
 
 - **Stabilità**: ripulito `UpdateStatusWizard` da output terminale accidentalmente incollato nel sorgente.

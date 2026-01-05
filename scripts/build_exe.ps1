@@ -111,7 +111,7 @@ $distBase = if ([string]::IsNullOrWhiteSpace($DistFolderName)) {
 } else {
     Join-Path $distRoot $DistFolderName
 }
-New-Item -ItemType Directory -Path $distBase -Force | Out-Null
+# Let PyInstaller create the dist folder; this avoids leaving empty folders around when the build fails early.
 
 # Build arguments
 # Keep PyInstaller output less verbose (it often logs to stderr and can be noisy in PowerShell hosts)
@@ -202,9 +202,10 @@ $oldEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
     if ($pythonExe -eq 'py -3') {
-        & py -3 -m PyInstaller @buildArgs --distpath $distBase --workpath $workpath $EntryScript 2>&1
+        # PyInstaller often logs INFO to stderr; stringify to avoid misleading NativeCommandError records.
+        & py -3 -m PyInstaller @buildArgs --distpath $distBase --workpath $workpath $EntryScript 2>&1 | ForEach-Object { $_.ToString() }
     } else {
-        & $pythonExe -m PyInstaller @buildArgs --distpath $distBase --workpath $workpath $EntryScript 2>&1
+        & $pythonExe -m PyInstaller @buildArgs --distpath $distBase --workpath $workpath $EntryScript 2>&1 | ForEach-Object { $_.ToString() }
     }
     $exit = $LASTEXITCODE
 } finally {
@@ -213,11 +214,39 @@ try {
 
 if ($exit -ne 0) {
     Write-Err "PyInstaller failed (exit code $exit). Check the log above."
+    if (Test-Path $distBase) {
+        try { Remove-Item -Recurse -Force $distBase -ErrorAction SilentlyContinue } catch { }
+    }
+    Pop-Location
+    exit 1
+}
+
+$exePath = Join-Path $distBase ("$ExeName.exe")
+if (-not (Test-Path $exePath)) {
+    Write-Err "Build did not produce expected EXE: $exePath"
+    if (Test-Path $distBase) {
+        try { Remove-Item -Recurse -Force $distBase -ErrorAction SilentlyContinue } catch { }
+    }
     Pop-Location
     exit 1
 }
 
 Copy-SeedData $SeedDataDir $distBase
+
+# Copy betatest guide into the portable folder (used by the first-run intro in 0.4.5*)
+try {
+    $guideSrc = Join-Path $repoRoot 'docs\BETATEST_GUIDE.md'
+    if (Test-Path $guideSrc) {
+        $docsDestDir = Join-Path $distBase 'docs'
+        New-Item -ItemType Directory -Path $docsDestDir -Force | Out-Null
+        Copy-Item -Path $guideSrc -Destination (Join-Path $docsDestDir 'BETATEST_GUIDE.md') -Force
+        Write-Info "Betatest guide copied to: $docsDestDir"
+    } else {
+        Write-Warn "Betatest guide not found at: $guideSrc (skipping copy)"
+    }
+} catch {
+    Write-Warn "Failed to copy betatest guide: $($_.Exception.Message)"
+}
 
 Write-Info "Build complete. Dist directory: $distBase"
 Write-Info "Portable folder contains EXE + seeded 'data' (no soci.db) for a clean first-run test."

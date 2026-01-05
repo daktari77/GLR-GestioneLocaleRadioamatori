@@ -4,6 +4,7 @@ Main application window for GLR - Gestione Locale Radioamatori
 """
 
 import csv
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import logging
@@ -115,9 +116,148 @@ class App:
         
         # Load initial data
         self._refresh_member_list()
+
+        # Betatest presentation (first run only, per version)
+        try:
+            self.root.after(500, self._maybe_show_betatest_intro)
+        except Exception:
+            pass
         
         # Start event loop
         self.root.mainloop()
+
+    def _maybe_show_betatest_intro(self):
+        """Show the betatest welcome guide once per app version."""
+        try:
+            from config import APP_VERSION
+
+            # Betatest is scoped to the 0.4.5* line.
+            if not str(APP_VERSION).startswith("0.4.5"):
+                return
+
+            key = f"betatest_intro_shown::{APP_VERSION}"
+            already_shown = bool((self.cfg or {}).get(key))
+            if already_shown:
+                return
+
+            self._show_betatest_intro_dialog(version=APP_VERSION, flag_key=key)
+        except Exception:
+            return
+
+    def _read_betatest_guide_text(self) -> str:
+        """Load the betatest guide markdown as plain text (best-effort)."""
+        candidates: list[Path] = []
+        try:
+            # Source layout: repo root is two levels above v4_ui/
+            candidates.append(Path(__file__).resolve().parents[2] / "docs" / "BETATEST_GUIDE.md")
+        except Exception:
+            pass
+
+        try:
+            if getattr(sys, "frozen", False):
+                exe_dir = Path(sys.executable).resolve().parent
+                candidates.append(exe_dir / "docs" / "BETATEST_GUIDE.md")
+                # Seeded portable layout: build script copies seed under dist\data\...
+                candidates.append(exe_dir / "data" / "docs" / "BETATEST_GUIDE.md")
+                candidates.append(exe_dir / "data" / "BETATEST_GUIDE.md")
+        except Exception:
+            pass
+
+        for p in candidates:
+            try:
+                if p.exists():
+                    return p.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+        return (
+            "Benvenuto nel betatest di GLR – Gestione Locale Radioamatori.\n\n"
+            "La guida completa non è stata trovata sul disco (docs/BETATEST_GUIDE.md).\n"
+            "Contatta il coordinatore del betatest per ottenerla.\n"
+        )
+
+    def _show_betatest_intro_dialog(self, *, version: str, flag_key: str) -> None:
+        """Modal welcome dialog that displays the betatest guide."""
+        win = tk.Toplevel(self.root)
+        win.title(f"Benvenuto al betatest – v{version}")
+        try:
+            win.transient(self.root)
+        except Exception:
+            pass
+
+        # Reasonable default size; user can resize.
+        try:
+            win.geometry("900x700")
+            win.minsize(720, 520)
+        except Exception:
+            pass
+
+        container = ttk.Frame(win)
+        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        header = ttk.Label(container, text=f"Guida Betatest (v{version})", font="AppBold")
+        header.pack(anchor="w")
+
+        sub = ttk.Label(
+            container,
+            text="Leggi le istruzioni e la checklist. Questa schermata viene mostrata solo al primo avvio.",
+        )
+        sub.pack(anchor="w", pady=(2, 10))
+
+        text_frame = ttk.Frame(container)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        yscroll = ttk.Scrollbar(text_frame, orient="vertical")
+        yscroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        text = tk.Text(
+            text_frame,
+            wrap="word",
+            yscrollcommand=yscroll.set,
+        )
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        yscroll.config(command=text.yview)
+
+        guide_text = self._read_betatest_guide_text()
+        try:
+            text.insert("1.0", guide_text)
+        except Exception:
+            pass
+        try:
+            text.config(state="disabled")
+        except Exception:
+            pass
+
+        btns = ttk.Frame(container)
+        btns.pack(fill=tk.X, pady=(10, 0))
+
+        def _close():
+            try:
+                cfg = dict(self.cfg or {})
+                cfg[flag_key] = True
+                self.cfg = cfg
+                from config_manager import save_config
+
+                save_config(cfg)
+            except Exception:
+                pass
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        ttk.Button(btns, text="Chiudi", command=_close).pack(side=tk.RIGHT)
+
+        try:
+            win.protocol("WM_DELETE_WINDOW", _close)
+        except Exception:
+            pass
+
+        try:
+            win.grab_set()
+            win.focus_set()
+        except Exception:
+            pass
     
     def _update_title(self):
         """Update window title with section information."""
@@ -347,15 +487,33 @@ class App:
             self.root.after(300, self._show_startup_issues)
 
     @staticmethod
+    def _normalize_tab_label(label: str) -> str:
+        """Normalize a tab label by removing leading emoji/pictograms.
+
+        This allows changing visible labels (e.g. adding emojis) without breaking
+        code that navigates tabs by text.
+        """
+        text = (label or "").strip()
+        # Strip leading non-alphanumeric symbols (emoji/pictograms) plus spaces.
+        while text and not text[0].isalnum():
+            text = text[1:].lstrip()
+        return text
+
+    @staticmethod
     def _select_notebook_tab_by_text(notebook: ttk.Notebook, label: str) -> bool:
         """Select a notebook tab by its visible label."""
         try:
-            wanted = (label or "").strip()
-            if not wanted:
+            wanted_raw = (label or "").strip()
+            if not wanted_raw:
                 return False
+            wanted_raw_cf = wanted_raw.casefold()
+            wanted_norm_cf = App._normalize_tab_label(wanted_raw).casefold()
             for tab_id in notebook.tabs():
                 try:
-                    if (notebook.tab(tab_id, "text") or "").strip() == wanted:
+                    tab_text = (notebook.tab(tab_id, "text") or "").strip()
+                    tab_text_cf = tab_text.casefold()
+                    tab_norm_cf = App._normalize_tab_label(tab_text).casefold()
+                    if tab_text_cf == wanted_raw_cf or tab_norm_cf == wanted_norm_cf:
                         notebook.select(tab_id)
                         return True
                 except Exception:
@@ -372,53 +530,53 @@ class App:
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Apri...", command=self._not_implemented)
-        file_menu.add_command(label="Salva                    Ctrl+S", command=self._save_if_editing)
+        file_menu.add_command(label="📂 Apri...", command=self._not_implemented)
+        file_menu.add_command(label="💾 Salva", accelerator="Ctrl+S", command=self._save_if_editing)
         file_menu.add_separator()
-        file_menu.add_command(label="Esci                     Ctrl+Q", command=self.root.quit)
+        file_menu.add_command(label="🚪 Esci", accelerator="Ctrl+Q", command=self.root.quit)
         
         # Edit menu
         edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Modifica", menu=edit_menu)
-        edit_menu.add_command(label="Nuovo socio              Ctrl+N", command=self._add_member)
-        edit_menu.add_command(label="Modifica socio", command=self._edit_member)
-        edit_menu.add_command(label="Elimina socio            Ctrl+Del", command=self._delete_member)
+        edit_menu.add_command(label="➕ Nuovo socio", accelerator="Ctrl+N", command=self._add_member)
+        edit_menu.add_command(label="✏️ Modifica socio", command=self._edit_member)
+        edit_menu.add_command(label="🗑️ Elimina socio", accelerator="Ctrl+Del", command=self._delete_member)
         edit_menu.add_separator()
-        edit_menu.add_command(label="Cerca...                 Ctrl+F", command=self._focus_search)
-        edit_menu.add_command(label="Aggiorna lista           F5", command=self._refresh_member_list)
+        edit_menu.add_command(label="🔎 Cerca...", accelerator="Ctrl+F", command=self._focus_search)
+        edit_menu.add_command(label="🔄 Aggiorna lista", accelerator="F5", command=self._refresh_member_list)
         
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Strumenti", menu=tools_menu)
-        tools_menu.add_command(label="Importa dati CSV", command=self._show_import_wizard)
-        tools_menu.add_command(label="Esporta dati             Ctrl+E", command=self._show_export_dialog)
-        tools_menu.add_command(label="Ricerca Duplicati        Ctrl+M", command=self._show_duplicates_dialog)
-        tools_menu.add_command(label="Import documenti", command=self._import_documents_wizard)
+        tools_menu.add_command(label="📥 Importa dati CSV...", command=self._show_import_wizard)
+        tools_menu.add_command(label="📤 Esporta dati...", accelerator="Ctrl+E", command=self._show_export_dialog)
+        tools_menu.add_command(label="🧩 Ricerca duplicati...", accelerator="Ctrl+M", command=self._show_duplicates_dialog)
+        tools_menu.add_command(label="📄 Importa documenti...", command=self._import_documents_wizard)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Modifica campi comuni", command=self._show_batch_edit_dialog)
+        tools_menu.add_command(label="🧾 Modifica campi comuni...", command=self._show_batch_edit_dialog)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Aggiorna stato soci", command=self._show_update_status_wizard)
+        tools_menu.add_command(label="🔁 Aggiorna stato soci...", command=self._show_update_status_wizard)
         tools_menu.add_separator()
-        tools_menu.add_command(label="📄 Gestione Template", command=self._show_templates_dialog)
-        tools_menu.add_command(label="📧 Email", command=self._open_email_wizard)
+        tools_menu.add_command(label="🧩 Gestione template...", command=self._show_templates_dialog)
+        tools_menu.add_command(label="✉️ Email...", command=self._open_email_wizard)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Legenda codici quote", command=self._show_quota_legend)
+        tools_menu.add_command(label="🏷️ Legenda codici quote...", command=self._show_quota_legend)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Preferenze", command=self._show_preferences_dialog)
+        tools_menu.add_command(label="⚙️ Preferenze...", command=self._show_preferences_dialog)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Configurazione sezione", command=self._show_section_config_dialog)
-        tools_menu.add_command(label="Backup database          Ctrl+B", command=self._manual_backup)
-        tools_menu.add_command(label="Riallinea percorsi documenti", command=self._relink_document_paths)
-        tools_menu.add_command(label="Verifica integrità DB", command=self._not_implemented)
-        tools_menu.add_command(label="Log eventi", command=self._show_event_log)
+        tools_menu.add_command(label="🏠 Configurazione sezione...", command=self._show_section_config_dialog)
+        tools_menu.add_command(label="🛡️ Backup database...", accelerator="Ctrl+B", command=self._manual_backup)
+        tools_menu.add_command(label="🔗 Riallinea percorsi documenti...", command=self._relink_document_paths)
+        tools_menu.add_command(label="🧪 Verifica integrità DB...", command=self._not_implemented)
+        tools_menu.add_command(label="📜 Log eventi...", command=self._show_event_log)
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Aiuto", menu=help_menu)
-        help_menu.add_command(label="Guida rapida", command=self._open_help)
-        help_menu.add_command(label="Scorciatoie da tastiera", command=self._show_shortcuts_help)
+        help_menu.add_command(label="📖 Guida rapida", command=self._open_help)
+        help_menu.add_command(label="⌨️ Scorciatoie da tastiera", command=self._show_shortcuts_help)
         help_menu.add_separator()
-        help_menu.add_command(label="Informazioni", command=self._show_about)
+        help_menu.add_command(label="ℹ️ Informazioni", command=self._show_about)
 
     def _open_help(self):
         """Apri il file HELP.md con il visualizzatore di default."""
@@ -429,7 +587,10 @@ class App:
         try:
             from utils import open_path
 
-            open_path(str(help_path), on_error=lambda msg: messagebox.showerror("Aiuto", msg))
+            def _on_open_help_error(msg: str) -> None:
+                messagebox.showerror("Aiuto", msg)
+
+            open_path(str(help_path), on_error=_on_open_help_error)
         except Exception as exc:
             logger.error("Impossibile aprire l'help: %s", exc)
             messagebox.showerror("Aiuto", f"Impossibile aprire l'help:\n{exc}")
@@ -481,7 +642,7 @@ class App:
     def _create_soci_tab(self):
         """Create the Soci (members) tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Soci")
+        self.notebook.add(tab, text="👥 Soci")
 
         # Main toolbar
         toolbar = ttk.Frame(tab)
@@ -697,7 +858,7 @@ class App:
     def _create_docs_tab(self):
         """Create the Documents tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Documenti")
+        self.notebook.add(tab, text="📄 Documenti")
         
         from .panels import DocumentPanel, SectionDocumentPanel
 
@@ -705,22 +866,22 @@ class App:
         self.docs_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.section_docs_panel = SectionDocumentPanel(self.docs_notebook)
-        self.docs_notebook.add(self.section_docs_panel, text="Documenti sezione")
+        self.docs_notebook.add(self.section_docs_panel, text="🏠 Documenti sezione")
 
         self.panel_docs = DocumentPanel(self.docs_notebook, show_all_documents=True)
-        self.docs_notebook.add(self.panel_docs, text="Documenti soci")
+        self.docs_notebook.add(self.panel_docs, text="👥 Documenti soci")
 
     def _create_magazzino_tab(self):
         """Create the inventory (magazzino) tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Magazzino")
+        self.notebook.add(tab, text="📦 Magazzino")
         self.magazzino_panel = MagazzinoPanel(tab)
         self.magazzino_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def _create_ponti_tab(self):
         """Create the Ponti (repeaters) management tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Ponti")
+        self.notebook.add(tab, text="📡 Ponti")
         self.ponti_panel = PontiPanel(tab)
         self.ponti_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     
@@ -731,7 +892,8 @@ class App:
         except Exception:
             return
         tab_text = (self.notebook.tab(tab_id, "text") or "").strip()
-        if tab_text == "Consiglio Direttivo":
+        tab_key = self._normalize_tab_label(tab_text)
+        if tab_key == "Consiglio Direttivo":
             try:
                 self._refresh_cd_delibere()
             except Exception:
@@ -740,7 +902,7 @@ class App:
                 self._refresh_cd_verbali_docs()
             except Exception:
                 pass
-        elif tab_text == "Statistiche" and hasattr(self, "stats_panel"):
+        elif tab_key == "Statistiche" and hasattr(self, "stats_panel"):
             self.stats_panel.refresh()
 
     def _make_treeview_sortable(self, tv, cols):
@@ -765,7 +927,7 @@ class App:
     def _create_consiglio_direttivo_tab(self):
         """Create the consolidated Consiglio Direttivo area (Delibere/Verbali + documentale integration)."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Consiglio Direttivo")
+        self.notebook.add(tab, text="🏛️ Consiglio Direttivo")
 
         from .panels import SectionDocumentPanel
 
@@ -816,9 +978,10 @@ class App:
         except Exception:
             return
         tab_text = (cd_notebook.tab(tab_id, "text") or "").strip()
-        if tab_text == "Delibere":
+        tab_key = self._normalize_tab_label(tab_text)
+        if tab_key == "Delibere":
             self._refresh_cd_delibere()
-        elif tab_text == "Verbali":
+        elif tab_key == "Verbali":
             self._refresh_cd_verbali_docs()
 
     def _build_cd_delibere_view(self, parent: ttk.Frame):
@@ -1030,7 +1193,10 @@ class App:
             return
         from utils import open_path
 
-        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Verbali", msg))
+        def _on_open_verbali_error(msg: str) -> None:
+            messagebox.showerror("Verbali", msg)
+
+        ok = open_path(path, on_error=_on_open_verbali_error)
         if not ok:
             self._refresh_cd_verbali_docs()
 
@@ -1170,7 +1336,7 @@ class App:
     def _create_calendar_tab(self):
         """Create the Calendario tab with event list and actions."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Calendario")
+        self.notebook.add(tab, text="📅 Calendario")
 
         toolbar = ttk.Frame(tab)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
@@ -1477,7 +1643,7 @@ class App:
     def _create_section_tab(self):
         """Create the Section Info tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Sezione")
+        self.notebook.add(tab, text="🏠 Sezione")
         
         # Content frame
         content_frame = ttk.Frame(tab)
@@ -1500,7 +1666,7 @@ class App:
     def _create_statistics_tab(self):
         """Create the Statistics tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Statistiche")
+        self.notebook.add(tab, text="📊 Statistiche")
         
         from v4_ui.stats_panel import StatsPanel
         self.stats_panel = StatsPanel(tab)
@@ -2637,9 +2803,10 @@ Generale:
                     return int(member_id)
         except Exception:
             pass
-        if getattr(self, "current_member_id", None):
+        current_member_id = getattr(self, "current_member_id", None)
+        if current_member_id is not None:
             try:
-                return int(self.current_member_id)
+                return int(current_member_id)
             except Exception:
                 return None
         return None
