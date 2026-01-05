@@ -34,6 +34,8 @@ src/data/*.db-journal
 
 # Local documents folder (user data)
 data/documenti/
+assets/CSV-ARI/
+assets/Statuto
 
 # Local runtime config (machine-specific)
 src/data/section_config.json
