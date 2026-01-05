@@ -9,6 +9,11 @@
 
 - **Portable**: build con icona (assets/gestionale.ico, generabile da PNG via Pillow) + cleanup script build/deploy.
 
+## 0.4.3g · 5 Gennaio 2026
+
+- **Stabilità**: ripulito `UpdateStatusWizard` da output terminale accidentalmente incollato nel sorgente.
+- **CD / Delibere**: validazione allegato usa la funzione locale corretta (evita errore import).
+
 ## 0.4.3f · 5 Gennaio 2026
 
 - **Documenti soci**: riallineamento percorsi più robusto (supporto `data/documenti` e ricostruzione percorso da token/doc_type/file).

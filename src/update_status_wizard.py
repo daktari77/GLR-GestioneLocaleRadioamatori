@@ -481,41 +481,7 @@ class UpdateStatusWizard:
     def _execute_update(self):
         """Execute the status update"""
         try:
-PS G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2> & "G:/Il mio Drive/GestioneSoci/GestioneSoci_Current/GestioneSoci_v0.4.2/.venv/Scripts/python.exe" "g:/Il mio Drive/GestioneSoci/GestioneSoci_Current/GestioneSoci_v0.4.2/src/main.py"
-INFO: Templates table initialized
-INFO: Database initialized successfully
-INFO: Incremental backup created: soci_backup_2026-01-05_11-01-04.db
-WARNING: Failed to remove old backup g:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\src\backup\soci_backup_2026-01-02_09-43-36.db: [WinError 5] Accesso negato: 'g:\\Il mio Drive\\GestioneSoci\\GestioneSoci_Current\\GestioneSoci_v0.4.2\\src\\backup\\soci_backup_2026-01-02_09-43-36.db'
-INFO: Old backup removed: soci_backup_2026-01-02_09-44-36.db
-INFO: Startup backup: g:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\src\backup\soci_backup_2026-01-05_11-01-04.db
-INFO: Starting application...
-WARNING: Problemi rilevati all'avvio:
-Sono stati rilevati alcuni problemi che richiedono attenzione:
-
-• Documenti mancanti (22)
-   - ID 29 · IU2LGG · 1c3637b27a.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2LGG\documento\1c3637b27a.pdf
-   - ID 21 · IZ2FME · b0e1ad4bae.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2FME\documento\b0e1ad4bae.pdf
-   - ID 17 · IZ2ZQP · a1b475b37e.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2ZQP\documento\a1b475b37e.pdf
-   - ID 23 · IZ2CPO · b1eddc8755.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2CPO\documento\b1eddc8755.pdf
-   - ID 30 · IU2TNO · 328dbf4a78.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TNO\documento\328dbf4a78.pdf
-   - ID 31 · IU2TNO · e41569c547.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TNO\privacy\e41569c547.pdf
-   - ID 32 · IU2TNO · f02ff427d6.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TNO\documento\f02ff427d6.pdf
-   - ID 19 · IZ2AJE · 5633bc19b3.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2AJE\documento\5633bc19b3.pdf
-   - ID 22 · IZ2ZVA · 52a29078c6.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2ZVA\documento\52a29078c6.pdf
-   - ID 18 · IK2AOO · 4b6634e40c.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IK2AOO\documento\4b6634e40c.pdf
-   - ID 20 · IK2RJK · 4898aa8d03.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IK2RJK\documento\4898aa8d03.pdf
-   - ID 37 · IU2GLR · 9117346da0.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2GLR\documento\9117346da0.pdf
-   - ID 25 · - · 09f037c6d6.jpg · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\documento\09f037c6d6.jpg
-   - ID 26 · - · be431783d8.jpg · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\documento\be431783d8.jpg
-   - ID 27 · - · cf1bd7a1d7.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\privacy\cf1bd7a1d7.pdf
-   - ID 28 · - · 5b1dc7739d.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\documento\5b1dc7739d.pdf
-   - ID 15 · IU2TEST · ffa15e354f.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TEST\documento\ffa15e354f.pdf
-   - ID 16 · IU2TEST · 2553a44eac.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TEST\documento\2553a44eac.pdf
-   - ID 33 · - · 6efe846423.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\privacy\6efe846423.pdf
-   - ID 34 · - · bb53304dd1.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\documento\bb53304dd1.pdf
-   - ID 35 · - · f25f5c65c9.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\documento\f25f5c65c9.pdf
-   - ID 36 · - · a912b1e879.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\documento\a912b1e879.pdf
-INFO: Relink document paths completed: 0 updated, 22 unresolved            from database import fetch_one, get_db_path
+            from database import fetch_one, get_db_path
             from soci_import_engine import fetch_socio_id, insert_socio, update_socio_by_id
             from utils import to_bool01
 

@@ -144,7 +144,6 @@ class DeliberaDialog:
         )
         
         if file_path:
-            from cd_delibere import validate_allegato_file
             is_valid, msg = validate_allegato_file(file_path)
             if is_valid:
                 self.selected_allegato = file_path
