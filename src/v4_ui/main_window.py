@@ -280,6 +280,32 @@ class App:
                 messagebox.showwarning("Riallinea percorsi", "\n".join(message))
             else:
                 messagebox.showinfo("Riallinea percorsi", "\n".join(message))
+
+            # Refresh documents views so changes are visible immediately (no restart needed).
+            try:
+                panel_docs = getattr(self, "panel_docs", None)
+                if panel_docs is not None:
+                    panel_docs.refresh()
+            except Exception:
+                pass
+
+            try:
+                section_docs_panel = getattr(self, "section_docs_panel", None)
+                if section_docs_panel is not None:
+                    section_docs_panel.refresh()
+            except Exception:
+                pass
+
+            try:
+                member_id = None
+                selection = getattr(self, "tv_soci", None)
+                if selection is not None:
+                    selected = selection.selection()
+                    if len(selected) == 1:
+                        member_id = self._get_member_id_from_item(selected[0])
+                self._refresh_docs_preview(member_id)
+            except Exception:
+                pass
         except Exception as exc:
             logger.error("Errore riallineando i percorsi: %s", exc)
             messagebox.showerror("Riallinea percorsi", f"Errore durante l'operazione:\n{exc}")
@@ -2170,6 +2196,9 @@ Generale:
         """Refresh member list from database."""
         try:
             from database import fetch_all
+
+            # Cache dettagli socio per questa renderizzazione (evita query duplicate)
+            self._member_detail_cache = {}
             
             # Clear treeview
             for item in self.tv_soci.get_children():
@@ -2184,10 +2213,14 @@ Generale:
             for row in rows:
                 # Check for missing critical data
                 has_missing, warning_icon, missing_fields = self._check_missing_data(row)
+
+                # Statuto-driven warnings (quota/voto/morosità)
+                statuto_warnings = self._get_statuto_warnings(row)
                 
                 # Prepare display values
                 display_row = self._strip_hidden_columns(self._format_member_row(row))
-                warning_label = f"⚠ {len(missing_fields)}" if has_missing else warning_icon
+                total_warnings = len(missing_fields) + len(statuto_warnings)
+                warning_label = f"⚠ {total_warnings}" if total_warnings else warning_icon
                 display = (warning_label,) + display_row
 
                 # Determine tags based on raw DB values (prefer explicit checks)
@@ -2252,7 +2285,18 @@ Generale:
             member_id = row.get('id', '') if hasattr(row, 'get') else row[0]
             if member_id:
                 from database import fetch_one
-                full_row = fetch_one("SELECT telefono, indirizzo FROM soci WHERE id = ?", (member_id,))
+
+                if not hasattr(self, '_member_detail_cache') or self._member_detail_cache is None:
+                    self._member_detail_cache = {}
+
+                full_row = self._member_detail_cache.get(member_id)
+                if full_row is None:
+                    full_row = fetch_one(
+                        "SELECT telefono, indirizzo, data_iscrizione, socio FROM soci WHERE id = ?",
+                        (member_id,)
+                    )
+                    self._member_detail_cache[member_id] = full_row
+
                 if full_row:
                     telefono = full_row.get('telefono', '') if hasattr(full_row, 'get') else full_row[0]
                     indirizzo = full_row.get('indirizzo', '') if hasattr(full_row, 'get') else full_row[1]
@@ -2267,6 +2311,73 @@ Generale:
         if missing:
             return True, "⚠", missing
         return False, "", []
+
+    def _get_statuto_warnings(self, row):
+        """Return a list of statuto-related warnings for a member.
+
+        Nota: non influisce sul filtro "⚠ Dati mancanti" (che resta basato su _check_missing_data).
+        """
+        try:
+            from utils import (
+                to_bool01,
+                normalize_q,
+                statuto_diritti_sospesi,
+                statuto_morosita_continua_anni,
+                statuto_voto_coerente,
+            )
+        except Exception:
+            return []
+
+        warnings = []
+
+        # Only apply to active members
+        attivo_raw = self._get_row_value(row, 'attivo')
+        if to_bool01(attivo_raw) != 1:
+            return warnings
+
+        socio_raw = self._get_row_value(row, 'socio')
+        socio_norm = str(socio_raw).strip().upper() if socio_raw is not None else ""
+
+        q0 = normalize_q(self._get_row_value(row, 'q0'))
+        q1 = normalize_q(self._get_row_value(row, 'q1'))
+        voto_raw = self._get_row_value(row, 'voto')
+
+        # THR (Honor Roll) = soci onorari, quota esente
+        if socio_norm != 'THR':
+            if statuto_diritti_sospesi(q0=q0):
+                warnings.append('Quota non in regola (Q0)')
+
+            if statuto_morosita_continua_anni(q0=q0, q1=q1) >= 2:
+                warnings.append('Morosità continuata 2 anni')
+
+        # Voto: coerenza minima (3 mesi + quota)
+        member_id = self._get_row_value(row, 'id')
+        data_iscrizione = None
+        if member_id:
+            try:
+                if not hasattr(self, '_member_detail_cache') or self._member_detail_cache is None:
+                    self._member_detail_cache = {}
+
+                detail = self._member_detail_cache.get(member_id)
+                if detail is None:
+                    from database import fetch_one
+                    detail = fetch_one(
+                        "SELECT telefono, indirizzo, data_iscrizione, socio FROM soci WHERE id = ?",
+                        (member_id,)
+                    )
+                    self._member_detail_cache[member_id] = detail
+
+                if detail:
+                    data_iscrizione = detail.get('data_iscrizione') if hasattr(detail, 'get') else detail[2]
+            except Exception:
+                data_iscrizione = None
+
+        # Per THR non imponiamo coerenza voto basata sulla quota (quota esente)
+        if socio_norm != 'THR':
+            if not statuto_voto_coerente(voto=voto_raw, data_iscrizione=data_iscrizione, q0=q0):
+                warnings.append('Voto non coerente (3 mesi/Quota)')
+
+        return warnings
     
     def _on_search_changed(self, *args):
         """Handle search field changes."""
@@ -2403,6 +2514,9 @@ Generale:
         
         try:
             from database import fetch_all
+
+            # Cache dettagli socio per questa renderizzazione (evita query duplicate)
+            self._member_detail_cache = {}
             
             # Build SQL with filters
             sql = "SELECT " + ", ".join(self.COLONNE) + " FROM soci WHERE deleted_at IS NULL"
@@ -2434,6 +2548,8 @@ Generale:
             for row in rows:
                 # Check for missing data
                 has_missing, warning_icon, missing_fields = self._check_missing_data(row)
+
+                statuto_warnings = self._get_statuto_warnings(row)
                 
                 # Apply missing data filter
                 if missing_data_filter == "missing" and not has_missing:
@@ -2443,7 +2559,8 @@ Generale:
                 
                 # Prepare display values
                 display_row = self._strip_hidden_columns(self._format_member_row(row))
-                warning_label = f"⚠ {len(missing_fields)}" if has_missing else warning_icon
+                total_warnings = len(missing_fields) + len(statuto_warnings)
+                warning_label = f"⚠ {total_warnings}" if total_warnings else warning_icon
                 display = (warning_label,) + display_row
                 
                 # Determine tags

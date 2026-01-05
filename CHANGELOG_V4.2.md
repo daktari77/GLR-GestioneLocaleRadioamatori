@@ -9,6 +9,12 @@
 
 - **Portable**: build con icona (assets/gestionale.ico, generabile da PNG via Pillow) + cleanup script build/deploy.
 
+## 0.4.3f · 5 Gennaio 2026
+
+- **Documenti soci**: riallineamento percorsi più robusto (supporto `data/documenti` e ricostruzione percorso da token/doc_type/file).
+- **UI**: dopo il riallineamento, refresh immediato delle viste documenti (senza riavvio).
+- **Tooling**: `build_exe.ps1` aggiorna automaticamente `artifacts/last_portable_build.txt`.
+
 ## 0.4.3a · 31 Dicembre 2025
 
 - TBD

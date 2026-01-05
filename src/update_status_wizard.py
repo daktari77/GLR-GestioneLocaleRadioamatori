@@ -23,7 +23,11 @@ class UpdateStatusWizard:
         self.rows = []
         self.mapping = {}
         self.update_count = 0
+        self.inserted_count = 0
         self.skipped_count = 0
+
+        # Options
+        self.dry_run_var = tk.BooleanVar(value=False)
         
         # Create window
         self.win = tk.Toplevel(parent)
@@ -48,7 +52,37 @@ class UpdateStatusWizard:
         ]
         
         self._setup_ui()
+        # React to dry-run toggle (button label on last page)
+        try:
+            self.dry_run_var.trace_add("write", lambda *_: self._update_execute_button_label())
+        except Exception:
+            pass
         self._show_page()
+
+    def _update_execute_button_label(self):
+        """Update the label of the final action button based on dry-run."""
+        try:
+            if self.current_page == len(self.pages) - 1:
+                self.btn_next.config(text=("Anteprima" if bool(self.dry_run_var.get()) else "Aggiorna"))
+                self._update_execute_warning_text()
+        except Exception:
+            return
+
+    def _update_execute_warning_text(self):
+        """Update warning text on execute page based on dry-run."""
+        try:
+            if self.current_page != len(self.pages) - 1:
+                return
+            if not hasattr(self, "execute_warning_label"):
+                return
+            if not self.execute_warning_label.winfo_exists():
+                return
+            if bool(self.dry_run_var.get()):
+                self.execute_warning_label.config(text="ℹ️ Modalità anteprima: nessuna modifica verrà salvata nel DB")
+            else:
+                self.execute_warning_label.config(text="⚠️ Premi 'Aggiorna' per sovrascrivere i campi Voto e Quote")
+        except Exception:
+            return
     
     def _setup_ui(self):
         """Setup main UI structure"""
@@ -95,7 +129,8 @@ class UpdateStatusWizard:
         self.btn_prev.config(state=tk.NORMAL if self.current_page > 0 else tk.DISABLED)
         
         if self.current_page == len(self.pages) - 1:
-            self.btn_next.config(text="Aggiorna", state=tk.NORMAL)
+            self._update_execute_button_label()
+            self.btn_next.config(state=tk.NORMAL)
         else:
             self.btn_next.config(text="Avanti →", state=tk.NORMAL)
         
@@ -257,8 +292,24 @@ class UpdateStatusWizard:
         # Warning
         warning_frame = ttk.Frame(frame)
         warning_frame.pack(fill=tk.X, pady=10, padx=20)
-        ttk.Label(warning_frame, text="⚠️ Premi 'Aggiorna' per sovrascrivere i campi Voto e Quote", 
-                 foreground="red", font="AppBold").pack()
+        self.execute_warning_label = ttk.Label(
+            warning_frame,
+            text="⚠️ Premi 'Aggiorna' per sovrascrivere i campi Voto e Quote",
+            foreground="red",
+            font="AppBold",
+        )
+        self.execute_warning_label.pack()
+
+        # Dry-run option
+        dry_frame = ttk.Frame(frame)
+        dry_frame.pack(fill=tk.X, pady=(5, 0), padx=20)
+        ttk.Checkbutton(
+            dry_frame,
+            text="Solo anteprima (non modifica il DB)",
+            variable=self.dry_run_var,
+        ).pack(anchor="w")
+        self._update_execute_button_label()
+        self._update_execute_warning_text()
         
         # Progress
         prog_frame = ttk.Frame(frame)
@@ -430,13 +481,50 @@ class UpdateStatusWizard:
     def _execute_update(self):
         """Execute the status update"""
         try:
-            from database import exec_query, fetch_one
-            from csv_import import apply_mapping
+PS G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2> & "G:/Il mio Drive/GestioneSoci/GestioneSoci_Current/GestioneSoci_v0.4.2/.venv/Scripts/python.exe" "g:/Il mio Drive/GestioneSoci/GestioneSoci_Current/GestioneSoci_v0.4.2/src/main.py"
+INFO: Templates table initialized
+INFO: Database initialized successfully
+INFO: Incremental backup created: soci_backup_2026-01-05_11-01-04.db
+WARNING: Failed to remove old backup g:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\src\backup\soci_backup_2026-01-02_09-43-36.db: [WinError 5] Accesso negato: 'g:\\Il mio Drive\\GestioneSoci\\GestioneSoci_Current\\GestioneSoci_v0.4.2\\src\\backup\\soci_backup_2026-01-02_09-43-36.db'
+INFO: Old backup removed: soci_backup_2026-01-02_09-44-36.db
+INFO: Startup backup: g:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\src\backup\soci_backup_2026-01-05_11-01-04.db
+INFO: Starting application...
+WARNING: Problemi rilevati all'avvio:
+Sono stati rilevati alcuni problemi che richiedono attenzione:
+
+• Documenti mancanti (22)
+   - ID 29 · IU2LGG · 1c3637b27a.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2LGG\documento\1c3637b27a.pdf
+   - ID 21 · IZ2FME · b0e1ad4bae.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2FME\documento\b0e1ad4bae.pdf
+   - ID 17 · IZ2ZQP · a1b475b37e.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2ZQP\documento\a1b475b37e.pdf
+   - ID 23 · IZ2CPO · b1eddc8755.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2CPO\documento\b1eddc8755.pdf
+   - ID 30 · IU2TNO · 328dbf4a78.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TNO\documento\328dbf4a78.pdf
+   - ID 31 · IU2TNO · e41569c547.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TNO\privacy\e41569c547.pdf
+   - ID 32 · IU2TNO · f02ff427d6.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TNO\documento\f02ff427d6.pdf
+   - ID 19 · IZ2AJE · 5633bc19b3.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2AJE\documento\5633bc19b3.pdf
+   - ID 22 · IZ2ZVA · 52a29078c6.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IZ2ZVA\documento\52a29078c6.pdf
+   - ID 18 · IK2AOO · 4b6634e40c.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IK2AOO\documento\4b6634e40c.pdf
+   - ID 20 · IK2RJK · 4898aa8d03.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IK2RJK\documento\4898aa8d03.pdf
+   - ID 37 · IU2GLR · 9117346da0.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2GLR\documento\9117346da0.pdf
+   - ID 25 · - · 09f037c6d6.jpg · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\documento\09f037c6d6.jpg
+   - ID 26 · - · be431783d8.jpg · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\documento\be431783d8.jpg
+   - ID 27 · - · cf1bd7a1d7.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\privacy\cf1bd7a1d7.pdf
+   - ID 28 · - · 5b1dc7739d.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_154\documento\5b1dc7739d.pdf
+   - ID 15 · IU2TEST · ffa15e354f.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TEST\documento\ffa15e354f.pdf
+   - ID 16 · IU2TEST · 2553a44eac.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\IU2TEST\documento\2553a44eac.pdf
+   - ID 33 · - · 6efe846423.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\privacy\6efe846423.pdf
+   - ID 34 · - · bb53304dd1.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\documento\bb53304dd1.pdf
+   - ID 35 · - · f25f5c65c9.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\documento\f25f5c65c9.pdf
+   - ID 36 · - · a912b1e879.pdf · G:\Il mio Drive\GestioneSoci\GestioneSoci_Current\GestioneSoci_v0.4.2\data\documents\SOCIO_157\documento\a912b1e879.pdf
+INFO: Relink document paths completed: 0 updated, 22 unresolved            from database import fetch_one, get_db_path
+            from soci_import_engine import fetch_socio_id, insert_socio, update_socio_by_id
+            from utils import to_bool01
+
+            dry_run = bool(self.dry_run_var.get())
+            write_enabled = not dry_run
             
-            # Apply mapping to data
-            mapped_rows = apply_mapping(self.rows, self.mapping)
-            
-            total = len(mapped_rows)
+            # Usa le righe originali: permette di importare campi extra per i nuovi soci
+            rows = list(self.rows or [])
+            total = len(rows)
             if total == 0:
                 messagebox.showwarning("Aggiornamento", "Nessuna riga da processare.")
                 return
@@ -444,9 +532,114 @@ class UpdateStatusWizard:
             # Start update
             self.progress["maximum"] = total
             self.update_count = 0
+            self.inserted_count = 0
             self.skipped_count = 0
             
-            for i, row in enumerate(mapped_rows):
+            # Pre-derive CSV column names from mapping
+            col_matricola = self.mapping.get('matricola')
+            col_nominativo = self.mapping.get('nominativo')
+            col_voto = self.mapping.get('voto')
+            col_q0 = self.mapping.get('q0')
+            col_q1 = self.mapping.get('q1')
+            col_q2 = self.mapping.get('q2')
+
+            def _csv_get(r: dict, key: str):
+                if not isinstance(r, dict):
+                    return None
+                # exact
+                if key in r:
+                    return r.get(key)
+                # case-insensitive fallback
+                k_low = key.lower()
+                for k in r.keys():
+                    try:
+                        if str(k).lower() == k_low:
+                            return r.get(k)
+                    except Exception:
+                        continue
+                return None
+
+            def _get_by_col(r: dict, colname: str | None):
+                if not colname:
+                    return None
+                v = _csv_get(r, colname)
+                if v is None:
+                    return None
+                s = str(v).strip()
+                return s if s != "" else None
+
+            def _split_fullname(full: str | None):
+                s = (full or "").strip()
+                if not s:
+                    return "", ""
+                parts = [p for p in s.split() if p]
+                if len(parts) >= 2:
+                    return " ".join(parts[:-1]).strip(), parts[-1].strip()
+                # Fallback: duplicate to satisfy required fields
+                return parts[0].strip(), parts[0].strip()
+
+            def _build_new_member_payload(r: dict, *, matricola_val: str | None, nominativo_val: str | None, q0_val, q1_val, q2_val, voto_val):
+                # Official ARI columns (if present)
+                fullname = _csv_get(r, 'nome')
+                callsign = _csv_get(r, 'callsign')
+                cf = _csv_get(r, 'cf')
+                nascita = _csv_get(r, 'nascita')
+                email = _csv_get(r, 'email')
+                numeri = _csv_get(r, 'numeri')
+                family = _csv_get(r, 'family')
+                flag = _csv_get(r, 'flag')
+                thr = _csv_get(r, 'thr')
+                sezione = _csv_get(r, 'sezione')
+
+                cognome, nome = _split_fullname(str(fullname) if fullname is not None else None)
+
+                note_parts = []
+                # Preserve what we can't map cleanly without changing schema
+                if nascita is not None and str(nascita).strip() != "":
+                    note_parts.append(f"ARI anno_nascita={str(nascita).strip()}")
+                if sezione is not None and str(sezione).strip() != "":
+                    note_parts.append(f"ARI sezione={str(sezione).strip()}")
+                if flag is not None and str(flag).strip() != "":
+                    note_parts.append(f"ARI flag={str(flag).strip()}")
+                if thr is not None and str(thr).strip() != "":
+                    note_parts.append(f"ARI thr={str(thr).strip()}")
+                note = " | ".join(note_parts) if note_parts else None
+
+                # Normalize values (regole ARI):
+                # - Se THR=1 => VOTO=1
+                # - Se VOTO=1 => socio attivo; altrimenti EX socio
+                thr_norm = to_bool01(thr) or 0
+                voto_norm = 1 if thr_norm == 1 else (to_bool01(voto_val) or 0)
+                attivo_norm = 1 if voto_norm == 1 else 0
+
+                payload = {
+                    'matricola': (matricola_val or None),
+                    'nominativo': (str(callsign).strip().upper() if callsign is not None and str(callsign).strip() else (nominativo_val or None)),
+                    'nome': nome,
+                    'cognome': cognome,
+                    'codicefiscale': (str(cf).strip().upper() if cf is not None and str(cf).strip() else None),
+                    'email': (str(email).strip().lower() if email is not None and str(email).strip() else None),
+                    'telefono': (str(numeri).strip() if numeri is not None and str(numeri).strip() else None),
+                    'familiare': (str(family).strip() if family is not None and str(family).strip() else None),
+                    # THR (Honor Roll) = socio onorario: quota esente
+                    'socio': ('THR' if thr_norm == 1 else None),
+                    'voto': voto_norm,
+                    'q0': (str(q0_val).strip().upper() if q0_val is not None and str(q0_val).strip() else None),
+                    'q1': (str(q1_val).strip().upper() if q1_val is not None and str(q1_val).strip() else None),
+                    'q2': (str(q2_val).strip().upper() if q2_val is not None and str(q2_val).strip() else None),
+                    'attivo': attivo_norm,
+                    'note': note,
+                }
+
+                # Ensure required fields are non-empty
+                if not payload.get('nome'):
+                    payload['nome'] = payload.get('cognome') or 'ND'
+                if not payload.get('cognome'):
+                    payload['cognome'] = payload.get('nome') or 'ND'
+
+                return payload
+
+            for i, row in enumerate(rows):
                 # Update progress
                 self.progress["value"] = i
                 self.progress_text.config(text=f"Aggiornamento: {i+1}/{total}")
@@ -454,82 +647,74 @@ class UpdateStatusWizard:
                 
                 try:
                     # Find member by matricola or nominativo
-                    matricola = row.get('matricola')
-                    nominativo = row.get('nominativo')
-                    
-                    existing = None
-                    
-                    if matricola:
-                        matricola_str = str(matricola).strip()
-                        if matricola_str:
-                            existing = fetch_one("SELECT id FROM soci WHERE matricola=?", (matricola_str,))
-                    
-                    if not existing and nominativo:
-                        nominativo_str = str(nominativo).strip()
-                        if nominativo_str:
-                            existing = fetch_one("SELECT id FROM soci WHERE LOWER(nominativo)=LOWER(?)", 
-                                               (nominativo_str,))
-                    
+                    matricola = _get_by_col(row, col_matricola) if col_matricola else _csv_get(row, 'matricola')
+                    nominativo = _get_by_col(row, col_nominativo) if col_nominativo else _csv_get(row, 'callsign')
+
+                    existing = fetch_socio_id(matricola=matricola, nominativo=nominativo)
+
+                    # Values to update
+                    voto_val = _get_by_col(row, col_voto)
+                    q0_val = _get_by_col(row, col_q0)
+                    q1_val = _get_by_col(row, col_q1)
+                    q2_val = _get_by_col(row, col_q2)
+
+                    # Regole ARI per stato:
+                    # - Se THR=1 => VOTO=1
+                    # - Se VOTO=1 => socio attivo; altrimenti EX socio
+                    thr_norm = to_bool01(_csv_get(row, 'thr')) or 0
+                    voto_norm = None
+                    if thr_norm == 1:
+                        voto_norm = 1
+                    elif col_voto:
+                        voto_norm = to_bool01(voto_val) or 0
+
                     if not existing:
-                        self.skipped_count += 1
+                        # Nuovo socio: importa tutte le informazioni disponibili dal CSV ufficiale
+                        try:
+                            matricola_s = str(matricola).strip() if matricola is not None else None
+                            nominativo_s = str(nominativo).strip() if nominativo is not None else None
+                            if not (matricola_s or nominativo_s):
+                                self.skipped_count += 1
+                                continue
+                            payload = _build_new_member_payload(
+                                row,
+                                matricola_val=matricola_s,
+                                nominativo_val=nominativo_s,
+                                q0_val=q0_val,
+                                q1_val=q1_val,
+                                q2_val=q2_val,
+                                voto_val=voto_val,
+                            )
+                            insert_socio(payload, write_enabled=write_enabled)
+                            self.inserted_count += 1
+                        except Exception as ins_exc:
+                            logger.error(f"Error inserting row {i}: {ins_exc}")
+                            self.skipped_count += 1
                         continue
                     
                     # Build UPDATE query for status fields only
-                    update_cols = []
-                    update_vals = []
-                    
-                    # Collect values for status fields
-                    voto_val = None
-                    q0_val = None
-                    
-                    for field in ['voto', 'q0', 'q1', 'q2']:
-                        if field in row and row[field] is not None:
-                            val = str(row[field]).strip()
-                            if val or val == '':  # Include even empty string to allow clearing
-                                update_cols.append(f"{field}=?")
-                                update_vals.append(val)
-                                
-                                # Track voto and q0 for attivo calculation
-                                if field == 'voto':
-                                    voto_val = val
-                                elif field == 'q0':
-                                    q0_val = val
-                    
-                    # Calculate and add 'attivo' based on business rules:
-                    # - If voto = 1 (Si) -> attivo = 1
-                    # - If voto = 0 (No) and q0 is not null/empty -> attivo = 1
-                    # - Otherwise -> attivo = 0
-                    if voto_val is not None:
-                        def _normalize_bool(v):
-                            if not v:
-                                return None
-                            s = str(v).strip().lower()
-                            if s in ('1', 'true', 'sì', 'si', 'yes'):
-                                return 1
-                            if s in ('0', 'false', 'no'):
-                                return 0
-                            return None
-                        
-                        voto_normalized = _normalize_bool(voto_val)
-                        
-                        if voto_normalized == 1:
-                            # Voto = 1 -> attivo
-                            update_cols.append("attivo=?")
-                            update_vals.append('Si')
-                        elif voto_normalized == 0:
-                            # Voto = 0: check Q0
-                            if q0_val and str(q0_val).strip():
-                                # Q0 not null -> attivo
-                                update_cols.append("attivo=?")
-                                update_vals.append('Si')
-                            else:
-                                # Q0 null -> non attivo
-                                update_cols.append("attivo=?")
-                                update_vals.append('No')
-                    
-                    if update_cols:
-                        sql = f"UPDATE soci SET {', '.join(update_cols)} WHERE id=?"
-                        exec_query(sql, update_vals + [existing['id']])
+                    updates = {}
+
+                    # Collect values for status fields (voto/attivo/q0/q1/q2)
+                    # Nota: attivo è derivato da voto secondo regole ARI.
+                    if voto_norm is not None:
+                        updates["voto"] = voto_norm
+                        updates["attivo"] = 1 if voto_norm == 1 else 0
+                    if col_q0 and (q0_val is not None or q0_val == ""):
+                        updates["q0"] = q0_val
+                    if col_q1 and (q1_val is not None or q1_val == ""):
+                        updates["q1"] = q1_val
+                    if col_q2 and (q2_val is not None or q2_val == ""):
+                        updates["q2"] = q2_val
+
+                    if updates:
+                        update_socio_by_id(
+                            socio_id=existing['id'],
+                            updates=updates,
+                            write_enabled=write_enabled,
+                            # Keep current behavior: empty strings are not written.
+                            keep_empty_strings=False,
+                        )
                         self.update_count += 1
                     else:
                         self.skipped_count += 1
@@ -541,20 +726,33 @@ class UpdateStatusWizard:
             
             # Complete
             self.progress["value"] = total
-            self.progress_text.config(text=f"Completato! {self.update_count} aggiornati, {self.skipped_count} saltati")
-            
-            msg = f"Aggiornamento completato!\n\n"
-            msg += f"Soci aggiornati: {self.update_count}\n"
+            self.progress_text.config(text=f"Completato! {self.update_count} aggiornati, {self.inserted_count} inseriti, {self.skipped_count} saltati")
+
+            msg_title = "Anteprima" if dry_run else "Aggiornamento"
+            msg = f"{'ANTEPRIMA (dry-run)' if dry_run else 'Aggiornamento completato!'}\n\n"
+            msg += f"Soci aggiornati (Quote/Voto): {self.update_count}\n"
+            msg += f"Nuovi soci inseriti: {self.inserted_count}\n"
             if self.skipped_count > 0:
-                msg += f"Soci saltati (non trovati): {self.skipped_count}"
-            
-            messagebox.showinfo("Aggiornamento", msg)
-            
-            if self.on_complete_callback:
-                self.on_complete_callback(self.update_count)
-            
-            # Close after delay
-            self.win.after(2000, self.win.destroy)
+                msg += f"Soci saltati (non trovati / errori): {self.skipped_count}"
+
+            # Diagnostic: DB path + record counts (helps when UI shows few records due to different DB)
+            try:
+                db_path = get_db_path()
+                total_db = fetch_one("SELECT COUNT(*) AS n FROM soci")["n"]
+                total_visible = fetch_one("SELECT COUNT(*) AS n FROM soci WHERE deleted_at IS NULL")["n"]
+                msg += f"\n\nDB: {db_path}\nRecord soci: {total_visible} (visibili) / {total_db} (totali)"
+            except Exception:
+                pass
+
+            messagebox.showinfo(msg_title, msg)
+
+            # In dry-run non chiamiamo callback e non chiudiamo automaticamente
+            if not dry_run:
+                if self.on_complete_callback:
+                    self.on_complete_callback(self.update_count)
+
+                # Close after delay
+                self.win.after(2000, self.win.destroy)
             
         except Exception as e:
             logger.error(f"Update failed: {e}")

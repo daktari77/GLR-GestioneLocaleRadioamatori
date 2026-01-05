@@ -225,15 +225,101 @@ def docs_dir_for_matricola(matricola: Optional[str]) -> str:
 # --------------------------
 # Quotas (Q0/Q1/Q2) utilities
 # --------------------------
-CAUSALI_CODE_RE = re.compile(r"^[A-Z0-9]{2,3}$")
+CAUSALI_CODE_RE = re.compile(r"^[A-Z0-9]{1,3}$")
 
 def normalize_q(value: Optional[str]) -> Optional[str]:
     """Normalize quota code: uppercase, validate pattern, return None if empty."""
     if value is None:
         return None
-    s = value.strip().upper()
+    # SQLite may return numeric values for purely numeric codes (e.g. 53),
+    # so normalize by casting to string first.
+    s = str(value).strip().upper()
     if s == "":
         return None
     if not CAUSALI_CODE_RE.match(s):
         return None
     return s
+
+
+def parse_iso_date(value: Optional[str]) -> Optional[date]:
+    """Parse an ISO date (YYYY-MM-DD) into a datetime.date.
+
+    Accepts None/empty, and tolerates datetime strings by taking the first 10 chars.
+    Returns None if parsing fails.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s == "":
+        return None
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def has_quota(value: Optional[str]) -> bool:
+    """True if the quota code is present and passes the (2-3 chars) validation."""
+    return normalize_q(value) is not None
+
+
+def statuto_diritti_sospesi(*, q0: Optional[str], oggi: Optional[date] = None) -> bool:
+    """Statuto Art. 8: dal 1 gennaio, fino al pagamento, i diritti/servizi sono sospesi.
+
+    Nel gestionale assumiamo che la quota "anno" sia rappresentata da Q0.
+    """
+    today = oggi or date.today()
+    jan1 = date(today.year, 1, 1)
+    if today < jan1:
+        return False
+    return not has_quota(q0)
+
+
+def statuto_morosita_continua_anni(*, q0: Optional[str], q1: Optional[str]) -> int:
+    """Statuto Art. 10: perdita qualifica dopo 2 anni di morosità continuata.
+
+    Interpretazione minimale coerente con il gestionale:
+    - Q0: quota anno corrente
+    - Q1: quota anno precedente
+    Morosità continuata 2 anni -> Q0 assente AND Q1 assente.
+
+    Returns:
+        0, 1 o 2
+    """
+    q0_ok = has_quota(q0)
+    q1_ok = has_quota(q1)
+    if (not q0_ok) and (not q1_ok):
+        return 2
+    if not q0_ok:
+        return 1
+    return 0
+
+
+def statuto_voto_coerente(
+    *,
+    voto: Optional[int],
+    data_iscrizione: Optional[str],
+    q0: Optional[str],
+    oggi: Optional[date] = None,
+) -> bool:
+    """Coerenza del campo 'voto' con regole statutarie minime.
+
+    Statuto Art. 8 + Art. 14 (interpretazione operativa):
+    - diritto di voto solo se in regola con la quota (Q0 presente)
+    - diritto di voto acquisito dopo almeno 3 mesi dall'iscrizione nel libro soci
+
+    Nota: questo non "decide" il voto; serve solo per segnalare incoerenze.
+    """
+    v = to_bool01(voto)
+    if v != 1:
+        return True
+
+    if not has_quota(q0):
+        return False
+
+    today = oggi or date.today()
+    d = parse_iso_date(data_iscrizione)
+    if d is None:
+        return False
+
+    return (today - d).days >= 90

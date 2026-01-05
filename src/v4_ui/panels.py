@@ -11,8 +11,10 @@ import os
 import subprocess
 import sys
 import csv
-from collections.abc import Callable
+import zlib
+from collections.abc import Callable, Iterable
 
+from document_types_catalog import DEFAULT_SECTION_CATEGORY
 from documents_catalog import DEFAULT_DOCUMENT_CATEGORY
 from preferences import get_document_categories, get_section_document_categories
 from .document_metadata_prompt import ask_document_metadata, ask_section_document_metadata
@@ -27,6 +29,82 @@ from section_documents import (
 )
 
 logger = logging.getLogger("librosoci")
+
+_MEMBER_CATEGORY_PALETTE: tuple[str, ...] = (
+    "#FFE5E0",
+    "#FFEFD2",
+    "#FFF8C2",
+    "#E3F2FD",
+    "#E8F5E9",
+    "#F3E5F5",
+    "#E0F7FA",
+    "#FFF0F5",
+    "#EDE7F6",
+    "#F1F8E9",
+)
+
+_SECTION_CATEGORY_PALETTE: tuple[str, ...] = (
+    "#E3F2FD",
+    "#E0F7FA",
+    "#FFF4E6",
+    "#F3E5F5",
+    "#E8F5E9",
+    "#FFF8E1",
+    "#EDE7F6",
+    "#FCE4EC",
+)
+
+
+def _hex_to_rgb_components(value: str) -> tuple[int, int, int]:
+    color = value.lstrip("#")
+    if len(color) != 6:
+        return (255, 255, 255)
+    try:
+        return tuple(int(color[i : i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return (255, 255, 255)
+
+
+def _ideal_foreground_for(bg_hex: str) -> str:
+    r, g, b = _hex_to_rgb_components(bg_hex)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "#202124" if luminance > 0.6 else "#ffffff"
+
+
+class _CategoryTagStyler:
+    """Assign deterministic Treeview tag colors per document type."""
+
+    def __init__(self, tree: ttk.Treeview, *, default_category: str, palette: tuple[str, ...]):
+        self.tree = tree
+        self.default_category = (default_category or "Altro").strip() or "Altro"
+        self.palette = palette or ("#E8EAED",)
+        self._tag_cache: dict[str, str] = {}
+
+    def _normalized_label(self, category: str | None) -> str:
+        candidate = (category or self.default_category).strip()
+        return candidate or self.default_category
+
+    def _color_for_key(self, key: str) -> str:
+        index = zlib.crc32(key.encode("utf-8")) % len(self.palette)
+        return self.palette[index]
+
+    def tag_for(self, category: str | None) -> str:
+        label = self._normalized_label(category)
+        cache_key = label.lower()
+        if cache_key in self._tag_cache:
+            return self._tag_cache[cache_key]
+        tag_name = f"cat::{cache_key}"
+        color = self._color_for_key(cache_key)
+        self.tree.tag_configure(tag_name, background=color, foreground=_ideal_foreground_for(color))
+        self._tag_cache[cache_key] = tag_name
+        return tag_name
+
+    def prime(self, categories: Iterable[str] | None):
+        if not categories:
+            return
+        for category in categories:
+            self.tag_for(category)
+
 
 class DocumentPanel(ttk.Frame):
     """Panel for managing member documents"""
@@ -43,6 +121,7 @@ class DocumentPanel(ttk.Frame):
         self.member_filter_var = tk.StringVar(value="Tutti i soci")
         self.category_filter_var = tk.StringVar(value=self.category_filter_default)
         self.search_var = tk.StringVar()
+        self._category_tag_manager: _CategoryTagStyler | None = None
         default_message = (
             "Visualizzazione di tutti i documenti caricati."
             if self.show_all_documents
@@ -75,6 +154,10 @@ class DocumentPanel(ttk.Frame):
         if current_filter and current_filter != self.category_filter_default and current_filter not in categories:
             self.category_filter_var.set(self.category_filter_default)
             self._apply_filters()
+
+        tag_manager = getattr(self, "_category_tag_manager", None)
+        if tag_manager is not None:
+            tag_manager.prime(categories)
     
     def _build_filters(self):
         """Create the filter bar for socio/category/search."""
@@ -187,6 +270,13 @@ class DocumentPanel(ttk.Frame):
         self.tv_docs.pack(fill=tk.BOTH, expand=True)
         self.tv_docs.bind("<<TreeviewSelect>>", self._on_tree_selection_changed)
         self.tv_docs.bind("<Double-1>", lambda _e: self._open_document())
+
+        self._category_tag_manager = _CategoryTagStyler(
+            self.tv_docs,
+            default_category=DEFAULT_DOCUMENT_CATEGORY,
+            palette=_MEMBER_CATEGORY_PALETTE,
+        )
+        self._category_tag_manager.prime(get_document_categories())
     
     def set_socio(self, socio_id: int):
         """Set the current socio and refresh documents"""
@@ -201,6 +291,7 @@ class DocumentPanel(ttk.Frame):
         for item in self.tv_docs.get_children():
             self.tv_docs.delete(item)
         self.documents.clear()
+        tag_manager = getattr(self, "_category_tag_manager", None)
 
         try:
             from database import get_documenti, get_all_documenti_with_member_names
@@ -229,6 +320,13 @@ class DocumentPanel(ttk.Frame):
                 info = format_file_info(doc.get("percorso") or "")
                 description_value = doc.get("descrizione") or ""
                 path_exists = os.path.exists(doc.get("percorso") or "")
+                category_value = (doc.get("categoria") or DEFAULT_DOCUMENT_CATEGORY).strip() or DEFAULT_DOCUMENT_CATEGORY
+                category_tag = tag_manager.tag_for(category_value) if tag_manager is not None else ""
+                row_tags: list[str] = []
+                if not path_exists:
+                    row_tags.append("missing")
+                if category_tag:
+                    row_tags.append(category_tag)
                 self.tv_docs.insert(
                     "",
                     tk.END,
@@ -237,13 +335,13 @@ class DocumentPanel(ttk.Frame):
                         doc_id,
                         doc.get("socio_display", ""),
                         description_value,
-                        doc.get("categoria", ""),
+                        category_value,
                         doc.get("tipo", ""),
                         doc.get("nome_file", ""),
                         (doc.get("data_caricamento", "") or "")[:10],
                         info,
                     ),
-                    tags=("missing",) if not path_exists else (),
+                    tags=tuple(row_tags) if row_tags else (),
                 )
             shown = len(self.documents)
             if self.show_all_documents:
@@ -848,6 +946,7 @@ class SectionDocumentPanel(ttk.Frame):
         self.upload_category_var = tk.StringVar(value=default_cat)
         self._doc_path_map: dict[str, str] = {}
         self._doc_meta_map: dict[str, dict] = {}
+        self._category_tag_manager: _CategoryTagStyler | None = None
         self._build_ui()
         self.refresh()
 
@@ -870,6 +969,10 @@ class SectionDocumentPanel(ttk.Frame):
         if current_filter and current_filter != self.ALL_LABEL and current_filter not in categories:
             self.filter_var.set(self.ALL_LABEL)
             self.refresh()
+
+        tag_manager = getattr(self, "_category_tag_manager", None)
+        if tag_manager is not None:
+            tag_manager.prime(categories)
 
     def _build_ui(self):
         toolbar = ttk.Frame(self)
@@ -954,12 +1057,20 @@ class SectionDocumentPanel(ttk.Frame):
         self.tv_docs.bind("<Double-1>", _open_edit_for_event)
         self.tv_docs.bind("<Return>", lambda _e: self._edit_document())
 
+        self._category_tag_manager = _CategoryTagStyler(
+            self.tv_docs,
+            default_category=DEFAULT_SECTION_CATEGORY,
+            palette=_SECTION_CATEGORY_PALETTE,
+        )
+        self._category_tag_manager.prime(get_section_document_categories())
+
     def refresh(self):
         """Reload section documents from disk applying current filter."""
         for item in self.tv_docs.get_children():
             self.tv_docs.delete(item)
         self._doc_path_map.clear()
         self._doc_meta_map.clear()
+        tag_manager = getattr(self, "_category_tag_manager", None)
 
         try:
             self.docs = list_section_documents()
@@ -971,7 +1082,8 @@ class SectionDocumentPanel(ttk.Frame):
 
         active_filter = self.filter_var.get()
         for doc in self.docs:
-            categoria = str(doc.get("categoria") or "")
+            raw_category = doc.get("categoria")
+            categoria = str(raw_category or "")
             if active_filter not in (self.ALL_LABEL, "") and categoria != active_filter:
                 continue
 
@@ -1010,6 +1122,10 @@ class SectionDocumentPanel(ttk.Frame):
             else:
                 mtime = None
 
+            item_tags: tuple[str, ...] = ()
+            if tag_manager is not None:
+                item_tags = (tag_manager.tag_for(raw_category),)
+
             item_id = self.tv_docs.insert(
                 "",
                 tk.END,
@@ -1022,6 +1138,7 @@ class SectionDocumentPanel(ttk.Frame):
                     human_readable_size(size_int),
                     human_readable_mtime(mtime),
                 ),
+                tags=item_tags,
             )
             self._doc_path_map[item_id] = absolute_path
             self._doc_meta_map[item_id] = doc

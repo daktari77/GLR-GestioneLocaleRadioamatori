@@ -27,6 +27,13 @@ def set_db_path(db_name: str):
     global _db_name
     _db_name = db_name
 
+
+def get_db_path() -> str:
+    """Return the currently configured database file path."""
+    if _db_name is None:
+        raise RuntimeError("Database path not set. Call set_db_path() first.")
+    return _db_name
+
 def get_conn() -> sqlite3.Connection:
     """Get a database connection with row factory."""
     if _db_name is None:

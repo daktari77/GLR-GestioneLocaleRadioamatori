@@ -292,7 +292,7 @@ class TestQuotaValidation(unittest.TestCase):
     
     def test_valid_quota_codes(self):
         """Test valid quota code formats."""
-        valid_codes = ["AA", "AB", "Z9", "A1B"]
+        valid_codes = ["4", "A", "AA", "AB", "Z9", "A1B"]
         
         for code in valid_codes:
             member = Member(nome="Test", cognome="User", q0=code)
@@ -305,9 +305,6 @@ class TestQuotaValidation(unittest.TestCase):
     
     def test_invalid_quota_length(self):
         """Test invalid quota code length."""
-        with self.assertRaises(InvalidFormatError):
-            Member(nome="Test", cognome="User", q0="A")  # Too short
-        
         with self.assertRaises(InvalidFormatError):
             Member(nome="Test", cognome="User", q0="ABCD")  # Too long
     

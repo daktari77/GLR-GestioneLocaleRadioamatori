@@ -222,6 +222,20 @@ Copy-SeedData $SeedDataDir $distBase
 Write-Info "Build complete. Dist directory: $distBase"
 Write-Info "Portable folder contains EXE + seeded 'data' (no soci.db) for a clean first-run test."
 
+# Record last portable build folder name for deploy scripts
+try {
+    $lastBuildFile = Join-Path $repoRoot "artifacts\last_portable_build.txt"
+    $distLeaf = Split-Path -Leaf $distBase
+    if (-not [string]::IsNullOrWhiteSpace($distLeaf)) {
+        Set-Content -Path $lastBuildFile -Value $distLeaf -Encoding UTF8
+        Write-Info "Updated last portable build marker: $lastBuildFile -> $distLeaf"
+    } else {
+        Write-Warn "Could not determine dist folder name to update last_portable_build.txt"
+    }
+} catch {
+    Write-Warn "Failed to update last_portable_build.txt: $($_.Exception.Message)"
+}
+
 function Remove-OldTestBuilds([string]$distRootPath, [string]$currentDistPath, [int]$keep) {
     if ([string]::IsNullOrWhiteSpace($distRootPath) -or -not (Test-Path $distRootPath)) { return }
     if ($keep -lt 1) { $keep = 1 }

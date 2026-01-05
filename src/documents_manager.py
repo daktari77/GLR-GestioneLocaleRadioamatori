@@ -244,12 +244,150 @@ def relink_missing_documents(new_root: str) -> tuple[int, int, list[str]]:
         raise ValueError("new_root non valido")
 
     base_dir = Path(BASE_DIR).expanduser().resolve()
-    new_root_path = Path(new_root).expanduser().resolve()
+    selected_root_path = Path(new_root).expanduser().resolve()
     old_root_path = (base_dir / Path(DOCS_BASE_DIR)).expanduser().resolve()
+
+    def _looks_like_docs_root(p: Path) -> bool:
+        """Heuristic: a docs root contains many member folders, each with 'documento'/'privacy' subfolders."""
+        try:
+            if not p.exists() or not p.is_dir():
+                return False
+            checked = 0
+            for child in p.iterdir():
+                if not child.is_dir():
+                    continue
+                checked += 1
+                # Typical structure: <TOKEN>/documento and/or <TOKEN>/privacy
+                if (child / "documento").is_dir() or (child / "privacy").is_dir():
+                    return True
+                if checked >= 40:
+                    break
+            return False
+        except Exception:
+            return False
+
+    def _find_docs_root_under(base: Path) -> Path | None:
+        """Try to locate a docs root under a base folder (non-recursive, best-effort)."""
+        try:
+            if not base.exists() or not base.is_dir():
+                return None
+            candidates: list[Path] = []
+
+            # Common paths if the user selected BASE_DIR or data folder.
+            candidates.append(base / "documents")
+            candidates.append(base / "documenti")
+            candidates.append(base / "data" / "documents")
+            candidates.append(base / "data" / "documenti")
+
+            # If renamed, it's often documents* (e.g. documents_old, documents_2026).
+            try:
+                for child in base.iterdir():
+                    if not child.is_dir():
+                        continue
+                    name = child.name.lower()
+                    if "documents" in name or "documenti" in name or name == "documenti":
+                        candidates.append(child)
+            except Exception:
+                pass
+
+            # Also check one level deeper under data/ (common container).
+            data_dir = base / "data"
+            try:
+                if data_dir.exists() and data_dir.is_dir():
+                    for child in data_dir.iterdir():
+                        if not child.is_dir():
+                            continue
+                        name = child.name.lower()
+                        if "documents" in name or "documenti" in name or name == "documenti":
+                            candidates.append(child)
+            except Exception:
+                pass
+
+            seen: set[Path] = set()
+            for cand in candidates:
+                try:
+                    resolved = cand.expanduser().resolve()
+                except Exception:
+                    resolved = cand
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                if _looks_like_docs_root(resolved):
+                    return resolved
+            return None
+        except Exception:
+            return None
+
+    # Accept selecting the real docs root or a parent folder (BASE_DIR / data).
+    new_root_path = selected_root_path
+    if not _looks_like_docs_root(new_root_path):
+        detected = _find_docs_root_under(new_root_path)
+        if detected is None:
+            detected = _find_docs_root_under(base_dir)
+        if detected is not None:
+            logger.info("Relink: root '%s' doesn't look like docs root; using '%s'", selected_root_path, detected)
+            new_root_path = detected
 
     updated = 0
     unresolved = 0
     unresolved_details: list[str] = []
+
+    if new_root_path != selected_root_path:
+        unresolved_details.append(
+            f"Nota: cartella selezionata '{selected_root_path}' non sembra la radice documenti; uso '{new_root_path}'."
+        )
+
+    def _relpath_under(base: Path, target: Path) -> Path | None:
+        """Return target relative to base if target is under base (Windows-case tolerant)."""
+        try:
+            # Fast path.
+            return target.relative_to(base)
+        except Exception:
+            pass
+
+        try:
+            base_s = os.path.normcase(os.path.normpath(str(base)))
+            target_s = os.path.normcase(os.path.normpath(str(target)))
+            # Ensure both are absolute and on same drive/root.
+            common = os.path.commonpath([base_s, target_s])
+            if common != base_s:
+                return None
+            rel_s = os.path.relpath(target_s, base_s)
+            return Path(rel_s)
+        except Exception:
+            return None
+
+    def _extract_structured_relpath(target: Path) -> Path | None:
+        """Best-effort extractor for legacy absolute paths.
+
+        Expected layout is:
+            <docs_root>/<TOKEN>/(documento|privacy)/<filename>
+
+        When the DB stores an absolute path outside BASE_DIR, computing relpath
+        against a fixed old root is unreliable. This extracts the last TOKEN +
+        doc_type + filename portion so we can rebuild the candidate under the new root.
+        """
+        try:
+            parts = list(target.parts)
+            if len(parts) < 3:
+                return None
+
+            # Prefer the last occurrence to handle weird nested paths.
+            for marker in ("documento", "privacy"):
+                try:
+                    idx = len(parts) - 1 - list(reversed([p.lower() for p in parts])).index(marker)
+                except ValueError:
+                    continue
+
+                # Need at least: TOKEN / marker / filename
+                if idx >= 1 and idx + 1 < len(parts):
+                    token = parts[idx - 1]
+                    if not token or token.lower() in {"documents", "documenti", "data"}:
+                        continue
+                    return Path(*parts[idx - 1:])
+            return None
+        except Exception:
+            return None
 
     rows = get_all_documenti_with_member_names()
     for row in rows:
@@ -282,9 +420,34 @@ def relink_missing_documents(new_root: str) -> tuple[int, int, list[str]]:
             source_abs = source_path
         else:
             source_abs = (base_dir / source_path).resolve()
+
+        # Try multiple strategies to compute a stable relative path.
+        relative_path: Path | None = None
+
+        # 1) If the stored path contains an explicit 'documents'/'documenti' segment,
+        # use that as an old root for best accuracy.
         try:
-            relative_path = source_abs.relative_to(old_root_path)
-        except ValueError:
+            lower_parts = [p.lower() for p in source_abs.parts]
+            for seg in ("documents", "documenti"):
+                if seg in lower_parts:
+                    idx = lower_parts.index(seg)
+                    guessed_old_root = Path(*source_abs.parts[: idx + 1])
+                    relative_path = _relpath_under(guessed_old_root, source_abs)
+                    if relative_path is not None:
+                        break
+        except Exception:
+            pass
+
+        # 2) Fall back to the configured old root.
+        if relative_path is None:
+            relative_path = _relpath_under(old_root_path, source_abs)
+
+        # 3) As a last resort, extract TOKEN/doc_type/filename from the stored path.
+        if relative_path is None:
+            relative_path = _extract_structured_relpath(source_abs)
+
+        # 4) Final fallback: just the filename.
+        if relative_path is None:
             relative_path = Path(doc.get("nome_file") or source_path.name)
 
         # Ensure we don't accidentally join with an absolute path.

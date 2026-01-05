@@ -203,7 +203,7 @@ class Member:
     
     def _validate_quota_codes(self):
         """Validate quota codes format (Q0/Q1/Q2)."""
-        quota_pattern = re.compile(r'^[A-Z0-9]{2,3}$')
+        quota_pattern = re.compile(r'^[A-Z0-9]{1,3}$')
         
         for quota_field in ['q0', 'q1', 'q2']:
             quota_value = getattr(self, quota_field)

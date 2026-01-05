@@ -11,7 +11,7 @@ from datetime import datetime
 # Versione / Build
 # --------------------------
 APP_NAME = "GLR - Gestione Locale Radioamatori"
-APP_VERSION = "0.4.3e"
+APP_VERSION = "0.4.3f"
 __version__ = APP_VERSION
 AUTHOR = "Michele Martino - IU2GLR"
 
@@ -71,7 +71,7 @@ SEC_CATEGORIES = ("Statuto", "Regolamento", "Verbali", "Delibere", "Altro")
 # --------------------------
 # Regular expressions
 # --------------------------
-CAUSALI_CODE_RE = __import__("re").compile(r"^[A-Z0-9]{2,3}$")
+CAUSALI_CODE_RE = __import__("re").compile(r"^[A-Z0-9]{1,3}$")
 
 # --------------------------
 # Default configuration

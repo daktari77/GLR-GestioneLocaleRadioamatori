@@ -758,9 +758,8 @@ class ImportWizard:
     def _execute_import(self):
         """Execute the import process"""
         try:
-            from database import exec_query, fetch_one
+            from soci_import_engine import fetch_socio_by_matricola, insert_socio, update_socio_by_matricola
             from csv_import import apply_mapping
-            import sqlite3
 
             # Ask user which name-splitting strategy to use when `cognome` is missing
             def _ask_name_split_mode():
@@ -904,7 +903,7 @@ class ImportWizard:
                     matricola = row.get('matricola')
                     existing = None
                     if matricola:
-                        existing = fetch_one("SELECT * FROM soci WHERE matricola=?", (matricola,))
+                        existing = fetch_socio_by_matricola(str(matricola))
 
                     if existing:
                         # Handle duplicate according to chosen strategy
@@ -964,25 +963,33 @@ class ImportWizard:
                                         update_vals.append(val)
 
                         if update_cols:
-                            sql_upd = f"UPDATE soci SET {', '.join(update_cols)} WHERE matricola=?"
-                            exec_query(sql_upd, update_vals + [matricola])
+                            updates = {}
+                            for part, v in zip(update_cols, update_vals):
+                                try:
+                                    colname = part.split("=")[0]
+                                except Exception:
+                                    continue
+                                updates[colname] = v
+                            update_socio_by_matricola(
+                                matricola=str(matricola),
+                                updates=updates,
+                                write_enabled=True,
+                                keep_empty_strings=False,
+                            )
                             self.import_count += 1
                         else:
                             logger.debug("No fields to update for matricola %s", matricola)
                     else:
                         # Insert new record (only non-empty and selected fields)
-                        cols = []
+                        payload = {}
                         for k, v in row.items():
-                            if v is not None and str(v).strip() != "":
-                                # Check if field is selected (matricola always included)
-                                if k == 'matricola' or self.selected_fields.get(k, True):
-                                    cols.append(k)
-                        if not cols:
+                            if v is None or str(v).strip() == "":
+                                continue
+                            if k == 'matricola' or self.selected_fields.get(k, True):
+                                payload[k] = v
+                        if not payload:
                             continue
-                        placeholders = ["?" for _ in cols]
-                        sql = f"INSERT INTO soci ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
-                        params = [row[c] for c in cols]
-                        exec_query(sql, params)
+                        insert_socio(payload, write_enabled=True)
                         self.import_count += 1
                 except Exception as e:
                     logger.error("Unexpected error importing row %s: %s", i, e)
