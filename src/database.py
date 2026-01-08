@@ -865,6 +865,7 @@ def add_documento(
     tipo: str = "documento",
     categoria: str | None = None,
     descrizione: str | None = None,
+    data_caricamento: str | None = None,
 ) -> int | None:
     """
     Add a document for a member.
@@ -884,9 +885,10 @@ def add_documento(
     VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     try:
+        ts = (data_caricamento or "").strip() or now_iso()
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(sql, (socio_id, nome_file, percorso, tipo, categoria, descrizione, now_iso()))
+            cursor.execute(sql, (socio_id, nome_file, percorso, tipo, categoria, descrizione, ts))
             return cursor.lastrowid
     except sqlite3.Error as e:
         raise map_sqlite_exception(e)
@@ -1043,6 +1045,13 @@ def update_documento_descrizione(doc_id: int, descrizione: str) -> bool:
     """Update the description stored for a document."""
     sql = "UPDATE documenti SET descrizione = ? WHERE id = ?"
     exec_query(sql, (descrizione, doc_id))
+    return True
+
+
+def update_documento_data_caricamento(doc_id: int, data_caricamento: str) -> bool:
+    """Update the stored document date (data_caricamento) for a member document."""
+    sql = "UPDATE documenti SET data_caricamento = ? WHERE id = ?"
+    exec_query(sql, (data_caricamento, doc_id))
     return True
 
 # --------------------------

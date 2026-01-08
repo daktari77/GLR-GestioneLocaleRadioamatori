@@ -8,373 +8,12 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 import logging
 from datetime import datetime
 import json
-import urllib.parse
-import webbrowser
 import os
-import subprocess
 
 logger = logging.getLogger("librosoci")
 
 class MeetingDialog:
-    """Dialog for adding/editing CD meetings with email invitation"""
-    
-    # Email templates
-    TEMPLATES = {
-        "convocazione_cd": """Gentili Consiglieri,
-
-siete convocati per la riunione del Consiglio Direttivo che si terrà in data {data} alle ore {ora} presso {luogo}.
-
-Ordine del giorno:
-{odg}
-
-Cordiali saluti,
-Il Presidente""",
-        "comunicazione_generale": """Cari Soci,
-
-vi informiamo che {messaggio}
-
-Per ulteriori informazioni potete contattarci rispondendo a questa email.
-
-Cordiali saluti,
-La Segreteria""",
-        "libero": ""
-    }
-
-    def _load_custom_email_templates(self) -> dict[str, str]:
-        """Load custom email templates from config.
-
-        Supported formats in config (best-effort):
-        - {"email_templates": {"Nome": "Testo...", ...}}
-        - {"email_templates": [{"name": "Nome", "body": "Testo..."}, ...]}
-        """
-        try:
-            from config_manager import load_config
-
-            cfg = load_config() or {}
-            raw = cfg.get("email_templates")
-            out: dict[str, str] = {}
-
-            if isinstance(raw, dict):
-                for name, body in raw.items():
-                    if not isinstance(name, str):
-                        continue
-                    if not isinstance(body, str):
-                        continue
-                    n = name.strip()
-                    if not n:
-                        continue
-                    out[n] = body
-                return out
-
-            if isinstance(raw, list):
-                for item in raw:
-                    if not isinstance(item, dict):
-                        continue
-                    name = item.get("name")
-                    body = item.get("body")
-                    if not isinstance(name, str) or not isinstance(body, str):
-                        continue
-                    n = name.strip()
-                    if not n:
-                        continue
-                    out[n] = body
-                return out
-        except Exception:
-            return {}
-
-        return {}
-
-    class EmailTemplatesWizard:
-        """Wizard/dialog to manage custom email templates stored in config ('email_templates')."""
-
-        RESERVED_DEFAULT_NAMES = {
-            "Testo libero",
-            "Convocazione CD",
-            "Comunicazione Generale",
-        }
-
-        def __init__(self, parent, get_defaults, on_saved=None):
-            self.parent = parent
-            self.get_defaults = get_defaults
-            self.on_saved = on_saved
-
-            self.win = tk.Toplevel(parent)
-            self.win.title("Wizard template email")
-            self.win.geometry("760x520")
-            self.win.transient(parent)
-            self.win.grab_set()
-
-            self.custom: dict[str, str] = self._load_custom_templates_dict()
-            defaults = (self.get_defaults() or {}) if callable(self.get_defaults) else {}
-            self.defaults: dict[str, str] = defaults if isinstance(defaults, dict) else {}
-
-            self._editing_original_name: str | None = None
-
-            self._build_ui()
-            self._refresh_listbox()
-
-        def _load_custom_templates_dict(self) -> dict[str, str]:
-            try:
-                from config_manager import load_config
-
-                cfg = load_config() or {}
-                raw = cfg.get("email_templates")
-                out: dict[str, str] = {}
-
-                if isinstance(raw, dict):
-                    for k, v in raw.items():
-                        if isinstance(k, str) and isinstance(v, str) and k.strip():
-                            out[k.strip()] = v
-                    return out
-
-                if isinstance(raw, list):
-                    for item in raw:
-                        if not isinstance(item, dict):
-                            continue
-                        name = item.get("name")
-                        body = item.get("body")
-                        if isinstance(name, str) and isinstance(body, str) and name.strip():
-                            out[name.strip()] = body
-                    return out
-            except Exception:
-                return {}
-
-            return {}
-
-        def _save_custom_templates_dict(self, data: dict[str, str]) -> bool:
-            try:
-                from config_manager import load_config, save_config
-
-                cfg = load_config() or {}
-                cfg["email_templates"] = dict(sorted((data or {}).items(), key=lambda kv: (kv[0] or "").strip().lower()))
-                save_config(cfg)
-                return True
-            except Exception as e:
-                messagebox.showerror("Errore", f"Impossibile salvare la configurazione:\n{e}", parent=self.win)
-                return False
-
-        def _build_ui(self) -> None:
-            top = ttk.Frame(self.win, padding=8)
-            top.pack(fill=tk.BOTH, expand=True)
-
-            header = ttk.Label(top, text="Template personalizzati (salvati in configurazione)", font=("Arial", 10, "bold"))
-            header.pack(anchor="w", pady=(0, 6))
-
-            self.manage_frame = ttk.Frame(top)
-            self.manage_frame.pack(fill=tk.BOTH, expand=True)
-
-            left = ttk.Frame(self.manage_frame)
-            left.pack(side=tk.LEFT, fill=tk.Y)
-
-            ttk.Label(left, text="I tuoi template:").pack(anchor="w")
-            self.listbox = tk.Listbox(left, height=16, width=30)
-            self.listbox.pack(fill=tk.Y, expand=False, pady=(4, 8))
-            self.listbox.bind("<<ListboxSelect>>", lambda _e: self._update_preview())
-
-            btns = ttk.Frame(left)
-            btns.pack(fill=tk.X)
-            ttk.Button(btns, text="Nuovo...", command=self._new_from_base).pack(fill=tk.X, pady=2)
-            ttk.Button(btns, text="Modifica...", command=self._edit_selected).pack(fill=tk.X, pady=2)
-            ttk.Button(btns, text="Elimina", command=self._delete_selected).pack(fill=tk.X, pady=2)
-
-            right = ttk.Frame(self.manage_frame)
-            right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
-
-            ttk.Label(right, text="Crea da base:").pack(anchor="w")
-            self.base_var = tk.StringVar(value="Vuoto")
-            self.base_combo = ttk.Combobox(right, textvariable=self.base_var, state="readonly", width=40)
-            self.base_combo.pack(anchor="w", pady=(4, 6))
-            self._refresh_base_combo_values()
-            ttk.Button(right, text="Crea da questa base", command=self._new_from_base).pack(anchor="w", pady=(0, 10))
-
-            ttk.Label(right, text="Anteprima:").pack(anchor="w")
-            self.preview = scrolledtext.ScrolledText(right, height=14, wrap=tk.WORD)
-            self.preview.pack(fill=tk.BOTH, expand=True)
-            self.preview.configure(state="disabled")
-
-            footer = ttk.Frame(top)
-            footer.pack(fill=tk.X, pady=(8, 0))
-            ttk.Button(footer, text="Chiudi", command=self.win.destroy).pack(side=tk.RIGHT)
-
-            # Edit frame (hidden by default)
-            self.edit_frame = ttk.Frame(top)
-
-            row1 = ttk.Frame(self.edit_frame)
-            row1.pack(fill=tk.X)
-            ttk.Label(row1, text="Nome template:").pack(side=tk.LEFT)
-            self.name_entry = ttk.Entry(row1, width=50)
-            self.name_entry.pack(side=tk.LEFT, padx=8)
-
-            hint = "Placeholder disponibili: {data} {ora} {luogo} {odg} {messaggio}"
-            ttk.Label(self.edit_frame, text=hint, foreground="gray").pack(anchor="w", pady=(6, 2))
-
-            ttk.Label(self.edit_frame, text="Corpo template:").pack(anchor="w")
-            self.body_text = scrolledtext.ScrolledText(self.edit_frame, height=14, wrap=tk.WORD)
-            self.body_text.pack(fill=tk.BOTH, expand=True)
-
-            edit_footer = ttk.Frame(self.edit_frame)
-            edit_footer.pack(fill=tk.X, pady=(8, 0))
-            ttk.Button(edit_footer, text="Annulla", command=self._back_to_manage).pack(side=tk.RIGHT, padx=5)
-            ttk.Button(edit_footer, text="Salva", command=self._save_current).pack(side=tk.RIGHT)
-
-        def _refresh_base_combo_values(self) -> None:
-            values = ["Vuoto"]
-            for k in ("Convocazione CD", "Comunicazione Generale"):
-                if k in self.defaults:
-                    values.append(k)
-            self.base_combo["values"] = tuple(values)
-            if self.base_var.get() not in values:
-                self.base_var.set(values[0] if values else "Vuoto")
-
-        def _refresh_listbox(self) -> None:
-            self.listbox.delete(0, tk.END)
-            for name in sorted(self.custom.keys(), key=lambda s: (s or "").strip().lower()):
-                self.listbox.insert(tk.END, name)
-            self._update_preview()
-
-        def _get_selected_name(self) -> str | None:
-            try:
-                sel = self.listbox.curselection()
-                if not sel:
-                    return None
-                return self.listbox.get(sel[0])
-            except Exception:
-                return None
-
-        def _update_preview(self) -> None:
-            name = self._get_selected_name()
-            text = ""
-            if name and name in self.custom:
-                text = self.custom.get(name) or ""
-            self.preview.configure(state="normal")
-            self.preview.delete("1.0", tk.END)
-            self.preview.insert("1.0", text)
-            self.preview.configure(state="disabled")
-
-        def _new_from_base(self) -> None:
-            base_name = (self.base_var.get() or "Vuoto").strip()
-            body = ""
-            if base_name and base_name != "Vuoto":
-                body = self.defaults.get(base_name, "")
-            self._open_edit(name="", body=body, original=None)
-
-        def _edit_selected(self) -> None:
-            name = self._get_selected_name()
-            if not name:
-                messagebox.showinfo("Info", "Seleziona un template da modificare.", parent=self.win)
-                return
-            self._open_edit(name=name, body=self.custom.get(name, ""), original=name)
-
-        def _delete_selected(self) -> None:
-            name = self._get_selected_name()
-            if not name:
-                messagebox.showinfo("Info", "Seleziona un template da eliminare.", parent=self.win)
-                return
-            ok = messagebox.askyesno("Conferma", f"Eliminare il template '{name}'?", parent=self.win)
-            if not ok:
-                return
-            self.custom.pop(name, None)
-            if self._save_custom_templates_dict(self.custom):
-                self._refresh_listbox()
-                if callable(self.on_saved):
-                    self.on_saved()
-
-        def _open_edit(self, name: str, body: str, original: str | None) -> None:
-            self._editing_original_name = original
-            self.manage_frame.pack_forget()
-            self.edit_frame.pack(fill=tk.BOTH, expand=True)
-
-            self.name_entry.delete(0, tk.END)
-            self.name_entry.insert(0, name or "")
-            self.body_text.delete("1.0", tk.END)
-            self.body_text.insert("1.0", body or "")
-
-        def _back_to_manage(self) -> None:
-            self.edit_frame.pack_forget()
-            self.manage_frame.pack(fill=tk.BOTH, expand=True)
-            self._editing_original_name = None
-            self._refresh_listbox()
-
-        def _save_current(self) -> None:
-            name = (self.name_entry.get() or "").strip()
-            body = (self.body_text.get("1.0", tk.END) or "").rstrip()
-
-            if not name:
-                messagebox.showwarning("Validazione", "Inserire un nome per il template.", parent=self.win)
-                return
-            if name in self.RESERVED_DEFAULT_NAMES:
-                messagebox.showwarning(
-                    "Validazione",
-                    "Nome non valido: coincide con un template di sistema. Scegli un nome diverso.",
-                    parent=self.win,
-                )
-                return
-
-            if self._editing_original_name and self._editing_original_name != name:
-                self.custom.pop(self._editing_original_name, None)
-
-            if name in self.custom and (self._editing_original_name != name):
-                ok = messagebox.askyesno("Conferma", f"Il template '{name}' esiste già. Sovrascrivere?", parent=self.win)
-                if not ok:
-                    return
-
-            self.custom[name] = body
-            if self._save_custom_templates_dict(self.custom):
-                if callable(self.on_saved):
-                    self.on_saved()
-                self._back_to_manage()
-
-    def _build_template_text_map(self) -> dict[str, str]:
-        base: dict[str, str] = {
-            "Testo libero": self.TEMPLATES.get("libero", ""),
-            "Convocazione CD": self.TEMPLATES.get("convocazione_cd", ""),
-            "Comunicazione Generale": self.TEMPLATES.get("comunicazione_generale", ""),
-        }
-
-        custom = self._load_custom_email_templates()
-        for name in sorted((custom or {}).keys(), key=lambda s: (s or "").strip().lower()):
-            body = (custom or {}).get(name)
-            n = (name or "").strip()
-            if not n:
-                continue
-            if n in base:
-                continue
-            base[n] = body or ""
-
-        return base
-
-    def _refresh_template_combo(self, keep_selection: bool = True) -> None:
-        try:
-            current = self.template_var.get() if (keep_selection and hasattr(self, "template_var")) else None
-            self._template_text_by_name = self._build_template_text_map()
-            if hasattr(self, "template_combo"):
-                self.template_combo["values"] = tuple(self._template_text_by_name.keys())
-
-            if current and current in self._template_text_by_name:
-                self.template_var.set(current)
-            else:
-                # Keep default behavior: new meeting -> Convocazione CD, edit -> Testo libero
-                default_name = "Testo libero" if self.meeting_id else "Convocazione CD"
-                if default_name in self._template_text_by_name:
-                    self.template_var.set(default_name)
-                elif self._template_text_by_name:
-                    self.template_var.set(next(iter(self._template_text_by_name.keys())))
-
-        except Exception:
-            pass
-
-    def _open_templates_wizard(self) -> None:
-        try:
-            self.EmailTemplatesWizard(
-                parent=self.dialog,
-                get_defaults=lambda: {
-                    "Convocazione CD": self.TEMPLATES.get("convocazione_cd", ""),
-                    "Comunicazione Generale": self.TEMPLATES.get("comunicazione_generale", ""),
-                },
-                on_saved=lambda: self._refresh_template_combo(keep_selection=True),
-            )
-        except Exception as e:
-            messagebox.showerror("Errore", f"Impossibile aprire il wizard template:\n{e}", parent=self.dialog)
+    """Dialog for adding/editing CD meetings."""
 
     def _is_meta_tipo_assemblea(self) -> bool:
         try:
@@ -417,10 +56,13 @@ La Segreteria""",
         self.dialog.geometry("760x990")
         self.dialog.transient(parent)
         self.dialog.grab_set()
-        
-        # Main frame with scrollbar
-        canvas = tk.Canvas(self.dialog)
-        scrollbar = ttk.Scrollbar(self.dialog, orient="vertical", command=canvas.yview)
+
+        # Main content (scrollable)
+        content_frame = ttk.Frame(self.dialog)
+        content_frame.pack(side="top", fill="both", expand=True)
+
+        canvas = tk.Canvas(content_frame)
+        scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=canvas.yview)
         main_frame = ttk.Frame(canvas)
         
         main_frame.bind(
@@ -433,6 +75,10 @@ La Segreteria""",
         
         canvas.pack(side="left", fill="both", expand=True, padx=6, pady=6)
         scrollbar.pack(side="right", fill="y")
+
+        # Fixed bottom action bar (always visible)
+        actions_frame = ttk.Frame(self.dialog)
+        actions_frame.pack(side="bottom", fill="x", padx=6, pady=6)
         
         # Tipo riunione (solo per nuove riunioni)
         row = 0
@@ -463,7 +109,8 @@ La Segreteria""",
         
         # Oggetto
         row += 1
-        ttk.Label(main_frame, text="Oggetto:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        self.label_oggetto = ttk.Label(main_frame, text="Oggetto:", font=("Arial", 10, "bold"))
+        self.label_oggetto.grid(row=row, column=0, sticky="w", padx=5, pady=5)
         self.entry_oggetto = ttk.Entry(main_frame, width=60)
         self.entry_oggetto.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
 
@@ -474,7 +121,8 @@ La Segreteria""",
         self.meta_frame.columnconfigure(1, weight=1)
         self.meta_frame.columnconfigure(3, weight=1)
 
-        ttk.Label(self.meta_frame, text="Tipo:").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.label_meta_tipo = ttk.Label(self.meta_frame, text="Tipo:")
+        self.label_meta_tipo.grid(row=0, column=0, sticky="w", padx=5, pady=3)
         self.meta_tipo_var = tk.StringVar(value="Riunione del CD")
         self.combo_meta_tipo = ttk.Combobox(
             self.meta_frame,
@@ -491,7 +139,8 @@ La Segreteria""",
         self.combo_meta_tipo.grid(row=0, column=1, sticky="ew", padx=5, pady=3)
         self.combo_meta_tipo.bind("<<ComboboxSelected>>", lambda _e: self._on_meta_tipo_changed())
 
-        ttk.Label(self.meta_frame, text="Modalità:").grid(row=0, column=2, sticky="w", padx=5, pady=3)
+        self.label_meta_modalita = ttk.Label(self.meta_frame, text="Modalità:")
+        self.label_meta_modalita.grid(row=0, column=2, sticky="w", padx=5, pady=3)
         self.meta_modalita_var = tk.StringVar(value="presenza")
         self.combo_meta_modalita = ttk.Combobox(
             self.meta_frame,
@@ -506,10 +155,12 @@ La Segreteria""",
         self.entry_meta_luogo = ttk.Entry(self.meta_frame, width=60)
         self.entry_meta_luogo.grid(row=1, column=1, columnspan=3, sticky="ew", padx=5, pady=3)
 
-        ttk.Label(self.meta_frame, text="Ora inizio:").grid(row=2, column=0, sticky="w", padx=5, pady=3)
+        self.label_meta_ora_inizio = ttk.Label(self.meta_frame, text="Ora inizio:")
+        self.label_meta_ora_inizio.grid(row=2, column=0, sticky="w", padx=5, pady=3)
         self.entry_meta_ora_inizio = ttk.Entry(self.meta_frame, width=10)
         self.entry_meta_ora_inizio.grid(row=2, column=1, sticky="w", padx=5, pady=3)
-        ttk.Label(self.meta_frame, text="Ora fine:").grid(row=2, column=2, sticky="w", padx=5, pady=3)
+        self.label_meta_ora_fine = ttk.Label(self.meta_frame, text="Ora fine:")
+        self.label_meta_ora_fine.grid(row=2, column=2, sticky="w", padx=5, pady=3)
         self.entry_meta_ora_fine = ttk.Entry(self.meta_frame, width=10)
         self.entry_meta_ora_fine.grid(row=2, column=3, sticky="w", padx=5, pady=3)
 
@@ -559,50 +210,6 @@ La Segreteria""",
         for ent in (self.entry_aventi_diritto, self.entry_presenti, self.entry_deleghe, self.entry_quorum):
             ent.bind("<KeyRelease>", lambda _e: self._update_quorum_label())
         
-        # Selezione soci
-        row += 1
-        ttk.Label(main_frame, text="Destinatari email:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
-        self.destinatari_var = tk.StringVar(value="cd")
-        self.dest_frame = ttk.Frame(main_frame)
-        self.dest_frame.grid(row=row, column=1, columnspan=3, sticky="w", padx=5, pady=5)
-        ttk.Radiobutton(self.dest_frame, text="Soci (tutti attivi)", variable=self.destinatari_var, value="soci", command=self._update_recipient_count).pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(self.dest_frame, text="Solo CD", variable=self.destinatari_var, value="cd", command=self._update_recipient_count).pack(side=tk.LEFT, padx=5)
-        ttk.Radiobutton(self.dest_frame, text="CD + CP", variable=self.destinatari_var, value="cd_cp", command=self._update_recipient_count).pack(side=tk.LEFT, padx=5)
-        ttk.Button(self.dest_frame, text="Anteprima", command=self._show_recipients).pack(side=tk.LEFT, padx=10)
-        self.label_count = ttk.Label(self.dest_frame, text="", foreground="blue")
-        self.label_count.pack(side=tk.LEFT, padx=5)
-        
-        # Template selector
-        row += 1
-        ttk.Label(main_frame, text="Corpo email:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="nw", padx=5, pady=5)
-        self.template_frame = ttk.Frame(main_frame)
-        self.template_frame.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
-        
-        ttk.Label(self.template_frame, text="Template:").pack(side=tk.LEFT, padx=5)
-        self.template_var = tk.StringVar()
-        self.template_combo = ttk.Combobox(self.template_frame, textvariable=self.template_var, width=30, state="readonly")
-
-        self._template_text_by_name = self._build_template_text_map()
-        self.template_combo['values'] = tuple(self._template_text_by_name.keys())
-
-        default_template_name = "Testo libero" if meeting_id else "Convocazione CD"
-        if default_template_name in self._template_text_by_name:
-            self.template_var.set(default_template_name)
-        elif self._template_text_by_name:
-            self.template_var.set(next(iter(self._template_text_by_name.keys())))
-        self.template_combo.pack(side=tk.LEFT, padx=5)
-        self.template_combo.bind('<<ComboboxSelected>>', self._on_template_selected)
-
-        ttk.Button(self.template_frame, text="Wizard template...", command=self._open_templates_wizard).pack(side=tk.LEFT, padx=8)
-        
-        # Corpo email
-        row += 1
-        text_frame = ttk.LabelFrame(main_frame, text="Testo email", padding=4)
-        text_frame.grid(row=row, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
-        
-        self.text_email = scrolledtext.ScrolledText(text_frame, height=8, wrap=tk.WORD)
-        self.text_email.pack(fill=tk.BOTH, expand=True)
-        
         # ODG section
         row += 1
         self.odg_frame = ttk.LabelFrame(main_frame, text="Ordine del Giorno", padding=4)
@@ -641,72 +248,170 @@ La Segreteria""",
         if meeting_id:
             self._load_meeting()
         else:
-            # Set default template for new meeting
-            self._on_template_selected()
             # Toggle visibility based on tipo_riunione
             self._toggle_tipo_riunione()
 
         self._on_meta_tipo_changed()
         self._update_presenze_visibility()
         
-        # Update recipient count
-        self._update_recipient_count()
-        
-        # Buttons in first column
-        row += 1
-        button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=4, sticky="w", padx=5, pady=15)
-        
-        ttk.Button(button_frame, text="Annulla", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Anteprima e-mail", command=self._preview_email).pack(side=tk.LEFT, padx=5)
-        self.btn_send_email = ttk.Button(button_frame, text="Invia e-mail", command=self._send_email_from_ui)
+        ttk.Button(actions_frame, text="Annulla", command=self.dialog.destroy).pack(side=tk.LEFT, padx=5)
+        self.btn_prepare_email = ttk.Button(actions_frame, text="Prepara e-mail...", command=self._open_email_wizard_from_ui)
         if meeting_id:
-            self.btn_send_email.pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Salva", command=self._save).pack(side=tk.LEFT, padx=5)
+            self.btn_prepare_email.pack(side=tk.LEFT, padx=5)
+        ttk.Button(actions_frame, text="Salva", command=self._save).pack(side=tk.LEFT, padx=5)
 
-        # Initial state for send button
-        self._update_send_email_button_state()
+        # Initial state for prepare button
+        self._update_prepare_email_button_state()
 
-    def _update_send_email_button_state(self):
+    def _build_email_initial_for_wizard(self, data: str, numero_cd: str, odg_text: str) -> tuple[str, str]:
+        """Build (subject, body) for Email Wizard from meeting fields."""
+        is_assemblea = False
         try:
-            if not hasattr(self, "btn_send_email"):
-                return
-            if not self.meeting_id:
-                self.btn_send_email.configure(state="disabled")
-                return
-            is_futura = self.tipo_riunione_var.get() == "futura"
-            self.btn_send_email.configure(state=("normal" if is_futura else "disabled"))
+            is_assemblea = self._is_meta_tipo_assemblea()
+        except Exception:
+            is_assemblea = False
+
+        num_display = (numero_cd or "").strip()
+        if num_display:
+            num_display = num_display.zfill(2)
+
+        ora = (self.entry_meta_ora_inizio.get() or "").strip()
+        luogo = (self.entry_meta_luogo.get() or "").strip()
+
+        if is_assemblea:
+            subject = "Convocazione Assemblea Soci"
+            body = (
+                "Gentili Soci,\n\n"
+                "siete convocati per l'Assemblea Ordinaria/Straordinaria dei Soci che si terrà in:\n\n"
+                f"PRIMA CONVOCAZIONE: {data or '{data}'}"
+            )
+            body += f" ore {ora}" if ora else " ore {ora}"
+            body += "\n"
+            body += "SECONDA CONVOCAZIONE: {data2}"
+            body += " ore {ora2}\n\n"
+            body += "Presso: " + (luogo if luogo else "{luogo}") + "\n\n"
+            body += "Ordine del giorno:\n{odg}\n\nLa vostra presenza è importante.\n\nCordiali saluti,\nIl Presidente\n{presidente}"
+            return subject, body
+
+        subject = "Convocazione Consiglio Direttivo"
+        if num_display:
+            subject = f"Convocazione Consiglio Direttivo n. {num_display}"
+
+        body = (
+            "Gentili Consiglieri,\n\n"
+            f"siete convocati per la riunione del Consiglio Direttivo n. {num_display or '{num}'} "
+            f"che si terrà in data {data or '{data}'}"
+        )
+        if ora:
+            body += f" alle ore {ora}"
+        else:
+            body += " alle ore {ora}"
+        if luogo:
+            body += f" presso {luogo}.\n\n"
+        else:
+            body += " presso {luogo}.\n\n"
+
+        body += "Ordine del giorno:\n{odg}\n\nCordiali saluti,\nIl Presidente\n{presidente}"
+        return subject, body
+
+    def _template_for_meeting(self) -> str:
+        try:
+            if self._is_meta_tipo_assemblea():
+                return "Convocazione Assemblea"
         except Exception:
             pass
 
-    def _send_email_from_ui(self):
-        """Send email for an existing (future) meeting."""
+        try:
+            modalita = (self.meta_modalita_var.get() or "").strip().lower()
+        except Exception:
+            modalita = ""
+
+        candidates: list[str] = []
+        if modalita == "presenza":
+            candidates = ["Convocazione CD – presenza", "Convocazione CD – Modalità presenza"]
+        elif modalita == "online":
+            candidates = ["Convocazione CD – online", "Convocazione CD – Modalità online"]
+        elif modalita in ("ibrida", "mista"):
+            candidates = ["Convocazione CD – mista", "Convocazione CD – Modalità mista"]
+
+        # Use the specific template only if the corresponding .txt exists.
+        try:
+            from config import DATA_DIR
+
+            templates_dir = os.path.join(DATA_DIR, "email_templates")
+            for name in candidates:
+                if os.path.exists(os.path.join(templates_dir, f"{name}.txt")):
+                    return name
+        except Exception:
+            pass
+
+        return "Convocazione CD"
+
+    def _destinatari_for_email_wizard(self) -> str:
+        """Destinatari: assemblea -> soci attivi; CD -> CD (la scelta si fa nel wizard)."""
+        try:
+            if self._is_meta_tipo_assemblea():
+                return "attivi"
+        except Exception:
+            pass
+        return "cd"
+
+    def _update_prepare_email_button_state(self):
+        """Enable 'Prepara e-mail' only for saved future meetings."""
+        try:
+            if not hasattr(self, "btn_prepare_email"):
+                return
+            if not self.meeting_id:
+                self.btn_prepare_email.configure(state="disabled")
+                return
+            is_futura = self.tipo_riunione_var.get() == "futura"
+            self.btn_prepare_email.configure(state=("normal" if is_futura else "disabled"))
+        except Exception:
+            pass
+
+    def _open_email_wizard_from_ui(self):
+        """Open Email Wizard prefilled for an existing (future) meeting."""
         if not self.meeting_id:
             return
         if self.tipo_riunione_var.get() != "futura":
-            messagebox.showinfo("Info", "Invio e-mail disponibile solo per riunioni future.", parent=self.dialog)
+            messagebox.showinfo("Info", "Disponibile solo per riunioni future.", parent=self.dialog)
             return
 
-        subject = self.entry_oggetto.get().strip()
-        body = self.text_email.get("1.0", tk.END).strip()
+        numero_cd = self.entry_numero_cd.get().strip()
+        data = self.entry_date.get().strip()
         odg_text = self.text_odg.get("1.0", tk.END).strip()
 
-        if not subject:
-            messagebox.showwarning("Validazione", "Inserire l'oggetto dell'e-mail.", parent=self.dialog)
-            return
-        if not body:
-            messagebox.showwarning("Validazione", "Inserire il corpo dell'e-mail.", parent=self.dialog)
-            return
+        ora = (self.entry_meta_ora_inizio.get() or "").strip()
+        luogo_link = (self.entry_meta_luogo.get() or "").strip()
+        modalita = (self.meta_modalita_var.get() or "").strip().lower()
 
-        send = messagebox.askyesno(
-            "Invia Email",
-            "Vuoi inviare l'e-mail di convocazione adesso?",
-            parent=self.dialog,
-        )
-        if not send:
-            return
+        subject, body = self._build_email_initial_for_wizard(data=data, numero_cd=numero_cd, odg_text=odg_text)
 
-        self._send_email(subject, body, odg_text)
+        try:
+            from email_wizard import show_email_wizard
+
+            initial = {
+                "from_meeting": True,
+                "template": self._template_for_meeting(),
+                "oggetto": subject,
+                "body": body,
+                "odg": odg_text,
+                "num": numero_cd,
+                "data": data,
+                "ora": ora,
+                "luogo": luogo_link,
+                "link": luogo_link if (modalita in ("online", "ibrida") and luogo_link) else "",
+                "destinatari": self._destinatari_for_email_wizard(),
+            }
+            # Close meeting dialog first to release grab/focus.
+            try:
+                self.dialog.destroy()
+            except Exception:
+                pass
+            show_email_wizard(self.parent, initial=initial)
+        except Exception as exc:
+            logger.error("Impossibile aprire il wizard email: %s", exc)
+            messagebox.showerror("Errore", f"Impossibile aprire il wizard email:\n{exc}", parent=self.dialog)
 
     def _safe_int(self, s: str) -> int | None:
         s = (s or "").strip()
@@ -776,37 +481,19 @@ La Segreteria""",
         
         # Gestisci visibilità sezioni in base al tipo di riunione
         if is_passata:
-            # Nascondi/disabilita sezioni email per riunioni passate
-            if hasattr(self, 'dest_frame'):
-                for child in self.dest_frame.winfo_children():
-                    if isinstance(child, (ttk.Radiobutton, ttk.Button)):
-                        child.configure(state="disabled")
-            if hasattr(self, 'template_combo'):
-                self.template_combo.configure(state="disabled")
-            if hasattr(self, 'text_email'):
-                self.text_email.configure(state="disabled", bg="#f0f0f0")
             # Mostra sezioni verbale e delibere
             if hasattr(self, 'verbale_frame'):
                 self.verbale_frame.grid()
             if hasattr(self, 'delibere_frame'):
                 self.delibere_frame.grid()
         else:
-            # Abilita sezioni email per riunioni future
-            if hasattr(self, 'dest_frame'):
-                for child in self.dest_frame.winfo_children():
-                    if isinstance(child, (ttk.Radiobutton, ttk.Button)):
-                        child.configure(state="normal")
-            if hasattr(self, 'template_combo'):
-                self.template_combo.configure(state="readonly")
-            if hasattr(self, 'text_email'):
-                self.text_email.configure(state="normal", bg="white")
             # Nascondi sezioni verbale e delibere
             if hasattr(self, 'verbale_frame'):
                 self.verbale_frame.grid_remove()
             if hasattr(self, 'delibere_frame'):
                 self.delibere_frame.grid_remove()
 
-        self._update_send_email_button_state()
+        self._update_prepare_email_button_state()
     
     def _select_verbale(self):
         """Select verbale document file"""
@@ -825,277 +512,6 @@ La Segreteria""",
             self.entry_verbale_path.insert(0, file_path)
             self.entry_verbale_path.configure(state="readonly")
     
-    def _update_recipient_count(self):
-        """Update recipient count label"""
-        try:
-            recipients = self._get_recipients()
-            count = len(recipients)
-            self.label_count.config(text=f"({count} destinatari)")
-        except Exception as e:
-            logger.error("Error counting recipients: %s", e)
-            self.label_count.config(text="")
-    
-    def _get_recipients(self):
-        """Get list of recipients based on selection"""
-        from database import fetch_all
-
-        filter_type = (self.destinatari_var.get() or "").strip().lower()
-
-        if filter_type in ("cd", "cd_cp"):
-            roles_cd, roles_cp = self._get_roles_for_groups()
-            roles: list[str] = list(roles_cd)
-            if filter_type == "cd_cp":
-                roles = list(dict.fromkeys(list(roles_cd) + list(roles_cp)))
-
-            # Fallback to previous logic if definitions are missing/empty
-            if not roles:
-                sql = """
-                    SELECT DISTINCT email, nome, cognome
-                    FROM soci
-                    WHERE attivo = 1
-                    AND cd_ruolo IS NOT NULL
-                    AND TRIM(cd_ruolo) != ''
-                    AND cd_ruolo != 'Socio'
-                    AND cd_ruolo != 'Ex Socio'
-                    AND email IS NOT NULL
-                    AND email != ''
-                    ORDER BY cognome, nome
-                """
-                return fetch_all(sql)
-
-            placeholders = ",".join(["?"] * len(roles))
-            sql = f"""
-                SELECT DISTINCT email, nome, cognome
-                FROM soci
-                WHERE attivo = 1
-                AND email IS NOT NULL
-                AND email != ''
-                AND cd_ruolo IN ({placeholders})
-                ORDER BY cognome, nome
-            """
-            return fetch_all(sql, tuple(roles))
-
-        # Soci (default): all active members with email
-        sql = """
-            SELECT DISTINCT email, nome, cognome
-            FROM soci
-            WHERE attivo = 1
-            AND email IS NOT NULL
-            AND email != ''
-            ORDER BY cognome, nome
-        """
-        return fetch_all(sql)
-
-    def _read_definizioni_gruppi(self) -> dict[str, list[str]]:
-        """Parse src/Definizioni/DefinizioniGruppi into {group_line: [role_lines...]}."""
-        groups: dict[str, list[str]] = {}
-        try:
-            base_dir = os.path.dirname(__file__)
-            path = os.path.join(base_dir, "Definizioni", "DefinizioniGruppi")
-            if not os.path.isfile(path):
-                return {}
-
-            current_group: str | None = None
-            with open(path, "r", encoding="utf-8") as f:
-                for raw in f.read().splitlines():
-                    line = raw.rstrip("\n")
-                    if not line.strip():
-                        current_group = None
-                        continue
-                    if line[:1].isspace():
-                        if current_group is None:
-                            continue
-                        role = line.strip()
-                        if role:
-                            groups.setdefault(current_group, []).append(role)
-                        continue
-                    # group header
-                    current_group = line.strip()
-                    groups.setdefault(current_group, [])
-        except Exception:
-            return {}
-        return groups
-
-    def _normalize_role_label(self, role: str) -> str:
-        r = (role or "").strip().lower()
-        # Map definitions to DB labels
-        mapping = {
-            "presidente": "Presidente",
-            "vicepresidente": "Vice Presidente",
-            "vice presidente": "Vice Presidente",
-            "segretario": "Segretario",
-            "tesoriere": "Tesoriere",
-            "consigliere": "Consigliere",
-            "probiviro (sindaco)": "Sindaco",
-            "probiviro": "Sindaco",
-            "sindaco": "Sindaco",
-            "socio": "Socio",
-        }
-        if r in mapping:
-            return mapping[r]
-
-        # Fallback: title-case
-        return (role or "").strip().title()
-
-    def _get_roles_for_groups(self) -> tuple[list[str], list[str]]:
-        """Return (CD roles, CP roles) using DefinizioniGruppi.
-
-        For now only handles: CD, CP (Probiviri/Sindaci) as requested.
-        """
-        groups = self._read_definizioni_gruppi()
-        if not groups:
-            return ([], [])
-
-        roles_cd: list[str] = []
-        roles_cp: list[str] = []
-        for group_name, roles in groups.items():
-            g = (group_name or "").strip().lower()
-            # Identify group by code in parentheses or name
-            is_cd = "(cd" in g or "consiglio direttivo" in g
-            is_cp = "probiviri" in g or "(dp" in g or "(cp" in g
-
-            if not roles:
-                continue
-            if is_cd:
-                for role in roles:
-                    val = self._normalize_role_label(role)
-                    if val and val not in roles_cd:
-                        roles_cd.append(val)
-            if is_cp:
-                for role in roles:
-                    val = self._normalize_role_label(role)
-                    if val and val not in roles_cp:
-                        roles_cp.append(val)
-
-        return (roles_cd, roles_cp)
-    
-    def _show_recipients(self):
-        """Show recipients in a dialog"""
-        recipients = self._get_recipients()
-        
-        dialog = tk.Toplevel(self.dialog)
-        dialog.title("Anteprima Destinatari")
-        dialog.geometry("600x400")
-        dialog.transient(self.dialog)
-        
-        ttk.Label(dialog, text=f"Destinatari selezionati: {len(recipients)}", font=("Arial", 10, "bold")).pack(padx=10, pady=10)
-        
-        # Treeview with scrollbar
-        frame = ttk.Frame(dialog)
-        frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        tree = ttk.Treeview(frame, columns=('email', 'nome'), show='headings', height=15)
-        tree.heading('email', text='Email')
-        tree.heading('nome', text='Nome')
-        tree.column('email', width=250)
-        tree.column('nome', width=200)
-        
-        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
-        tree.configure(yscrollcommand=scrollbar.set)
-        
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        for r in recipients:
-            tree.insert('', 'end', values=(r[0], f"{r[2]} {r[1]}"))
-        
-        ttk.Button(dialog, text="Chiudi", command=dialog.destroy).pack(pady=10)
-    
-    def _on_template_selected(self, event=None):
-        """Load template text when selected"""
-        template_name = self.template_var.get()
-
-        template_text = ""
-        try:
-            template_text = (self._template_text_by_name or {}).get(template_name, "")
-        except Exception:
-            template_text = ""
-        
-        self.text_email.delete('1.0', tk.END)
-        self.text_email.insert('1.0', template_text)
-        
-        # Suggest oggetto if not set
-        if not self.entry_oggetto.get() and template_name == 'Convocazione CD':
-            self.entry_oggetto.delete(0, tk.END)
-            self.entry_oggetto.insert(0, "Convocazione Consiglio Direttivo")
-
-    def _ensure_default_email_template_for_edit(self):
-        """For edited future meetings, prefill email template if body is empty.
-
-        We don't persist email body in DB; this provides a sensible default without
-        overwriting any text the user already typed in the dialog.
-        """
-        try:
-            if not self.meeting_id:
-                return
-            if self.tipo_riunione_var.get() != "futura":
-                return
-            current_body = self.text_email.get("1.0", tk.END).strip() if hasattr(self, "text_email") else ""
-            if current_body:
-                return
-
-            # Set template to "Convocazione CD" if available
-            if hasattr(self, "template_var"):
-                self.template_var.set("Convocazione CD")
-                self._on_template_selected()
-        except Exception:
-            pass
-
-    def _render_email_body(self, body: str, odg: str) -> str:
-        """Render common placeholders in email body from current UI fields."""
-        rendered = body
-
-        data = self.entry_date.get().strip() if hasattr(self, "entry_date") else ""
-        ora = self.entry_meta_ora_inizio.get().strip() if hasattr(self, "entry_meta_ora_inizio") else ""
-        luogo = self.entry_meta_luogo.get().strip() if hasattr(self, "entry_meta_luogo") else ""
-        modalita = self.meta_modalita_var.get().strip().lower() if hasattr(self, "meta_modalita_var") else ""
-
-        # Small wording tweak for the default convocazione sentence.
-        # Do not add new templates: just adjust the existing phrase when present.
-        if '{luogo}' in rendered:
-            if modalita == 'online':
-                rendered = rendered.replace('presso {luogo}', 'tramite {luogo}')
-            elif modalita == 'ibrida':
-                rendered = rendered.replace('presso {luogo}', 'presso / tramite {luogo}')
-
-        if '{data}' in rendered and data:
-            rendered = rendered.replace('{data}', data)
-        if '{ora}' in rendered and ora:
-            rendered = rendered.replace('{ora}', ora)
-        if '{luogo}' in rendered and luogo:
-            rendered = rendered.replace('{luogo}', luogo)
-        if '{odg}' in rendered and odg:
-            rendered = rendered.replace('{odg}', odg)
-
-        return rendered
-
-    def _format_odg_for_email(self, odg_text: str) -> str:
-        """Normalize ODG for emails by hiding internal markers.
-
-        Removes markers like [D]/[DEL]/DEL:/D:/! at line start.
-        """
-        lines_out: list[str] = []
-        for ln in (odg_text or "").splitlines():
-            raw = ln.rstrip()
-            if not raw.strip():
-                continue
-
-            stripped = raw.lstrip()
-            up = stripped.upper()
-            is_delibera = False
-
-            for prefix in ("[D]", "[DEL]", "DEL:", "D:", "!"):
-                if up.startswith(prefix):
-                    is_delibera = True
-                    stripped = stripped[len(prefix):].lstrip()
-                    break
-
-            clean = stripped if is_delibera else raw.strip()
-            if clean:
-                lines_out.append(clean)
-
-        return "\n".join(lines_out)
-
     def _extract_delibere_from_odg(self, odg_text: str) -> list[str]:
         """Extract delibera titles from ODG points marked as requiring delibera."""
         titles: list[str] = []
@@ -1163,35 +579,6 @@ La Segreteria""",
                     by_oggetto[title_norm] = {"id": delibera_id, "numero": numero_auto, "oggetto": title.strip()}
         except Exception as exc:
             logger.warning("Sync delibere da ODG fallita: %s", exc)
-    
-    def _preview_email(self):
-        """Show email preview"""
-        subject = self.entry_oggetto.get().strip()
-        body = self.text_email.get('1.0', tk.END).strip()
-        odg_raw = self.text_odg.get('1.0', tk.END).strip()
-        odg = self._format_odg_for_email(odg_raw)
-
-        body = self._render_email_body(body, odg)
-        
-        # Show preview dialog
-        preview = tk.Toplevel(self.dialog)
-        preview.title("Anteprima Email")
-        preview.geometry("700x500")
-        preview.transient(self.dialog)
-        
-        ttk.Label(preview, text="Oggetto:", font=("Arial", 10, "bold")).pack(anchor='w', padx=10, pady=(10, 0))
-        subject_text = tk.Text(preview, height=2, wrap=tk.WORD)
-        subject_text.pack(fill=tk.X, padx=10, pady=5)
-        subject_text.insert('1.0', subject)
-        subject_text.config(state='disabled')
-        
-        ttk.Label(preview, text="Corpo:", font=("Arial", 10, "bold")).pack(anchor='w', padx=10, pady=(10, 0))
-        body_text = scrolledtext.ScrolledText(preview, height=20, wrap=tk.WORD)
-        body_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        body_text.insert('1.0', body)
-        body_text.config(state='disabled')
-        
-        ttk.Button(preview, text="Chiudi", command=preview.destroy).pack(pady=10)
     
     def _load_meeting(self):
         """Load existing meeting data for editing"""
@@ -1287,9 +674,6 @@ La Segreteria""",
             # Apply UI visibility/state based on loaded tipo_riunione
             self._toggle_tipo_riunione()
 
-            # If future meeting, keep a sensible template in edit mode
-            self._ensure_default_email_template_for_edit()
-
             # Load existing delibere (if any) into the text box
             try:
                 from cd_delibere import get_all_delibere
@@ -1310,401 +694,14 @@ La Segreteria""",
             except Exception:
                 pass
     
-    def _send_email(self, subject, body, odg):
-        """Generate EML file and/or mailto URL"""
-        # Get recipients
-        recipients = self._get_recipients()
-        if not recipients:
-            messagebox.showwarning("Attenzione", "Nessun destinatario trovato.", parent=self.dialog)
-            return False
-        
-        body = self._render_email_body(body, self._format_odg_for_email(odg))
-        
-        # Build email list
-        bcc_emails = [r[0] for r in recipients]
-
-        mailto_url = self._build_mailto_url(subject, body, bcc_emails)
-        mailto_too_long = len(mailto_url) > 2000
-
-        tb_exe = self._find_thunderbird_exe()
-        tb_available = bool(tb_exe)
-        
-        # Ask user which method to use
-        choice_dialog = tk.Toplevel(self.dialog)
-        choice_dialog.title("Modalità Invio Email")
-        choice_dialog.geometry("500x300")
-        choice_dialog.transient(self.dialog)
-        choice_dialog.grab_set()
-        
-        ttk.Label(choice_dialog, text=f"Email preparata per {len(bcc_emails)} destinatari", 
-                 font=("Arial", 12, "bold")).pack(pady=20)
-        
-        ttk.Label(choice_dialog, text="Come vuoi procedere?", font=("Arial", 10)).pack(pady=10)
-        
-        result: dict[str, str | None] = {'action': None}
-        
-        def create_eml():
-            result['action'] = 'eml'
-            choice_dialog.destroy()
-        
-        def copy_emails():
-            result['action'] = 'copy'
-            choice_dialog.destroy()
-        
-        def use_mailto():
-            result['action'] = 'mailto'
-            choice_dialog.destroy()
-
-        def use_thunderbird():
-            result['action'] = 'thunderbird'
-            choice_dialog.destroy()
-
-        def select_thunderbird_portable():
-            try:
-                exe_path = filedialog.askopenfilename(
-                    parent=choice_dialog,
-                    title="Seleziona thunderbird.exe (Portable)",
-                    filetypes=[("Thunderbird", "thunderbird.exe"), ("Eseguibili", "*.exe"), ("Tutti i file", "*.*")],
-                )
-                if not exe_path:
-                    return
-                if not os.path.isfile(exe_path):
-                    messagebox.showwarning("Validazione", "Percorso non valido.", parent=choice_dialog)
-                    return
-                self._save_thunderbird_exe_path(exe_path)
-                result['action'] = 'thunderbird'
-                choice_dialog.destroy()
-            except Exception as exc:
-                messagebox.showerror("Errore", f"Impossibile selezionare Thunderbird:\n{exc}", parent=choice_dialog)
-        
-        def cancel():
-            result['action'] = 'cancel'
-            choice_dialog.destroy()
-        
-        btn_frame = ttk.Frame(choice_dialog)
-        btn_frame.pack(pady=20)
-
-        ttk.Button(btn_frame, text="🦅 Apri in Thunderbird", command=use_thunderbird, width=25).pack(pady=5)
-        ttk.Label(btn_frame, text="(Consigliato: evita problemi con mailto)", font=("Arial", 8), foreground="gray").pack()
-        
-        ttk.Button(btn_frame, text="📧 Genera file EML", command=create_eml, width=25).pack(pady=5)
-        ttk.Label(btn_frame, text="(Apribile con Outlook, Thunderbird, IONOS, ecc.)", 
-                 font=("Arial", 8), foreground="gray").pack()
-        
-        ttk.Button(btn_frame, text="📋 Copia indirizzi email", command=copy_emails, width=25).pack(pady=5)
-        ttk.Label(btn_frame, text="(Incolla manualmente nel tuo client)", 
-                 font=("Arial", 8), foreground="gray").pack()
-        
-        ttk.Button(btn_frame, text="🌐 Apri con mailto:", command=use_mailto, width=25).pack(pady=5)
-        ttk.Label(btn_frame, text="(Client email predefinito)", 
-                 font=("Arial", 8), foreground="gray").pack()
-
-        if not tb_available:
-            try:
-                for child in btn_frame.winfo_children():
-                    if isinstance(child, ttk.Button) and str(child.cget("text")).startswith("🦅"):
-                        child.configure(state="disabled")
-                        break
-            except Exception:
-                pass
-
-            ttk.Button(
-                btn_frame,
-                text="📂 Seleziona Thunderbird portable…",
-                command=select_thunderbird_portable,
-                width=25,
-            ).pack(pady=(10, 5))
-            ttk.Label(
-                btn_frame,
-                text="(Seleziona thunderbird.exe e riapri la composizione)",
-                font=("Arial", 8),
-                foreground="gray",
-            ).pack()
-            ttk.Label(
-                choice_dialog,
-                text="Nota: Thunderbird non trovato automaticamente.",
-                font=("Arial", 9),
-                foreground="gray",
-            ).pack(pady=(0, 10))
-
-        if mailto_too_long:
-            try:
-                # Disable mailto option proactively; EML/copy remain available.
-                for child in btn_frame.winfo_children():
-                    if isinstance(child, ttk.Button) and str(child.cget("text")).startswith("🌐"):
-                        child.configure(state="disabled")
-                        break
-            except Exception:
-                pass
-            ttk.Label(
-                choice_dialog,
-                text=f"Nota: mailto disabilitato (URL troppo lungo: {len(mailto_url)} caratteri).",
-                font=("Arial", 9),
-                foreground="gray",
-            ).pack(pady=(0, 10))
-        
-        ttk.Button(choice_dialog, text="Annulla", command=cancel).pack(pady=10)
-        
-        choice_dialog.wait_window()
-        
-        if result['action'] == 'eml':
-            return self._create_eml_file(subject, body, bcc_emails)
-        elif result['action'] == 'copy':
-            return self._copy_emails_to_clipboard(bcc_emails)
-        elif result['action'] == 'thunderbird':
-            return self._open_thunderbird(subject, body, bcc_emails)
-        elif result['action'] == 'mailto':
-            return self._open_mailto(subject, body, bcc_emails)
-        else:
-            return False
-
-    def _find_thunderbird_exe(self) -> str | None:
-        """Try to locate thunderbird.exe on Windows.
-
-        We avoid relying on the MAILTO handler because Windows may still prompt for an app.
-        """
-        # Configured portable path (highest priority)
-        try:
-            cfg_path = self._load_thunderbird_exe_path()
-            if cfg_path and os.path.isfile(cfg_path):
-                return cfg_path
-        except Exception:
-            pass
-
-        candidates: list[str] = []
-        try:
-            pf = os.environ.get("ProgramFiles")
-            pfx86 = os.environ.get("ProgramFiles(x86)")
-            if pf:
-                candidates.append(os.path.join(pf, "Mozilla Thunderbird", "thunderbird.exe"))
-            if pfx86:
-                candidates.append(os.path.join(pfx86, "Mozilla Thunderbird", "thunderbird.exe"))
-        except Exception:
-            pass
-
-        # Registry App Paths (most reliable)
-        try:
-            import winreg
-
-            reg_paths = [
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\thunderbird.exe",
-                r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\thunderbird.exe",
-            ]
-            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-                for subkey in reg_paths:
-                    try:
-                        with winreg.OpenKey(root, subkey) as k:
-                            val, _typ = winreg.QueryValueEx(k, "")
-                            if isinstance(val, str) and val:
-                                candidates.insert(0, val)
-                    except Exception:
-                        continue
-        except Exception:
-            pass
-
-        for path in candidates:
-            try:
-                if path and os.path.isfile(path):
-                    return path
-            except Exception:
-                continue
-        return None
-
-    def _load_thunderbird_exe_path(self) -> str | None:
-        try:
-            from config_manager import load_config
-
-            cfg = load_config()
-            value = cfg.get("thunderbird_exe_path") if isinstance(cfg, dict) else None
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        except Exception:
-            return None
-        return None
-
-    def _save_thunderbird_exe_path(self, exe_path: str) -> None:
-        try:
-            from config_manager import load_config, save_config
-
-            cfg = load_config()
-            if not isinstance(cfg, dict):
-                cfg = {}
-            cfg["thunderbird_exe_path"] = exe_path
-            save_config(cfg)
-        except Exception:
-            # Best effort: if config is not initialized (e.g. in some dev contexts), ignore.
-            pass
-
-    def _escape_thunderbird_compose_value(self, s: str) -> str:
-        # Use double quotes in -compose values; escape backslash and double quotes.
-        # Keep real newlines so the body renders correctly.
-        s = (s or "").replace("\\", "\\\\").replace('"', '\\"')
-        return s
-
-    def _open_thunderbird(self, subject: str, body: str, bcc_emails: list[str]) -> bool:
-        """Open Thunderbird compose window directly with fields prefilled."""
-        tb_exe = self._find_thunderbird_exe()
-        if not tb_exe:
-            messagebox.showwarning(
-                "Thunderbird non trovato",
-                "Thunderbird non risulta installato o non è stato trovato.\n\n"
-                "Usa 'Genera file EML' o 'Copia indirizzi email'.",
-                parent=self.dialog,
-            )
-            return False
-
-        try:
-            bcc_str = ",".join([e for e in (bcc_emails or []) if e])
-            compose = ",".join(
-                [
-                    'to=""',
-                    f'bcc="{self._escape_thunderbird_compose_value(bcc_str)}"',
-                    f'subject="{self._escape_thunderbird_compose_value(subject or "")}"',
-                    f'body="{self._escape_thunderbird_compose_value(body or "")}"',
-                ]
-            )
-            subprocess.Popen([tb_exe, "-compose", compose], close_fds=True)
-            messagebox.showinfo(
-                "Thunderbird",
-                f"Thunderbird aperto con {len(bcc_emails)} destinatari in BCC.",
-                parent=self.dialog,
-            )
-            return True
-        except Exception as e:
-            logger.error("Failed to open Thunderbird compose: %s", e)
-            messagebox.showerror(
-                "Errore",
-                f"Impossibile aprire Thunderbird:\n{e}",
-                parent=self.dialog,
-            )
-            return False
-    
-    def _create_eml_file(self, subject, body, bcc_emails):
-        """Create EML file"""
-        import os
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-        
-        try:
-            # Create email message
-            msg = MIMEMultipart()
-            msg['Subject'] = subject
-            msg['From'] = ''  # Will be filled by email client
-            msg['Bcc'] = ', '.join(bcc_emails)
-            
-            # Add body
-            msg.attach(MIMEText(body, 'plain', 'utf-8'))
-            
-            # Ask where to save
-            from tkinter import filedialog
-            filename = filedialog.asksaveasfilename(
-                parent=self.dialog,
-                title="Salva file EML",
-                defaultextension=".eml",
-                filetypes=[("Email Message", "*.eml"), ("All Files", "*.*")],
-                initialfile=f"convocazione_{datetime.now().strftime('%Y%m%d')}.eml"
-            )
-            
-            if filename:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(msg.as_string())
-                
-                # Ask if user wants to open it
-                open_it = messagebox.askyesno(
-                    "File Creato",
-                    f"File EML salvato:\n{filename}\n\nVuoi aprirlo ora?",
-                    parent=self.dialog
-                )
-                
-                if open_it:
-                    os.startfile(filename)
-                
-                return True
-            return False
-            
-        except Exception as e:
-            logger.error("Failed to create EML file: %s", e)
-            messagebox.showerror("Errore", f"Impossibile creare il file EML:\n{e}", parent=self.dialog)
-            return False
-    
-    def _copy_emails_to_clipboard(self, bcc_emails):
-        """Copy email addresses to clipboard"""
-        try:
-            # Create formatted list
-            emails_text = '; '.join(bcc_emails)
-            
-            self.dialog.clipboard_clear()
-            self.dialog.clipboard_append(emails_text)
-            
-            # Show dialog with emails
-            copy_dialog = tk.Toplevel(self.dialog)
-            copy_dialog.title("Indirizzi Email Copiati")
-            copy_dialog.geometry("600x400")
-            copy_dialog.transient(self.dialog)
-            
-            ttk.Label(copy_dialog, text=f"✓ {len(bcc_emails)} indirizzi copiati negli appunti", 
-                     font=("Arial", 11, "bold"), foreground="green").pack(pady=10)
-            
-            ttk.Label(copy_dialog, text="Incolla nel campo BCC/CCN del tuo client email:", 
-                     font=("Arial", 10)).pack(pady=5)
-            
-            # Show emails in text widget
-            text_frame = ttk.Frame(copy_dialog)
-            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            text_widget = scrolledtext.ScrolledText(text_frame, height=15, wrap=tk.WORD)
-            text_widget.pack(fill=tk.BOTH, expand=True)
-            text_widget.insert('1.0', emails_text)
-            text_widget.config(state='disabled')
-            
-            ttk.Button(copy_dialog, text="Chiudi", command=copy_dialog.destroy).pack(pady=10)
-            
-            return True
-            
-        except Exception as e:
-            logger.error("Failed to copy emails: %s", e)
-            messagebox.showerror("Errore", f"Impossibile copiare gli indirizzi:\n{e}", parent=self.dialog)
-            return False
-    
-    def _open_mailto(self, subject, body, bcc_emails):
-        """Open mailto URL in default email client"""
-        try:
-            mailto_url = self._build_mailto_url(subject, body, bcc_emails)
-            
-            # Check URL length
-            if len(mailto_url) > 2000:
-                messagebox.showwarning(
-                    "URL Troppo Lungo",
-                    f"L'URL mailto è troppo lungo ({len(mailto_url)} caratteri).\n\n"
-                    f"Usa invece 'Genera file EML' o 'Copia indirizzi email'.",
-                    parent=self.dialog
-                )
-                return False
-            
-            webbrowser.open(mailto_url)
-            messagebox.showinfo("Email Aperta", f"Email preparata con {len(bcc_emails)} destinatari in BCC.", parent=self.dialog)
-            return True
-            
-        except Exception as e:
-            logger.error("Failed to open mailto: %s", e)
-            messagebox.showerror("Errore", f"Impossibile aprire il client email:\n{e}", parent=self.dialog)
-            return False
-
-    def _build_mailto_url(self, subject: str, body: str, bcc_emails: list[str]) -> str:
-        bcc_str = ','.join(bcc_emails or [])
-        return (
-            f"mailto:?subject={urllib.parse.quote(subject or '')}"
-            f"&bcc={urllib.parse.quote(bcc_str)}"
-            f"&body={urllib.parse.quote(body or '')}"
-        )
     
     def _save(self):
         """Save meeting and optionally send email"""
         numero_cd = self.entry_numero_cd.get().strip()
         data = self.entry_date.get().strip()
-        oggetto = self.entry_oggetto.get().strip()
+        oggetto = self.entry_oggetto.get().strip() if hasattr(self, 'entry_oggetto') else ""
         odg_text = self.text_odg.get("1.0", tk.END).strip()
-        corpo_email = self.text_email.get("1.0", tk.END).strip()
+        corpo_email = ""
         verbale_path = self.entry_verbale_path.get().strip() if hasattr(self, 'entry_verbale_path') else None
         delibere_text = self.text_delibere.get("1.0", tk.END).strip() if hasattr(self, 'text_delibere') else None
 
@@ -1781,6 +778,10 @@ La Segreteria""",
                     return
             else:
                 from cd_meetings import add_meeting
+                # If oggetto is hidden/empty (2B), generate a reasonable title
+                if not oggetto:
+                    gen_subject, _gen_body = self._build_email_initial_for_wizard(data=data, numero_cd=numero_cd, odg_text=odg_text)
+                    oggetto = gen_subject
                 meeting_id = add_meeting(
                     data,
                     numero_cd=numero_cd if numero_cd else None,
@@ -1821,23 +822,60 @@ La Segreteria""",
             
             self.result = True
             
-            # Ask if user wants to send email (solo per riunioni future)
-            if (not self.meeting_id) and self.tipo_riunione_var.get() == "futura" and corpo_email.strip() and oggetto:
-                send = messagebox.askyesno(
-                    "Invia Email",
-                    "Riunione salvata!\n\nVuoi inviare l'email di convocazione?",
-                    parent=self.dialog
+            # Ask if user wants to prepare email (solo per riunioni future)
+            open_wizard = False
+            if (not self.meeting_id) and self.tipo_riunione_var.get() == "futura":
+                open_wizard = messagebox.askyesno(
+                    "Email convocazione",
+                    "Riunione salvata!\n\nVuoi preparare l'email di convocazione?",
+                    parent=self.dialog,
                 )
-                if send:
-                    self._send_email(oggetto, corpo_email, odg_text)
             else:
                 messagebox.showinfo("Successo", "Riunione salvata con successo.", parent=self.dialog)
-            
-            self.dialog.destroy()
+
+            # Close meeting dialog; optionally open Email Wizard prefilled
+            try:
+                self.dialog.destroy()
+            except Exception:
+                pass
+
+            if open_wizard:
+                try:
+                    from email_wizard import show_email_wizard
+
+                    if not oggetto or not corpo_email:
+                        gen_subject, gen_body = self._build_email_initial_for_wizard(data=data, numero_cd=numero_cd, odg_text=odg_text)
+                        if not oggetto:
+                            oggetto = gen_subject
+                        if not corpo_email:
+                            corpo_email = gen_body
+
+                    ora = (self.entry_meta_ora_inizio.get() or "").strip()
+                    luogo_link = (self.entry_meta_luogo.get() or "").strip()
+                    modalita = (self.meta_modalita_var.get() or "").strip().lower()
+
+                    initial = {
+                        "from_meeting": True,
+                        "template": self._template_for_meeting(),
+                        "oggetto": oggetto,
+                        "body": corpo_email,
+                        "odg": odg_text,
+                        "num": numero_cd,
+                        "data": data,
+                        "ora": ora,
+                        "luogo": luogo_link,
+                        "link": luogo_link if (modalita in ("online", "ibrida") and luogo_link) else "",
+                        "destinatari": self._destinatari_for_email_wizard(),
+                    }
+                    show_email_wizard(self.parent, initial=initial)
+                except Exception as exc:
+                    logger.error("Impossibile aprire il wizard email: %s", exc)
             
         except Exception as e:
             messagebox.showerror("Errore", f"Errore: {e}", parent=self.dialog)
             logger.error("Error saving meeting: %s", e)
+
+    # Niente mappatura destinatari: la selezione avviene nel wizard email.
     
     def _save_delibere(self, meeting_id: int, delibere_text: str, data_riunione: str):
         """Save delibere from text"""

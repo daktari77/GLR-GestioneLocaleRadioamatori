@@ -1,0 +1,12 @@
+Caro Socio,
+
+ti ricordiamo che la quota sociale per l'anno {anno} non risulta ancora versata.
+
+Importo: {importo}
+Causale: {causale}
+IBAN: {iban}
+
+Per qualsiasi chiarimento siamo a disposizione.
+
+Cordiali saluti,
+Il Tesoriere

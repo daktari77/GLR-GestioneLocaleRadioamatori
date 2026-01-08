@@ -25,6 +25,7 @@ from section_documents import (
     human_readable_mtime,
     human_readable_size,
     list_section_documents,
+    recalc_section_documents_data_caricamento,
     update_section_document_metadata,
 )
 
@@ -227,6 +228,8 @@ class DocumentPanel(ttk.Frame):
         self.btn_bulk_category.pack(side=tk.LEFT, padx=2)
         self.btn_export = ttk.Button(toolbar, text="Esporta CSV", command=self._export_selected_documents)
         self.btn_export.pack(side=tk.LEFT, padx=2)
+        self.btn_recalc_dates = ttk.Button(toolbar, text="Ricalcola date", command=self._recalc_dates)
+        self.btn_recalc_dates.pack(side=tk.LEFT, padx=(12, 2))
 
         info_label = ttk.Label(self, textvariable=self.info_var, foreground="gray40")
         info_label.pack(fill=tk.X, padx=5)
@@ -494,6 +497,15 @@ class DocumentPanel(ttk.Frame):
                     widget.configure(state=doc_state)
                 except tk.TclError:
                     pass
+
+        # Recalc can work on selection OR (with confirmation) on all currently shown docs.
+        can_recalc = bool(self.documents) and (self.show_all_documents or self._current_target_member_id() is not None)
+        recalc_state = "normal" if can_recalc else "disabled"
+        if getattr(self, "btn_recalc_dates", None) is not None:
+            try:
+                self.btn_recalc_dates.configure(state=recalc_state)
+            except tk.TclError:
+                pass
 
         member_available = self._current_target_member_id() is not None
         member_state = "normal" if member_available else "disabled"
@@ -875,6 +887,32 @@ class DocumentPanel(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Esporta", f"Impossibile scrivere il file:\n{exc}")
 
+    def _recalc_dates(self):
+        docs = self._selected_docs()
+        if not docs:
+            if not self.documents:
+                messagebox.showinfo("Ricalcola date", "Nessun documento disponibile")
+                return
+            if not messagebox.askyesno(
+                "Ricalcola date",
+                f"Nessun documento selezionato.\nRicalcolare le date per {len(self.documents)} documenti mostrati?",
+                icon="warning",
+            ):
+                return
+            docs = list(self.documents.values())
+
+        from documents_manager import recalc_member_documents_data_caricamento
+
+        updated, missing, errors = recalc_member_documents_data_caricamento(docs)
+        msg_lines = [f"Aggiornati: {updated}", f"File mancanti: {missing}"]
+        if errors:
+            msg_lines.append(f"Errori: {len(errors)}")
+            msg_lines.extend(errors[:10])
+            if len(errors) > 10:
+                msg_lines.append("...")
+        messagebox.showinfo("Ricalcola date", "\n".join(msg_lines))
+        self.refresh()
+
     def _open_member_folder(self):
         member_id = self._current_target_member_id()
         if not member_id:
@@ -983,6 +1021,7 @@ class SectionDocumentPanel(ttk.Frame):
         ttk.Button(toolbar, text="Apri cartella", command=self._open_document_folder).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Modifica", command=self._edit_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_document).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Ricalcola date", command=self._recalc_dates).pack(side=tk.LEFT, padx=(12, 2))
 
         ttk.Label(toolbar, text="Tipo:").pack(side=tk.LEFT, padx=(15, 2))
         section_categories = tuple(get_section_document_categories())
@@ -1073,7 +1112,7 @@ class SectionDocumentPanel(ttk.Frame):
         tag_manager = getattr(self, "_category_tag_manager", None)
 
         try:
-            self.docs = list_section_documents()
+            self.docs = list_section_documents(include_missing=False)
         except Exception as exc:
             logger.error("Failed to read section documents: %s", exc)
             messagebox.showerror("Documenti", f"Errore lettura documenti sezione:\n{exc}")
@@ -1296,6 +1335,43 @@ class SectionDocumentPanel(ttk.Frame):
                 self.refresh()
         except Exception as exc:
             messagebox.showerror("Documenti", f"Errore eliminazione documento:\n{exc}")
+
+    def _recalc_dates(self):
+        selected = list(self.tv_docs.selection())
+        docs: list[dict] = []
+        for item_id in selected:
+            doc = self._doc_meta_map.get(item_id)
+            if isinstance(doc, dict):
+                docs.append(doc)
+
+        if not docs:
+            visible_docs: list[dict] = []
+            for item_id in self.tv_docs.get_children():
+                doc = self._doc_meta_map.get(item_id)
+                if isinstance(doc, dict):
+                    visible_docs.append(doc)
+            if not visible_docs:
+                messagebox.showinfo("Ricalcola date", "Nessun documento disponibile")
+                return
+            if not messagebox.askyesno(
+                "Ricalcola date",
+                f"Nessun documento selezionato.\nRicalcolare le date per {len(visible_docs)} documenti mostrati?",
+                icon="warning",
+            ):
+                return
+            docs = visible_docs
+
+        updated, missing, errors = recalc_section_documents_data_caricamento(docs)
+        msg_lines = [f"Aggiornati: {updated}", f"File mancanti: {missing}"]
+        if errors:
+            msg_lines.append(f"Errori: {len(errors)}")
+            msg_lines.extend(errors[:10])
+            if len(errors) > 10:
+                msg_lines.append("...")
+        messagebox.showinfo("Ricalcola date", "\n".join(msg_lines))
+        self.refresh()
+        if self._on_changed:
+            self._on_changed()
 
 class SectionInfoPanel(ttk.Frame):
     """Panel for section information."""

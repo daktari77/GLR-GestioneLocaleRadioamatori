@@ -938,6 +938,12 @@ class App:
         ttk.Button(cd_toolbar, text="Gestisci riunioni CD", command=self._open_cd_meetings_list).pack(
             side=tk.LEFT, padx=2
         )
+        ttk.Button(cd_toolbar, text="Esporta libro verbali", command=self._export_libro_verbali).pack(
+            side=tk.LEFT, padx=(12, 2)
+        )
+        ttk.Button(cd_toolbar, text="Esporta libro delibere", command=self._export_libro_delibere).pack(
+            side=tk.LEFT, padx=2
+        )
 
         cd_notebook = ttk.Notebook(tab)
         cd_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -970,6 +976,81 @@ class App:
             cd_notebook.bind("<<NotebookTabChanged>>", lambda _e: self._on_cd_area_tab_changed(cd_notebook))
         except Exception:
             pass
+
+    def _export_libro_verbali(self):
+        """Export the 'Libro verbali' Excel file from cd_riunioni."""
+        from tkinter import filedialog, messagebox
+        import tkinter as tk
+        from typing import cast
+
+        default_name = "Libro_verbali.xlsx"
+        parent = cast(tk.Misc, self)
+        file_path = filedialog.asksaveasfilename(
+            parent=parent,
+            title="Esporta libro verbali",
+            initialfile=default_name,
+            defaultextension=".xlsx",
+            filetypes=(("Excel (.xlsx)", "*.xlsx"), ("Tutti i file", "*.*")),
+        )
+        if not file_path:
+            return
+
+        try:
+            from cd_reports import export_libro_verbali_xlsx
+
+            count, warnings = export_libro_verbali_xlsx(file_path)
+            lines = [f"Righe esportate: {count}", f"File: {file_path}"]
+            if warnings:
+                lines.append("")
+                lines.append("Avvisi:")
+                lines.extend(warnings)
+            messagebox.showinfo("Libro verbali", "\n".join(lines))
+        except Exception as exc:
+            messagebox.showerror("Libro verbali", f"Errore durante l'esportazione:\n{exc}")
+
+    def _export_libro_delibere(self):
+        """Export the 'Libro delibere' (Word or Excel) from cd_delibere."""
+        from tkinter import filedialog, messagebox
+        import tkinter as tk
+        from typing import cast
+
+        default_name = "Libro_delibere.docx"
+        parent = cast(tk.Misc, self)
+        file_path = filedialog.asksaveasfilename(
+            parent=parent,
+            title="Esporta libro delibere",
+            initialfile=default_name,
+            defaultextension=".docx",
+            filetypes=(
+                ("Word (.docx)", "*.docx"),
+                ("Excel (.xlsx)", "*.xlsx"),
+                ("Tutti i file", "*.*"),
+            ),
+        )
+        if not file_path:
+            return
+
+        try:
+            suffix = (str(file_path).lower().rsplit(".", 1)[-1] if "." in str(file_path) else "").strip()
+            if suffix == "xlsx":
+                from cd_reports import export_libro_delibere_xlsx
+
+                count, warnings = export_libro_delibere_xlsx(file_path)
+            else:
+                # Default: DOCX template-based export (best-effort).
+                template = r"e:\ARI-BG - 2023-2025\CD\Delibere\ARIBG_Libro Delibere 2023.docx"
+                from cd_reports import export_libro_delibere_docx
+
+                count, warnings = export_libro_delibere_docx(file_path, template_path=template)
+
+            lines = [f"Righe esportate: {count}", f"File: {file_path}"]
+            if warnings:
+                lines.append("")
+                lines.append("Avvisi:")
+                lines.extend(warnings)
+            messagebox.showinfo("Libro delibere", "\n".join(lines))
+        except Exception as exc:
+            messagebox.showerror("Libro delibere", f"Errore durante l'esportazione:\n{exc}")
 
     def _on_cd_area_tab_changed(self, cd_notebook: ttk.Notebook):
         """Refresh CD subviews when switching inside the CD area."""
@@ -1112,11 +1193,13 @@ class App:
         start_date = None
         end_date = None
         label = ""
+        mandato_id = None
         try:
             from cd_mandati import get_active_cd_mandato
 
             mandato = get_active_cd_mandato()
             if mandato:
+                mandato_id = mandato.get("id")
                 start_date = mandato.get("start_date")
                 end_date = mandato.get("end_date")
                 label = str(mandato.get("label") or "").strip()
@@ -1131,6 +1214,28 @@ class App:
                     lbl.config(text=f"Mandato: {shown} ({start_date} → {end_date})")
                 else:
                     lbl.config(text="Mandato: (non impostato)")
+        except Exception:
+            pass
+
+        # If the active mandate has ended, prompt a one-time end-of-mandate verification.
+        try:
+            from utils import today_iso
+
+            today = today_iso()
+            expired = bool(end_date and str(end_date) < str(today))
+            already_prompted = getattr(self, "_cd_closure_prompted_mandato_id", None)
+            if expired and mandato_id and already_prompted != mandato_id:
+                self._cd_closure_prompted_mandato_id = mandato_id
+                if messagebox.askyesno(
+                    "Mandato CD terminato",
+                    "Il mandato CD risulta terminato.\n\nVuoi verificare che verbali e libro delibere siano a posto?",
+                ):
+                    from cd_closure_checks import format_cd_mandato_closure_report, run_cd_mandato_closure_checks
+
+                    report = run_cd_mandato_closure_checks(start_date=start_date, end_date=end_date)
+                    text = format_cd_mandato_closure_report(report)
+                    title = "Verifica fine mandato: OK" if report.get("ok") else "Verifica fine mandato: ATTENZIONE"
+                    messagebox.showinfo(title, text)
         except Exception:
             pass
 

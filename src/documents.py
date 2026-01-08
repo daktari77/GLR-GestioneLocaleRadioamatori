@@ -27,13 +27,24 @@ def add_documento_record(
     tipo: str,
     categoria: str | None = None,
     descrizione: str | None = None,
+    data_caricamento: str | None = None,
 ):
     """Add a document record to the database."""
     from database import exec_query
     from utils import now_iso
+
+    ts = (data_caricamento or "").strip() or None
+    if not ts:
+        try:
+            if percorso and os.path.exists(percorso):
+                ts = datetime.fromtimestamp(os.path.getmtime(percorso)).isoformat(timespec="seconds")
+        except Exception:
+            ts = None
+    if not ts:
+        ts = now_iso()
     exec_query(
         "INSERT INTO documenti (socio_id, nome_file, percorso, tipo, categoria, descrizione, data_caricamento) VALUES (?,?,?,?,?,?,?)",
-        (socio_id, nome_file, percorso, tipo, categoria, descrizione, now_iso())
+        (socio_id, nome_file, percorso, tipo, categoria, descrizione, ts)
     )
 
 def delete_documento_record(doc_id: int):

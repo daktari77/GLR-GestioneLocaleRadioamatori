@@ -40,5 +40,15 @@ assets/Statuto
 # Local runtime config (machine-specific)
 src/data/section_config.json
 
+# Local/generated section documents (often private, not for VCS)
+src/data/section_docs/verbali_cd/*.docx
+src/data/section_docs/verbali_cd/*.pdf
+src/data/section_docs/email_eml/*.eml
+src/data/section_docs/verbali_cd - Copia/
+data/section_docs/verbali_cd - Copia/
+
+# Local spreadsheets
+assets/Elenco CD.xlsx
+
 # Local notes
 tests/to-do

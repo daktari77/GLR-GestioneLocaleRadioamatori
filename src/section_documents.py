@@ -428,9 +428,15 @@ def ensure_section_structure():
         _category_dir(cat)
 
 
-def list_section_documents() -> List[Dict[str, object]]:
+def list_section_documents(*, include_missing: bool = False) -> List[Dict[str, object]]:
     ensure_section_structure()
     _db_backfill_registry()
+
+    # Best-effort: recover original filenames from metadata.json.
+    try:
+        metadata_by_hash = _load_metadata()
+    except Exception:
+        metadata_by_hash = {}
 
     try:
         from database import list_section_document_records
@@ -443,6 +449,9 @@ def list_section_documents() -> List[Dict[str, object]]:
 
     # DB-first: produce the structure expected by the UI panel.
     for row in rows:
+        hash_id = str(row.get("hash_id") or "").strip()
+        payload = metadata_by_hash.get(hash_id) if hash_id else None
+
         abs_path = _resolve_to_absolute(
             str(row.get("percorso") or ""),
             fallback_rel=str(row.get("relative_path") or ""),
@@ -450,7 +459,10 @@ def list_section_documents() -> List[Dict[str, object]]:
         if not abs_path:
             continue
         if not abs_path.exists() or not abs_path.is_file():
-            # Keep the record but signal missing file through stats; UI already highlights missing paths.
+            # By default hide missing documents (prevents confusing size=0 entries and avoids
+            # apparent duplicates after a manual disk cleanup + re-import).
+            if not include_missing:
+                continue
             size = 0
             mtime = None
         else:
@@ -463,11 +475,16 @@ def list_section_documents() -> List[Dict[str, object]]:
                 mtime = None
 
         rel_display = _relative_to_root(abs_path) or str(row.get("relative_path") or "") or abs_path.name
-        original_name = (row.get("nome_file") or row.get("stored_name") or abs_path.name) or abs_path.name
-        stored_name = (row.get("stored_name") or abs_path.name) or abs_path.name
+        stored_name = (row.get("stored_name") or row.get("nome_file") or abs_path.name) or abs_path.name
+        # DB does not persist original filenames; prefer metadata.json when available.
+        original_name = (
+            (payload.get("original_name") if isinstance(payload, dict) else None)
+            or abs_path.name
+        )
         docs.append(
             {
                 "id": row.get("id"),
+                # Show original filename when available (better UX than hashed stored name).
                 "nome_file": original_name,
                 "categoria": row.get("categoria"),
                 "percorso": rel_display,
@@ -494,6 +511,69 @@ def list_section_documents() -> List[Dict[str, object]]:
     return docs
 
 
+def recalc_section_documents_data_caricamento(docs: Iterable[Dict[str, object]]) -> tuple[int, int, list[str]]:
+    """Recalculate section document dates using the file modification time.
+
+    This updates the DB field `section_documents.data_caricamento` (used by filters
+    like CD verbali by mandate) and also updates `metadata.json`'s `uploaded_at`
+    best-effort for backward compatibility.
+
+    Args:
+        docs: iterable of doc dicts (must contain `id` and a path like `absolute_path`).
+
+    Returns:
+        (updated_count, missing_count, errors)
+    """
+
+    try:
+        from database import update_section_document_record
+    except Exception as exc:  # pragma: no cover
+        return 0, 0, [f"DB non disponibile: {exc}"]
+
+    updated = 0
+    missing = 0
+    errors: list[str] = []
+
+    try:
+        metadata = _load_metadata()
+    except Exception:
+        metadata = {}
+    meta_changed = False
+
+    for doc in docs or []:
+        try:
+            record_id = int(doc.get("id"))
+        except Exception:
+            continue
+
+        abs_path = str(doc.get("absolute_path") or doc.get("percorso") or "").strip()
+        if not abs_path or not os.path.exists(abs_path):
+            missing += 1
+            continue
+
+        try:
+            mtime = os.path.getmtime(abs_path)
+            ts = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+            update_section_document_record(record_id, data_caricamento=ts)
+            updated += 1
+
+            hash_id = str(doc.get("hash_id") or "").strip()
+            if hash_id and hash_id in metadata and isinstance(metadata.get(hash_id), dict):
+                if metadata[hash_id].get("uploaded_at") != ts:
+                    metadata[hash_id]["uploaded_at"] = ts
+                    meta_changed = True
+        except Exception as exc:
+            errors.append(f"{record_id}: {exc}")
+
+    if meta_changed:
+        try:
+            _save_metadata(metadata)
+        except Exception:
+            pass
+
+    return updated, missing, errors
+
+
 def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | None = None) -> list[dict]:
     """Return section documents that should be considered CD verbali.
 
@@ -507,7 +587,7 @@ def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | 
     Result is sorted descending by date.
     """
 
-    docs = list_section_documents()
+    docs = list_section_documents(include_missing=False)
     verbali: list[dict] = []
     for doc in docs:
         categoria = str(doc.get("categoria") or "").strip().lower()
@@ -520,17 +600,144 @@ def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | 
         raw = str(d.get("uploaded_at") or "").strip()
         return raw[:10] if len(raw) >= 10 else raw
 
+    def _extract_year_from_verbale_numero(raw: str) -> int | None:
+        s = str(raw or "").strip()
+        if not s:
+            return None
+        # Common formats: "12/2025", "12-2025", "2025/12", "2025-12".
+        digits = []
+        cur = ""
+        for ch in s:
+            if ch.isdigit():
+                cur += ch
+            else:
+                if cur:
+                    digits.append(cur)
+                    cur = ""
+        if cur:
+            digits.append(cur)
+
+        for token in digits:
+            if len(token) == 4:
+                try:
+                    year = int(token)
+                except Exception:
+                    continue
+                if 1900 <= year <= 2200:
+                    return year
+        return None
+
+    def _extract_iso_date_from_text(text: str | None) -> str | None:
+        """Extract an ISO date (YYYY-MM-DD) from a free-form string.
+
+        Supports common patterns:
+        - YYYY-MM-DD / YYYY_MM_DD / YYYY.MM.DD / YYYY/MM/DD
+        - DD-MM-YYYY / DD_MM_YYYY / DD.MM.YYYY / DD/MM/YYYY
+        """
+
+        s = str(text or "")
+        if not s:
+            return None
+
+        # Normalize separators to '-'
+        norm = []
+        for ch in s:
+            if ch in "_./\\":
+                norm.append("-")
+            else:
+                norm.append(ch)
+        s2 = "".join(norm)
+
+        def _is_valid_ymd(y: int, m: int, d: int) -> bool:
+            if y < 1900 or y > 2200:
+                return False
+            if m < 1 or m > 12:
+                return False
+            if d < 1 or d > 31:
+                return False
+            return True
+
+        # Scan for YYYY-MM-DD
+        for i in range(0, max(0, len(s2) - 9)):
+            chunk = s2[i : i + 10]
+            if len(chunk) != 10:
+                continue
+            if chunk[4] != "-" or chunk[7] != "-":
+                continue
+            y_str, m_str, d_str = chunk[0:4], chunk[5:7], chunk[8:10]
+            if not (y_str.isdigit() and m_str.isdigit() and d_str.isdigit()):
+                continue
+            y, m, d = int(y_str), int(m_str), int(d_str)
+            if _is_valid_ymd(y, m, d):
+                return f"{y:04d}-{m:02d}-{d:02d}"
+
+        # Scan for DD-MM-YYYY
+        for i in range(0, max(0, len(s2) - 9)):
+            chunk = s2[i : i + 10]
+            if len(chunk) != 10:
+                continue
+            if chunk[2] != "-" or chunk[5] != "-":
+                continue
+            d_str, m_str, y_str = chunk[0:2], chunk[3:5], chunk[6:10]
+            if not (y_str.isdigit() and m_str.isdigit() and d_str.isdigit()):
+                continue
+            y, m, d = int(y_str), int(m_str), int(d_str)
+            if _is_valid_ymd(y, m, d):
+                return f"{y:04d}-{m:02d}-{d:02d}"
+
+        return None
+
     start_iso = (start_date or "").strip() or None
     end_iso = (end_date or "").strip() or None
     if start_iso or end_iso:
+        start_year = None
+        end_year = None
+        try:
+            start_year = int(start_iso[:4]) if start_iso else None
+        except Exception:
+            start_year = None
+        try:
+            end_year = int(end_iso[:4]) if end_iso else None
+        except Exception:
+            end_year = None
+
         filtered: list[dict] = []
         for d in verbali:
             dv = _date_value(d)
-            if not dv:
+            if dv:
+                if start_iso and dv < start_iso:
+                    pass
+                elif end_iso and dv > end_iso:
+                    pass
+                else:
+                    filtered.append(d)
+                    continue
+
+            # Fallback #1: try extracting a date from filename/description/protocollo
+            # (useful when importing old verbali after the mandate end).
+            extracted = (
+                _extract_iso_date_from_text(d.get("original_name"))
+                or _extract_iso_date_from_text(d.get("nome_file"))
+                or _extract_iso_date_from_text(d.get("descrizione"))
+                or _extract_iso_date_from_text(d.get("protocollo"))
+            )
+            if extracted:
+                if start_iso and extracted < start_iso:
+                    pass
+                elif end_iso and extracted > end_iso:
+                    pass
+                else:
+                    filtered.append(d)
+                    continue
+
+            # Fallback: if the document is clearly a CD verbale, and it has a year
+            # in `verbale_numero`, include it when the year is within the mandate years.
+            year = _extract_year_from_verbale_numero(d.get("verbale_numero"))
+            if year is None:
                 continue
-            if start_iso and dv < start_iso:
+            if start_year and year < start_year:
                 continue
-            if end_iso and dv > end_iso:
+            if end_year and year > end_year:
                 continue
             filtered.append(d)
         verbali = filtered
@@ -581,7 +788,14 @@ def add_section_document(
     if not relative_path:
         raise RuntimeError("Impossibile determinare il percorso relativo del documento di sezione")
 
-    uploaded_at = datetime.now().isoformat(timespec="seconds")
+    # Use the file modification time as the document date shown in UI.
+    # Keep the import timestamp separate.
+    import_ts = datetime.now().isoformat(timespec="seconds")
+    try:
+        st = src.stat()
+        doc_ts = datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")
+    except OSError:
+        doc_ts = import_ts
 
     # Persist DB tracking (primary)
     try:
@@ -592,7 +806,7 @@ def add_section_document(
             nome_file=dest.name,
             percorso=str(dest.resolve()),
             tipo="documento",
-            data_caricamento=uploaded_at,
+            data_caricamento=doc_ts,
             categoria=normalized_category,
             descrizione=description_value,
             protocollo=protocollo_value or None,
@@ -600,7 +814,7 @@ def add_section_document(
             original_name=src.name,
             stored_name=dest.name,
             relative_path=relative_path,
-            uploaded_at=uploaded_at,
+            uploaded_at=import_ts,
         )
     except Exception as exc:
         logger.warning("Impossibile registrare documento sezione su DB: %s", exc)
@@ -615,7 +829,7 @@ def add_section_document(
             "description": description_value,
             "protocollo": protocollo_value,
             "verbale_numero": verbale_numero_value,
-            "uploaded_at": uploaded_at,
+            "uploaded_at": doc_ts,
             "relative_path": relative_path,
         }
         _save_metadata(metadata)
@@ -688,7 +902,12 @@ def bulk_import_section_documents(
             if not relative_path:
                 raise RuntimeError("Impossibile determinare il percorso relativo del documento di sezione")
 
-            uploaded_at = datetime.now().isoformat(timespec="seconds")
+            import_ts = datetime.now().isoformat(timespec="seconds")
+            try:
+                st = src.stat()
+                doc_ts = datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")
+            except OSError:
+                doc_ts = import_ts
 
             from database import add_section_document_record
 
@@ -697,7 +916,7 @@ def bulk_import_section_documents(
                 nome_file=dest.name,
                 percorso=str(dest.resolve()),
                 tipo="documento",
-                data_caricamento=uploaded_at,
+                data_caricamento=doc_ts,
                 categoria=normalized_category,
                 descrizione=description_value,
                 protocollo=protocollo_value or None,
@@ -705,7 +924,7 @@ def bulk_import_section_documents(
                 original_name=src.name,
                 stored_name=dest.name,
                 relative_path=relative_path,
-                uploaded_at=uploaded_at,
+                uploaded_at=import_ts,
             )
 
             # Mantieni metadata.json solo per compatibilita' (best effort)
@@ -718,7 +937,7 @@ def bulk_import_section_documents(
                     "description": description_value,
                     "protocollo": protocollo_value,
                     "verbale_numero": verbale_numero_value,
-                    "uploaded_at": uploaded_at,
+                    "uploaded_at": doc_ts,
                     "relative_path": relative_path,
                 }
                 _save_metadata(metadata)
