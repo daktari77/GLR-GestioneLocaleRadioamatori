@@ -1238,7 +1238,7 @@ class App:
 
         self._cd_verbali_doc_path_map = {}
 
-        verbali = list_cd_verbali_documents(start_date=start_date, end_date=end_date)
+        verbali = list_cd_verbali_documents(start_date=start_date, end_date=end_date, include_missing=True)
 
         def _date_value(d: dict) -> str:
             raw = str(d.get("uploaded_at") or "").strip()

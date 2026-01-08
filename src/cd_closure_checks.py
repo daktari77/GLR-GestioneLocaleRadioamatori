@@ -132,7 +132,7 @@ def run_cd_mandato_closure_checks(*, start_date: str | None, end_date: str | Non
     try:
         from section_documents import list_cd_verbali_documents
 
-        docs = list_cd_verbali_documents(start_date=start_iso, end_date=end_iso)
+        docs = list_cd_verbali_documents(start_date=start_iso, end_date=end_iso, include_missing=True)
         stats["verbali_docs_in_period"] = len(docs)
 
         for d in docs:

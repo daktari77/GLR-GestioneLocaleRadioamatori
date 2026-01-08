@@ -574,7 +574,12 @@ def recalc_section_documents_data_caricamento(docs: Iterable[Dict[str, object]])
     return updated, missing, errors
 
 
-def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | None = None) -> list[dict]:
+def list_cd_verbali_documents(
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    include_missing: bool = False,
+) -> list[dict]:
     """Return section documents that should be considered CD verbali.
 
     Heuristic rules:
@@ -587,7 +592,7 @@ def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | 
     Result is sorted descending by date.
     """
 
-    docs = list_section_documents(include_missing=False)
+    docs = list_section_documents(include_missing=include_missing)
     verbali: list[dict] = []
     for doc in docs:
         categoria = str(doc.get("categoria") or "").strip().lower()
