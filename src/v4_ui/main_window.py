@@ -980,13 +980,10 @@ class App:
     def _export_libro_verbali(self):
         """Export the 'Libro verbali' Excel file from cd_riunioni."""
         from tkinter import filedialog, messagebox
-        import tkinter as tk
-        from typing import cast
 
         default_name = "Libro_verbali.xlsx"
-        parent = cast(tk.Misc, self)
         file_path = filedialog.asksaveasfilename(
-            parent=parent,
+            parent=self.root,
             title="Esporta libro verbali",
             initialfile=default_name,
             defaultextension=".xlsx",
@@ -1011,13 +1008,10 @@ class App:
     def _export_libro_delibere(self):
         """Export the 'Libro delibere' (Word or Excel) from cd_delibere."""
         from tkinter import filedialog, messagebox
-        import tkinter as tk
-        from typing import cast
 
         default_name = "Libro_delibere.docx"
-        parent = cast(tk.Misc, self)
         file_path = filedialog.asksaveasfilename(
-            parent=parent,
+            parent=self.root,
             title="Esporta libro delibere",
             initialfile=default_name,
             defaultextension=".docx",

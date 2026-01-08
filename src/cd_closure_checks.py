@@ -100,9 +100,11 @@ def run_cd_mandato_closure_checks(*, start_date: str | None, end_date: str | Non
 
         rows = fetch_all(
             """
-            SELECT id, numero_cd, data, titolo, verbale_path
+            SELECT id, numero_cd, data, titolo, verbale_path, tipo_riunione
             FROM cd_riunioni
-            WHERE (? IS NULL OR data >= ?) AND (? IS NULL OR data <= ?)
+            WHERE (? IS NULL OR data >= ?)
+              AND (? IS NULL OR data <= ?)
+              AND LOWER(COALESCE(tipo_riunione, 'passata')) <> 'futura'
             ORDER BY data ASC, id ASC
             """,
             (start_iso, start_iso, end_iso, end_iso),
@@ -166,11 +168,25 @@ def run_cd_mandato_closure_checks(*, start_date: str | None, end_date: str | Non
         with get_connection() as conn:
             date_expr = _get_cd_delibere_date_expr(conn)
 
+        # IMPORTANT: filter by meeting date so we still catch delibere with missing/invalid dates
+        # inside the mandate period.
         sql = f"""
-            SELECT d.id, d.cd_id, d.numero, d.oggetto, d.esito, {date_expr} AS data_votazione, d.allegato_path
+            SELECT
+                d.id,
+                d.cd_id,
+                d.numero,
+                d.oggetto,
+                d.esito,
+                {date_expr} AS data_votazione,
+                r.data AS data_riunione,
+                r.tipo_riunione AS tipo_riunione,
+                d.allegato_path
             FROM cd_delibere d
-            WHERE (? IS NULL OR ({date_expr}) >= ?) AND (? IS NULL OR ({date_expr}) <= ?)
-            ORDER BY ({date_expr}) ASC, d.cd_id ASC, d.numero ASC, d.id ASC
+            JOIN cd_riunioni r ON r.id = d.cd_id
+            WHERE (? IS NULL OR r.data >= ?)
+              AND (? IS NULL OR r.data <= ?)
+              AND LOWER(COALESCE(r.tipo_riunione, 'passata')) <> 'futura'
+            ORDER BY r.data ASC, d.cd_id ASC, d.numero ASC, d.id ASC
         """
 
         rows = fetch_all(sql, (start_iso, start_iso, end_iso, end_iso))
@@ -185,12 +201,16 @@ def run_cd_mandato_closure_checks(*, start_date: str | None, end_date: str | Non
             esito = str(d.get("esito") or "").strip()
             dv = str(d.get("data_votazione") or "").strip()
             allegato = str(d.get("allegato_path") or "").strip()
+            data_riunione = str(d.get("data_riunione") or "").strip()
 
-            ref = f"Delibera #{did} (CD {cd_id}) {numero} {dv} {oggetto}".strip()
+            ref_date = dv or (data_riunione and f"(riunione {data_riunione})") or ""
+            ref = f"Delibera #{did} (CD {cd_id}) {numero} {ref_date} {oggetto}".strip()
 
             # Mandatory fields for “a posto”
-            if not dv or not _date_in_range(dv, start_iso, end_iso):
-                errors.append(CdClosureIssue("delibera_missing_date", ref, "Data votazione mancante/non valida per il periodo."))
+            if not dv:
+                errors.append(CdClosureIssue("delibera_missing_date", ref, "Data votazione mancante."))
+            elif not _date_in_range(dv, start_iso, end_iso):
+                errors.append(CdClosureIssue("delibera_invalid_date", ref, "Data votazione fuori periodo mandato."))
             if not numero:
                 errors.append(CdClosureIssue("delibera_missing_number", ref, "Numero delibera mancante."))
             if not oggetto:
