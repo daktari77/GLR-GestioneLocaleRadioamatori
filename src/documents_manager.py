@@ -10,6 +10,7 @@ import logging
 import secrets
 from pathlib import Path
 from datetime import datetime
+from typing import Iterable
 
 from documents_catalog import ensure_category
 from file_archiver import unique_hex_filename

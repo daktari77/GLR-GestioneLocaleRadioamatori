@@ -53,8 +53,22 @@ def _ensure_item(item_id: int) -> dict:
     return dict(row)
 
 
-def create_item(*, marca: str, modello: str | None = None, descrizione: str | None = None,
-                numero_inventario: str, note: str | None = None) -> int:
+def create_item(
+    *,
+    marca: str,
+    numero_inventario: str,
+    modello: str | None = None,
+    descrizione: str | None = None,
+    note: str | None = None,
+    quantita: str | None = None,
+    ubicazione: str | None = None,
+    matricola: str | None = None,
+    doc_fisc_prov: str | None = None,
+    valore_acq_eur: str | None = None,
+    scheda_tecnica: str | None = None,
+    provenienza: str | None = None,
+    altre_notizie: str | None = None,
+) -> int:
     """Create a new inventory item and return its ID."""
     timestamp = now_iso()
     payload = (
@@ -63,12 +77,23 @@ def create_item(*, marca: str, modello: str | None = None, descrizione: str | No
         _normalize_text(modello),
         _normalize_text(descrizione),
         _normalize_text(note),
+        _normalize_text(quantita),
+        _normalize_text(ubicazione),
+        _normalize_text(matricola),
+        _normalize_text(doc_fisc_prov),
+        _normalize_text(valore_acq_eur),
+        _normalize_text(scheda_tecnica),
+        _normalize_text(provenienza),
+        _normalize_text(altre_notizie),
         timestamp,
         timestamp,
     )
     sql = (
-        "INSERT INTO magazzino_items (numero_inventario, marca, modello, descrizione, note, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO magazzino_items ("
+        "numero_inventario, marca, modello, descrizione, note, "
+        "quantita, ubicazione, matricola, doc_fisc_prov, valore_acq_eur, scheda_tecnica, provenienza, altre_notizie, "
+        "created_at, updated_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     with get_connection() as conn:
         cur = conn.cursor()
@@ -79,9 +104,23 @@ def create_item(*, marca: str, modello: str | None = None, descrizione: str | No
     return int(new_id)
 
 
-def update_item(item_id: int, *, marca: str | None = None, modello: str | None = None,
-                descrizione: str | None = None, numero_inventario: str | None = None,
-                note: str | None = None) -> bool:
+def update_item(
+    item_id: int,
+    *,
+    marca: str | None = None,
+    modello: str | None = None,
+    descrizione: str | None = None,
+    numero_inventario: str | None = None,
+    note: str | None = None,
+    quantita: str | None = None,
+    ubicazione: str | None = None,
+    matricola: str | None = None,
+    doc_fisc_prov: str | None = None,
+    valore_acq_eur: str | None = None,
+    scheda_tecnica: str | None = None,
+    provenienza: str | None = None,
+    altre_notizie: str | None = None,
+) -> bool:
     """Update an inventory item."""
     fields: list[str] = []
     params: list[Any] = []
@@ -100,6 +139,30 @@ def update_item(item_id: int, *, marca: str | None = None, modello: str | None =
     if note is not None:
         fields.append("note = ?")
         params.append(_normalize_text(note))
+    if quantita is not None:
+        fields.append("quantita = ?")
+        params.append(_normalize_text(quantita))
+    if ubicazione is not None:
+        fields.append("ubicazione = ?")
+        params.append(_normalize_text(ubicazione))
+    if matricola is not None:
+        fields.append("matricola = ?")
+        params.append(_normalize_text(matricola))
+    if doc_fisc_prov is not None:
+        fields.append("doc_fisc_prov = ?")
+        params.append(_normalize_text(doc_fisc_prov))
+    if valore_acq_eur is not None:
+        fields.append("valore_acq_eur = ?")
+        params.append(_normalize_text(valore_acq_eur))
+    if scheda_tecnica is not None:
+        fields.append("scheda_tecnica = ?")
+        params.append(_normalize_text(scheda_tecnica))
+    if provenienza is not None:
+        fields.append("provenienza = ?")
+        params.append(_normalize_text(provenienza))
+    if altre_notizie is not None:
+        fields.append("altre_notizie = ?")
+        params.append(_normalize_text(altre_notizie))
     if not fields:
         return False
     fields.append("updated_at = ?")

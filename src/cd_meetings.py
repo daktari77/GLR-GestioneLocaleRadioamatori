@@ -93,6 +93,57 @@ def _maybe_archive_if_external(meeting_id: int, verbale_path: str | None) -> str
         pass
     return _archive_cd_meeting_verbale(meeting_id, verbale_path)
 
+
+def _resolve_section_document_path(row: dict) -> str | None:
+    """Resolve a section_documents row into an absolute path (portable-safe)."""
+    try:
+        from config import SEC_DOCS
+
+        root = Path(SEC_DOCS).resolve()
+    except Exception:
+        root = Path("data/section_docs").resolve()
+
+    rel = str(row.get("relative_path") or "").strip()
+    abs_db = str(row.get("percorso") or "").strip()
+
+    # Prefer relative path under SEC_DOCS to avoid stale absolute dev paths.
+    if rel:
+        try:
+            rel_path = Path(rel)
+            candidate = rel_path if rel_path.is_absolute() else (root / rel_path)
+            return str(candidate.resolve())
+        except Exception:
+            pass
+
+    return abs_db or None
+
+
+def resolve_meeting_verbale_path(meeting: dict) -> str | None:
+    """Return an absolute path to the meeting verbale, preferring section docs linkage."""
+    if not isinstance(meeting, dict):
+        return None
+
+    sid = meeting.get("verbale_section_doc_id")
+    try:
+        section_id = int(sid) if sid is not None else None
+    except Exception:
+        section_id = None
+
+    if section_id:
+        try:
+            from database import get_section_document_by_id
+
+            row = get_section_document_by_id(section_id)
+        except Exception:
+            row = None
+        if isinstance(row, dict):
+            resolved = _resolve_section_document_path(row)
+            if resolved:
+                return resolved
+
+    legacy = str(meeting.get("verbale_path") or "").strip()
+    return legacy or None
+
 def get_all_meetings() -> List[Dict]:
     """
     Get all CD meetings ordered by date (most recent first).
@@ -102,7 +153,7 @@ def get_all_meetings() -> List[Dict]:
     """
     from database import fetch_all
     try:
-        sql = "SELECT id, numero_cd, data, titolo, meta_json, verbale_path, created_at FROM cd_riunioni ORDER BY data DESC"
+        sql = "SELECT id, numero_cd, data, titolo, meta_json, verbale_section_doc_id, verbale_path, created_at FROM cd_riunioni ORDER BY data DESC"
         rows = fetch_all(sql)
         return [dict(row) for row in rows]
     except Exception as e:
@@ -122,7 +173,7 @@ def get_meeting_by_id(meeting_id: int) -> Optional[Dict]:
     from database import fetch_one
     try:
         sql = """
-            SELECT id, numero_cd, data, titolo, note, tipo_riunione, odg_json, meta_json, presenze_json, verbale_path, created_at
+            SELECT id, numero_cd, data, titolo, note, tipo_riunione, odg_json, meta_json, presenze_json, verbale_section_doc_id, verbale_path, created_at
             FROM cd_riunioni
             WHERE id=?
         """
@@ -147,6 +198,7 @@ def add_meeting(
     odg: str | None = None,
     tipo_riunione: str | None = None,
     verbale_path: str | None = None,
+    verbale_section_doc_id: int | None = None,
     meta_json: str | dict | None = None,
     presenze_json: str | dict | None = None,
 ) -> int:
@@ -173,14 +225,29 @@ def add_meeting(
             meta_json = json.dumps(meta_json, ensure_ascii=False)
         if isinstance(presenze_json, dict):
             presenze_json = json.dumps(presenze_json, ensure_ascii=False)
-        # Insert first to obtain meeting_id; we will archive the file afterward.
+        # Insert first to obtain meeting_id; we may import/link the file afterward.
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
-                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, tipo_riunione, meta_json, odg_json, presenze_json, verbale_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, tipo_riunione, meta_json, odg_json, presenze_json, verbale_section_doc_id, verbale_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
-            cursor.execute(sql, (numero_cd, data, titolo, odg, tipo_riunione, meta_json, odg_json, presenze_json, None, now_iso()))
+            cursor.execute(
+                sql,
+                (
+                    numero_cd,
+                    data,
+                    titolo,
+                    odg,
+                    tipo_riunione,
+                    meta_json,
+                    odg_json,
+                    presenze_json,
+                    int(verbale_section_doc_id) if verbale_section_doc_id else None,
+                    None,
+                    now_iso(),
+                ),
+            )
             meeting_id = cursor.lastrowid
             conn.commit()
         
@@ -192,13 +259,23 @@ def add_meeting(
             logger.error("Failed to get meeting ID after insert")
             return -1
 
-        if original_verbale:
+        # Canonical storage: section documents.
+        # If caller provided a legacy path, import it into section docs and link it.
+        if original_verbale and not verbale_section_doc_id:
             try:
-                archived = _archive_cd_meeting_verbale(int(meeting_id), original_verbale)
-                with get_connection() as conn:
-                    conn.execute("UPDATE cd_riunioni SET verbale_path = ? WHERE id = ?", (archived, int(meeting_id)))
+                from section_documents import add_section_document
+                from database import get_section_document_by_relative_path
+
+                dest_abs = add_section_document(original_verbale, "Verbali CD")
+                row = get_section_document_by_relative_path(dest_abs)
+                if row and row.get("id") is not None:
+                    with get_connection() as conn:
+                        conn.execute(
+                            "UPDATE cd_riunioni SET verbale_section_doc_id = ?, verbale_path = NULL WHERE id = ?",
+                            (int(row["id"]), int(meeting_id)),
+                        )
             except Exception as exc:
-                logger.warning("Impossibile archiviare verbale CD: %s", exc)
+                logger.warning("Impossibile importare/linkare verbale CD in documenti sezione: %s", exc)
 
         logger.info(f"Added meeting on {data} (ID: {meeting_id})")
         return meeting_id
@@ -215,6 +292,7 @@ def update_meeting(
     odg: str | None = None,
     tipo_riunione: str | None = None,
     verbale_path: str | None = None,
+    verbale_section_doc_id: int | None = None,
     meta_json: str | dict | None = None,
     presenze_json: str | dict | None = None,
 ) -> bool:
@@ -267,10 +345,31 @@ def update_meeting(
                 values.append(json.dumps(presenze_json, ensure_ascii=False))
             else:
                 values.append(presenze_json)
-        if verbale_path is not None:
-            verbale_path = _maybe_archive_if_external(int(meeting_id), verbale_path)
-            updates.append("verbale_path=?")
-            values.append(verbale_path)
+        if verbale_section_doc_id is not None:
+            updates.append("verbale_section_doc_id=?")
+            values.append(int(verbale_section_doc_id) if verbale_section_doc_id else None)
+            # Clear legacy path when linking
+            updates.append("verbale_path=NULL")
+        elif verbale_path is not None:
+            # Legacy: if a path is provided, import into section docs and link.
+            try:
+                from section_documents import add_section_document
+                from database import get_section_document_by_relative_path
+
+                dest_abs = add_section_document(verbale_path, "Verbali CD")
+                row = get_section_document_by_relative_path(dest_abs)
+                if row and row.get("id") is not None:
+                    updates.append("verbale_section_doc_id=?")
+                    values.append(int(row["id"]))
+                    updates.append("verbale_path=NULL")
+                else:
+                    verbale_path = _maybe_archive_if_external(int(meeting_id), verbale_path)
+                    updates.append("verbale_path=?")
+                    values.append(verbale_path)
+            except Exception:
+                verbale_path = _maybe_archive_if_external(int(meeting_id), verbale_path)
+                updates.append("verbale_path=?")
+                values.append(verbale_path)
         
         if not updates:
             logger.warning("No fields to update for meeting %s", meeting_id)
@@ -304,17 +403,37 @@ def delete_meeting(meeting_id: int, delete_verbale: bool = False) -> bool:
     from database import exec_query, fetch_one
     
     try:
-        # Get verbale path before deletion
+        # Get verbale path/link before deletion
         if delete_verbale:
             meeting = get_meeting_by_id(meeting_id)
-            if meeting and meeting.get('verbale_path'):
-                verbale_path = meeting['verbale_path']
+            if meeting:
                 try:
-                    if os.path.exists(verbale_path):
-                        os.remove(verbale_path)
-                        logger.info(f"Deleted verbale file: {verbale_path}")
-                except Exception as e:
-                    logger.warning(f"Could not delete verbale file: {e}")
+                    sid = meeting.get("verbale_section_doc_id")
+                    section_id = int(sid) if sid is not None else None
+                except Exception:
+                    section_id = None
+
+                if section_id:
+                    try:
+                        from database import get_section_document_by_id
+                        from section_documents import delete_section_document
+
+                        row = get_section_document_by_id(section_id)
+                        if row:
+                            abs_path = _resolve_section_document_path(row)
+                            if abs_path:
+                                delete_section_document(abs_path)
+                    except Exception as e:
+                        logger.warning(f"Could not delete linked section verbale: {e}")
+                else:
+                    verbale_path = str(meeting.get('verbale_path') or "").strip()
+                    if verbale_path:
+                        try:
+                            if os.path.exists(verbale_path):
+                                os.remove(verbale_path)
+                                logger.info(f"Deleted verbale file: {verbale_path}")
+                        except Exception as e:
+                            logger.warning(f"Could not delete verbale file: {e}")
         
         # Delete from database
         exec_query("DELETE FROM cd_riunioni WHERE id=?", (meeting_id,))
@@ -356,10 +475,10 @@ def get_verbale_info(meeting_id: int) -> Optional[Dict]:
         Dictionary with verbale info or None if no verbale
     """
     meeting = get_meeting_by_id(meeting_id)
-    if not meeting or not meeting.get('verbale_path'):
+    verbale_path = resolve_meeting_verbale_path(meeting or {})
+    if not meeting or not verbale_path:
         return None
-    
-    verbale_path = meeting['verbale_path']
+
     try:
         if os.path.exists(verbale_path):
             size = os.path.getsize(verbale_path)

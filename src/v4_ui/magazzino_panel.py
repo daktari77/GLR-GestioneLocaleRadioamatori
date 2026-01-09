@@ -108,6 +108,13 @@ class MagazzinoPanel(ttk.Frame):
         self.numero_var = tk.StringVar()
         self.marca_var = tk.StringVar()
         self.modello_var = tk.StringVar()
+        self.quantita_var = tk.StringVar()
+        self.ubicazione_var = tk.StringVar()
+        self.matricola_item_var = tk.StringVar()
+        self.doc_fisc_prov_var = tk.StringVar()
+        self.valore_acq_var = tk.StringVar()
+        self.scheda_tecnica_var = tk.StringVar()
+        self.provenienza_var = tk.StringVar()
 
         ttk.Label(form, text="Numero inventario *").grid(row=0, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(form, textvariable=self.numero_var, width=24).grid(row=0, column=1, sticky="ew", padx=4, pady=2)
@@ -118,16 +125,41 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Label(form, text="Modello").grid(row=1, column=0, sticky="w", padx=4, pady=2)
         ttk.Entry(form, textvariable=self.modello_var, width=24).grid(row=1, column=1, sticky="ew", padx=4, pady=2)
 
-        ttk.Label(form, text="Descrizione").grid(row=1, column=2, sticky="w", padx=4, pady=2)
-        self.descrizione_text = tk.Text(form, height=3, width=50, wrap=tk.WORD)
-        self.descrizione_text.grid(row=1, column=3, sticky="ew", padx=4, pady=2)
+        ttk.Label(form, text="Qtà").grid(row=1, column=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.quantita_var, width=24).grid(row=1, column=3, sticky="ew", padx=4, pady=2)
 
-        ttk.Label(form, text="Note interne").grid(row=2, column=0, sticky="nw", padx=4, pady=2)
+        ttk.Label(form, text="Ubicazione").grid(row=2, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.ubicazione_var, width=24).grid(row=2, column=1, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Matricola").grid(row=2, column=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.matricola_item_var, width=24).grid(row=2, column=3, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Provenienza").grid(row=3, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.provenienza_var, width=24).grid(row=3, column=1, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Valore acq €").grid(row=3, column=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.valore_acq_var, width=24).grid(row=3, column=3, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Doc fisc/prov.").grid(row=4, column=0, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.doc_fisc_prov_var, width=24).grid(row=4, column=1, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Scheda tecnica").grid(row=4, column=2, sticky="w", padx=4, pady=2)
+        ttk.Entry(form, textvariable=self.scheda_tecnica_var, width=24).grid(row=4, column=3, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Descrizione").grid(row=5, column=0, sticky="nw", padx=4, pady=2)
+        self.descrizione_text = tk.Text(form, height=3, width=80, wrap=tk.WORD)
+        self.descrizione_text.grid(row=5, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, text="Note interne").grid(row=6, column=0, sticky="nw", padx=4, pady=2)
         self.note_text = tk.Text(form, height=3, width=80, wrap=tk.WORD)
-        self.note_text.grid(row=2, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
+        self.note_text.grid(row=6, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
 
-        ttk.Label(form, textvariable=self.status_var, foreground="#444").grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
-        ttk.Label(form, textvariable=self.loan_info_var, foreground="#b35a00").grid(row=3, column=2, columnspan=2, sticky="e", padx=4, pady=(4, 2))
+        ttk.Label(form, text="Altre notizie").grid(row=7, column=0, sticky="nw", padx=4, pady=2)
+        self.altre_notizie_text = tk.Text(form, height=3, width=80, wrap=tk.WORD)
+        self.altre_notizie_text.grid(row=7, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
+
+        ttk.Label(form, textvariable=self.status_var, foreground="#444").grid(row=8, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+        ttk.Label(form, textvariable=self.loan_info_var, foreground="#b35a00").grid(row=8, column=2, columnspan=2, sticky="e", padx=4, pady=(4, 2))
 
         form.columnconfigure(1, weight=1)
         form.columnconfigure(3, weight=2)
@@ -258,10 +290,19 @@ class MagazzinoPanel(ttk.Frame):
         self.numero_var.set(data.get("numero_inventario") or "")
         self.marca_var.set(data.get("marca") or "")
         self.modello_var.set(data.get("modello") or "")
+        self.quantita_var.set(data.get("quantita") or "")
+        self.ubicazione_var.set(data.get("ubicazione") or "")
+        self.matricola_item_var.set(data.get("matricola") or "")
+        self.doc_fisc_prov_var.set(data.get("doc_fisc_prov") or "")
+        self.valore_acq_var.set(data.get("valore_acq_eur") or "")
+        self.scheda_tecnica_var.set(data.get("scheda_tecnica") or "")
+        self.provenienza_var.set(data.get("provenienza") or "")
         self.descrizione_text.delete("1.0", tk.END)
         self.descrizione_text.insert("1.0", data.get("descrizione") or "")
         self.note_text.delete("1.0", tk.END)
         self.note_text.insert("1.0", data.get("note") or "")
+        self.altre_notizie_text.delete("1.0", tk.END)
+        self.altre_notizie_text.insert("1.0", data.get("altre_notizie") or "")
         active = get_active_loan(item_id)
         if active:
             socio = self._format_loan_member(active)
@@ -274,10 +315,22 @@ class MagazzinoPanel(ttk.Frame):
 
     def _clear_form(self):
         self.current_id = None
-        for var in (self.numero_var, self.marca_var, self.modello_var):
+        for var in (
+            self.numero_var,
+            self.marca_var,
+            self.modello_var,
+            self.quantita_var,
+            self.ubicazione_var,
+            self.matricola_item_var,
+            self.doc_fisc_prov_var,
+            self.valore_acq_var,
+            self.scheda_tecnica_var,
+            self.provenienza_var,
+        ):
             var.set("")
         self.descrizione_text.delete("1.0", tk.END)
         self.note_text.delete("1.0", tk.END)
+        self.altre_notizie_text.delete("1.0", tk.END)
         self.status_var.set("Nessun oggetto selezionato")
         self.loan_info_var.set("—")
 
@@ -336,8 +389,16 @@ class MagazzinoPanel(ttk.Frame):
             "numero_inventario": self.numero_var.get().strip(),
             "marca": self.marca_var.get().strip(),
             "modello": self.modello_var.get().strip(),
+            "quantita": self.quantita_var.get().strip(),
+            "ubicazione": self.ubicazione_var.get().strip(),
+            "matricola": self.matricola_item_var.get().strip(),
+            "doc_fisc_prov": self.doc_fisc_prov_var.get().strip(),
+            "valore_acq_eur": self.valore_acq_var.get().strip(),
+            "scheda_tecnica": self.scheda_tecnica_var.get().strip(),
+            "provenienza": self.provenienza_var.get().strip(),
             "descrizione": self.descrizione_text.get("1.0", tk.END).strip(),
             "note": self.note_text.get("1.0", tk.END).strip(),
+            "altre_notizie": self.altre_notizie_text.get("1.0", tk.END).strip(),
         }
 
     def _new_item(self):
@@ -353,9 +414,17 @@ class MagazzinoPanel(ttk.Frame):
                     self.current_id,
                     marca=data["marca"],
                     modello=data["modello"],
+                    quantita=data["quantita"],
+                    ubicazione=data["ubicazione"],
+                    matricola=data["matricola"],
+                    doc_fisc_prov=data["doc_fisc_prov"],
+                    valore_acq_eur=data["valore_acq_eur"],
+                    scheda_tecnica=data["scheda_tecnica"],
+                    provenienza=data["provenienza"],
                     descrizione=data["descrizione"],
                     numero_inventario=data["numero_inventario"],
                     note=data["note"],
+                    altre_notizie=data["altre_notizie"],
                 )
                 messagebox.showinfo("Magazzino", "Oggetto aggiornato")
             else:

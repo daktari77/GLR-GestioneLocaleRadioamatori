@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-CD Delibere (Resolutions) management for GLR Gestione Locale Radioamatori
-Handles registration of CD meeting resolutions with full tracking
+"""CD Delibere (Resolutions) management for GLR Gestione Locale Radioamatori.
+
+Handles registration of CD meeting resolutions with full tracking.
 """
 
 import sqlite3
@@ -122,7 +122,13 @@ def get_delibera_by_id(delibera_id: int) -> Optional[Dict]:
             FROM cd_delibere WHERE id = ?
         """
         row = fetch_one(sql, (delibera_id,))
-        return dict(row) if row else None
+        if not row:
+            try:
+                logger.warning("Delibera not found by id: %r", delibera_id)
+            except Exception:
+                pass
+            return None
+        return dict(row)
     except Exception as e:
         logger.error("Failed to get delibera %s: %s", delibera_id, e)
         return None

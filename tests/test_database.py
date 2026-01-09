@@ -155,7 +155,93 @@ class TestSectionDocumentsRegistry(unittest.TestCase):
         self.assertTrue(soft_delete_section_document_record(int(found2["id"])))
         rows_after = list_section_document_records(include_deleted=False)
         self.assertEqual(len(rows_after), 0)
-    
+
+
+class TestCdRiunioniVerbaleMigration(unittest.TestCase):
+    """Test migration of cd_riunioni verbale linkage to section documents."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        self.temp_db.close()
+        self.db_path = self.temp_db.name
+        set_db_path(self.db_path)
+        init_db()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.db_path)
+        except Exception:
+            pass
+
+    def test_migrate_cd_riunioni_verbale_links_existing_section_doc(self):
+        raw_path = r"C:\\tmp\\verbale_cd_test.pdf"
+
+        section_id = add_section_document_record(
+            hash_id="migrate_verbale_1",
+            categoria="Verbali CD",
+            descrizione="Verbale test",
+            stored_name="verbale_cd_test.pdf",
+            # Store the raw path in both fields so lookup succeeds.
+            percorso=raw_path,
+            relative_path=raw_path,
+            uploaded_at="2026-01-08T00:00:00",
+        )
+        self.assertIsNotNone(section_id)
+
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO cd_riunioni
+                    (numero_cd, data, titolo, note, tipo_riunione, meta_json, odg_json, presenze_json,
+                     verbale_section_doc_id, verbale_path, created_at)
+                VALUES
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "1",
+                    "2026-01-01",
+                    "Riunione test",
+                    None,
+                    "ORDINARIA",
+                    None,
+                    None,
+                    None,
+                    None,
+                    raw_path,
+                    "2026-01-08T00:00:00",
+                ),
+            )
+            meeting_id = int(cur.lastrowid)
+
+        # Re-run init_db (idempotent) to trigger migration.
+        init_db()
+
+        row = fetch_one(
+            "SELECT verbale_section_doc_id, verbale_path FROM cd_riunioni WHERE id = ?",
+            (meeting_id,),
+        )
+        self.assertIsNotNone(row)
+        self.assertEqual(int(row["verbale_section_doc_id"]), int(section_id))
+        self.assertTrue(row["verbale_path"] is None or str(row["verbale_path"]).strip() == "")
+
+
+class TestMembersBasicCrud(unittest.TestCase):
+    """Basic CRUD for soci table."""
+
+    def setUp(self):
+        self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        self.temp_db.close()
+        self.db_path = self.temp_db.name
+        set_db_path(self.db_path)
+        init_db()
+
+    def tearDown(self):
+        try:
+            os.unlink(self.db_path)
+        except Exception:
+            pass
+
     def test_insert_and_fetch_member(self):
         """Test inserting and fetching a member."""
         # Insert member

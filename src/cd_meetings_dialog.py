@@ -15,6 +15,18 @@ logger = logging.getLogger("librosoci")
 class MeetingDialog:
     """Dialog for adding/editing CD meetings."""
 
+    def _set_verbale_path_in_entry(self, path: str | None) -> None:
+        if not hasattr(self, "entry_verbale_path"):
+            return
+        try:
+            self.entry_verbale_path.configure(state="normal")
+            self.entry_verbale_path.delete(0, tk.END)
+            if path:
+                self.entry_verbale_path.insert(0, str(path))
+            self.entry_verbale_path.configure(state="readonly")
+        except Exception:
+            pass
+
     def _is_meta_tipo_assemblea(self) -> bool:
         try:
             tipo = (self.meta_tipo_var.get() or "").strip().lower()
@@ -48,6 +60,7 @@ class MeetingDialog:
         self.parent = parent
         self.meeting_id = meeting_id
         self.result = None
+        self.verbale_section_doc_id: int | None = None
         
         # Create dialog
         self.dialog = tk.Toplevel(parent)
@@ -230,6 +243,7 @@ class MeetingDialog:
         self.entry_verbale_path = ttk.Entry(self.verbale_frame, width=50, state="readonly")
         self.entry_verbale_path.grid(row=verbale_row, column=1, sticky="ew", padx=5, pady=5)
         ttk.Button(self.verbale_frame, text="Seleziona...", command=self._select_verbale).grid(row=verbale_row, column=2, padx=5, pady=5)
+        ttk.Button(self.verbale_frame, text="Da documenti...", command=self._select_verbale_from_docs).grid(row=verbale_row, column=3, padx=5, pady=5)
         self.verbale_frame.columnconfigure(1, weight=1)
         
         # Delibere section (solo per riunioni passate)
@@ -506,11 +520,166 @@ class MeetingDialog:
                 ("Tutti i file", "*.*")
             ]
         )
-        if file_path:
-            self.entry_verbale_path.configure(state="normal")
-            self.entry_verbale_path.delete(0, tk.END)
-            self.entry_verbale_path.insert(0, file_path)
-            self.entry_verbale_path.configure(state="readonly")
+        if not file_path:
+            return
+
+        # Canonical: import into section documents and link by ID
+        try:
+            from section_documents import add_section_document
+            from database import get_section_document_by_relative_path
+
+            dest_abs = add_section_document(file_path, "Verbali CD")
+            row = get_section_document_by_relative_path(dest_abs)
+            if row and row.get("id") is not None:
+                self.verbale_section_doc_id = int(row["id"])
+                self._set_verbale_path_in_entry(dest_abs)
+                return
+        except Exception:
+            pass
+
+        # Fallback: keep raw path
+        self.verbale_section_doc_id = None
+        self._set_verbale_path_in_entry(file_path)
+
+    def _select_verbale_from_docs(self):
+        """Select verbale from already-imported section documents (Verbali CD)."""
+
+        try:
+            from section_documents import list_cd_verbali_documents
+        except Exception as exc:
+            messagebox.showerror(
+                "Verbale",
+                f"Impossibile caricare l'elenco dei documenti importati.\n\nDettagli: {exc}",
+                parent=self.dialog,
+            )
+            return
+
+        try:
+            all_docs = list_cd_verbali_documents(include_missing=False)
+        except Exception as exc:
+            messagebox.showerror(
+                "Verbale",
+                f"Errore nel caricamento dei documenti importati.\n\nDettagli: {exc}",
+                parent=self.dialog,
+            )
+            return
+
+        docs: list[dict] = []
+        for d in all_docs or []:
+            abs_path = str(d.get("absolute_path") or "").strip()
+            if not abs_path:
+                continue
+            try:
+                if not os.path.exists(abs_path):
+                    continue
+            except Exception:
+                continue
+            docs.append(d)
+
+        if not docs:
+            messagebox.showinfo(
+                "Verbale",
+                "Nessun documento importato disponibile tra i Verbali CD.",
+                parent=self.dialog,
+            )
+            return
+
+        dlg = tk.Toplevel(self.dialog)
+        dlg.title("Seleziona verbale (documenti importati)")
+        dlg.transient(self.dialog)
+        dlg.grab_set()
+        dlg.geometry("840x420")
+
+        container = ttk.Frame(dlg, padding=8)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Seleziona un documento (doppio click per scegliere):").pack(anchor="w")
+
+        tree_frame = ttk.Frame(container)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 8))
+
+        columns = ("data", "numero", "nome", "categoria")
+        tv = ttk.Treeview(tree_frame, columns=columns, show="headings", height=12)
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=vsb.set)
+
+        tv.heading("data", text="Data")
+        tv.heading("numero", text="N.")
+        tv.heading("nome", text="Nome file")
+        tv.heading("categoria", text="Categoria")
+
+        tv.column("data", width=100, anchor="w")
+        tv.column("numero", width=90, anchor="w")
+        tv.column("nome", width=430, anchor="w")
+        tv.column("categoria", width=160, anchor="w")
+
+        tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        picked_by_iid: dict[str, tuple[int, str]] = {}
+        for idx, d in enumerate(docs):
+            iid = str(idx)
+            uploaded_at = str(d.get("uploaded_at") or "").strip()
+            date_display = uploaded_at[:10] if len(uploaded_at) >= 10 else uploaded_at
+            verbale_numero = str(d.get("verbale_numero") or "").strip()
+            nome = str(d.get("nome_file") or "").strip()
+            categoria = str(d.get("categoria") or "").strip()
+            abs_path = str(d.get("absolute_path") or "").strip()
+            tv.insert("", tk.END, iid=iid, values=(date_display, verbale_numero, nome, categoria))
+            raw_id = d.get("id")
+            try:
+                doc_id = int(str(raw_id)) if raw_id is not None else 0
+            except Exception:
+                doc_id = 0
+            picked_by_iid[iid] = (doc_id, abs_path)
+
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X)
+
+        result: dict[str, str | None] = {"path": None}
+        result_id: dict[str, int | None] = {"id": None}
+
+        def _choose_selected() -> None:
+            sel = tv.selection()
+            if not sel:
+                messagebox.showwarning("Verbale", "Seleziona un documento.", parent=dlg)
+                return
+            picked = picked_by_iid.get(str(sel[0]))
+            if not picked:
+                messagebox.showwarning("Verbale", "Documento non valido.", parent=dlg)
+                return
+            picked_id, picked_path = picked
+            if not picked_id or not picked_path:
+                messagebox.showwarning("Verbale", "Documento non valido.", parent=dlg)
+                return
+            try:
+                if not os.path.exists(picked_path):
+                    messagebox.showwarning("Verbale", "File non trovato sul disco.", parent=dlg)
+                    return
+            except Exception:
+                messagebox.showwarning("Verbale", "Impossibile verificare il file selezionato.", parent=dlg)
+                return
+            result["path"] = picked_path
+            result_id["id"] = int(picked_id)
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+
+        def _on_double_click(_evt) -> None:
+            _choose_selected()
+
+        tv.bind("<Double-1>", _on_double_click)
+
+        ttk.Button(actions, text="Annulla", command=dlg.destroy).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="Seleziona", command=_choose_selected).pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.dialog.wait_window(dlg)
+        picked_path = result.get("path")
+        picked_id = result_id.get("id")
+        if picked_path and picked_id:
+            self.verbale_section_doc_id = int(picked_id)
+            self._set_verbale_path_in_entry(picked_path)
     
     def _extract_delibere_from_odg(self, odg_text: str) -> list[str]:
         """Extract delibera titles from ODG points marked as requiring delibera."""
@@ -621,6 +790,19 @@ class MeetingDialog:
                 self.text_odg.delete("1.0", tk.END)
                 self.text_odg.insert("1.0", meeting.get('odg', ''))
 
+            # Load verbale link/path
+            try:
+                sid = meeting.get("verbale_section_doc_id")
+                self.verbale_section_doc_id = int(sid) if sid is not None else None
+            except Exception:
+                self.verbale_section_doc_id = None
+
+            from cd_meetings import resolve_meeting_verbale_path
+
+            verbale_path = resolve_meeting_verbale_path(meeting)
+            if verbale_path:
+                self._set_verbale_path_in_entry(verbale_path)
+
             # Load meta_json
             meta_json = meeting.get("meta_json")
             if meta_json:
@@ -702,7 +884,10 @@ class MeetingDialog:
         oggetto = self.entry_oggetto.get().strip() if hasattr(self, 'entry_oggetto') else ""
         odg_text = self.text_odg.get("1.0", tk.END).strip()
         corpo_email = ""
-        verbale_path = self.entry_verbale_path.get().strip() if hasattr(self, 'entry_verbale_path') else None
+        # Canonical: link via section document ID when available
+        verbale_section_doc_id = self.verbale_section_doc_id
+        verbale_path_raw = self.entry_verbale_path.get().strip() if hasattr(self, 'entry_verbale_path') else ""
+        verbale_path = verbale_path_raw if (verbale_path_raw and not verbale_section_doc_id) else None
         delibere_text = self.text_delibere.get("1.0", tk.END).strip() if hasattr(self, 'text_delibere') else None
 
         meta_payload = {
@@ -768,6 +953,7 @@ class MeetingDialog:
                     titolo=oggetto if oggetto else None,
                     odg=odg_text if odg_text else None,
                     verbale_path=verbale_path,
+                    verbale_section_doc_id=verbale_section_doc_id,
                     tipo_riunione=self.tipo_riunione_var.get(),
                     meta_json=meta_json,
                     presenze_json=presenze_json,
@@ -788,6 +974,7 @@ class MeetingDialog:
                     titolo=oggetto if oggetto else None,
                     odg=odg_text if odg_text else None,
                     verbale_path=verbale_path,
+                    verbale_section_doc_id=verbale_section_doc_id,
                     tipo_riunione=self.tipo_riunione_var.get(),
                     meta_json=meta_json,
                     presenze_json=presenze_json,
@@ -978,7 +1165,7 @@ class MeetingsListDialog:
         self.tv.column("data", width=100, anchor="center")
         self.tv.column("tipo", width=220, anchor="w")
         self.tv.column("titolo", width=260, anchor="w")
-        self.tv.column("verbale", width=80, anchor="center")
+        self.tv.column("verbale", width=220, anchor="w")
         
         self.tv.heading("id", text="ID")
         self.tv.heading("numero_cd", text="N. CD")
@@ -1008,7 +1195,15 @@ class MeetingsListDialog:
         # Load meetings
         meetings = get_all_meetings()
         for meeting in meetings:
-            verbale = "✓" if meeting.get('verbale_path') else "—"
+            verbale_path = str(meeting.get('verbale_path') or "").strip()
+            if not verbale_path:
+                verbale = "—"
+            else:
+                base = os.path.basename(verbale_path) or verbale_path
+                try:
+                    verbale = base if os.path.exists(verbale_path) else f"{base} (manca)"
+                except Exception:
+                    verbale = base
 
             tipo = ""
             meta_json = meeting.get("meta_json")

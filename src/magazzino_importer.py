@@ -6,24 +6,70 @@ from __future__ import annotations
 import csv
 import logging
 from pathlib import Path
+import re
 from typing import Iterable, List, Sequence, Tuple
 
 logger = logging.getLogger("librosoci")
 
 INVENTORY_FIELDS = [
     {"key": "numero_inventario", "label": "Numero inventario", "required": True},
-    {"key": "marca", "label": "Marca", "required": True},
+    # "marca" is stored as NOT NULL in DB, but sources may not have it.
+    # We allow importing without mapping it and let the UI provide a default.
+    {"key": "marca", "label": "Marca", "required": False},
     {"key": "modello", "label": "Modello", "required": False},
     {"key": "descrizione", "label": "Descrizione", "required": False},
     {"key": "note", "label": "Note", "required": False},
+    {"key": "quantita", "label": "Qtà", "required": False},
+    {"key": "ubicazione", "label": "Ubicazione", "required": False},
+    {"key": "matricola", "label": "Matricola", "required": False},
+    {"key": "doc_fisc_prov", "label": "Doc fisc/prov.", "required": False},
+    {"key": "valore_acq_eur", "label": "Valore acq €", "required": False},
+    {"key": "scheda_tecnica", "label": "Scheda tecnica", "required": False},
+    {"key": "provenienza", "label": "Provenienza", "required": False},
+    {"key": "altre_notizie", "label": "Altre notizie", "required": False},
 ]
 
 AUTO_GUESS = {
-    "numero_inventario": {"numero", "inventario", "serial", "asset", "inventory"},
-    "marca": {"marca", "brand", "manufacturer", "vendor"},
+    "numero_inventario": {
+        "numero",
+        "inventario",
+        "numero inventario",
+        "n. inv",
+        "n inv",
+        "serial",
+        "asset",
+        "inventory",
+    },
+    "marca": {"marca", "brand", "manufacturer", "vendor", "produttore"},
     "modello": {"modello", "model", "product", "sku"},
-    "descrizione": {"descrizione", "descrizione breve", "descr", "description", "details"},
-    "note": {"note", "notes", "commenti", "comments", "osservazioni"},
+    "descrizione": {
+        "descrizione",
+        "descrizione breve",
+        "descrizione articoli",
+        "descr",
+        "description",
+        "details",
+        "articolo",
+        "articoli",
+    },
+    "note": {
+        "note",
+        "notes",
+        "commenti",
+        "comments",
+        "osservazioni",
+        "altre notizie",
+        "altre note",
+        "annotazioni",
+    },
+    "quantita": {"qtà", "qta", "quantita", "quantità", "qty", "quant."},
+    "ubicazione": {"ubicazione", "posizione", "location", "scaffale"},
+    "matricola": {"matricola", "serial", "s/n", "sn"},
+    "doc_fisc_prov": {"doc fisc/prov", "doc fisc/prov.", "doc fisc", "documento"},
+    "valore_acq_eur": {"valore acq €", "valore acq", "valore", "costo", "importo"},
+    "scheda_tecnica": {"scheda tecnica", "datasheet", "scheda"},
+    "provenienza": {"provenienza", "origine", "fornitore"},
+    "altre_notizie": {"altre notizie", "altre note", "note extra", "extra"},
 }
 
 SUPPORTED_FORMATS = {
@@ -53,11 +99,79 @@ def sniff_delimiter(path: str) -> str:
             handle.seek(0)
             if not sample:
                 return ";"
-            dialect = csv.Sniffer().sniff(sample, delimiters=";,	|")
+            dialect = csv.Sniffer().sniff(sample, delimiters=";,.\t|")
             return dialect.delimiter or ";"
     except Exception as exc:
         logger.debug("Delimiter sniff failed for %s: %s", path, exc)
         return ";"
+
+
+_HEADER_HINTS = {
+    "n inv",
+    "n. inv",
+    "numero inventario",
+    "inventario",
+    "qtà",
+    "qta",
+    "descrizione",
+    "descrizione articoli",
+    "ubicazione",
+    "matricola",
+    "altre notizie",
+    "note",
+}
+
+
+def _canon_header_cell(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return ""
+    # normalize punctuation/spacing so that "N. INV" and "N INV" match.
+    text = re.sub(r"[\s\u00a0]+", " ", text)
+    text = re.sub(r"[^\w\sàèéìòù°.]", "", text)
+    text = text.replace(".", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _score_header_row(cells: Sequence[str]) -> int:
+    score = 0
+    for cell in cells:
+        canon = _canon_header_cell(cell)
+        if not canon:
+            continue
+        if canon in _HEADER_HINTS:
+            score += 3
+            continue
+        # partial matches for typical column names
+        for hint in _HEADER_HINTS:
+            if hint and hint in canon:
+                score += 1
+                break
+    return score
+
+
+def _detect_header_index(rows: Sequence[Sequence[str]]) -> int | None:
+    best_idx: int | None = None
+    best_score = 0
+    # Look at the first N lines; inventory exports are usually small.
+    max_scan = min(len(rows), 50)
+    for idx in range(max_scan):
+        cells = rows[idx]
+        if not cells:
+            continue
+        # Ignore rows that are mostly empty.
+        non_empty = sum(1 for c in cells if (c or "").strip())
+        if non_empty < 2:
+            continue
+        score = _score_header_row(cells)
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+    # Require at least a couple of hints to avoid picking a title/preamble row.
+    if best_score >= 4:
+        return best_idx
+    return None
 
 
 def _normalize_value(value) -> str | None:
@@ -97,16 +211,32 @@ def _read_csv_file(path: str, delimiter: str | None = None) -> Tuple[List[str], 
     delim = delimiter or sniff_delimiter(path)
     try:
         with open(path, "r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle, delimiter=delim)
-            headers = reader.fieldnames or []
-            if not headers:
-                raise InventoryImportError("Il file CSV non contiene intestazioni valide.")
-            headers = _ensure_headers(headers)
-            rows: list[dict] = []
-            for raw_row in reader:
-                row = {header: _normalize_value(raw_row.get(header)) for header in headers}
-                if any(row.values()):
-                    rows.append(row)
+            reader = csv.reader(handle, delimiter=delim)
+            raw_rows = list(reader)
+
+        if not raw_rows:
+            raise InventoryImportError("Il file CSV è vuoto.")
+
+        header_idx = _detect_header_index(raw_rows)
+        if header_idx is None:
+            # Fall back to the first row as header (previous behavior)
+            header_idx = 0
+
+        raw_headers = raw_rows[header_idx]
+        if not raw_headers or not any((h or "").strip() for h in raw_headers):
+            raise InventoryImportError("Il file CSV non contiene intestazioni valide.")
+
+        headers = _ensure_headers(raw_headers)
+        rows: list[dict] = []
+        for raw_row in raw_rows[header_idx + 1 :]:
+            if not raw_row or not any((c or "").strip() for c in raw_row):
+                continue
+            row: dict[str, str | None] = {}
+            for idx, header in enumerate(headers):
+                value = raw_row[idx] if idx < len(raw_row) else None
+                row[header] = _normalize_value(value)
+            if any(row.values()):
+                rows.append(row)
         return headers, rows
     except InventoryImportError:
         raise
@@ -169,13 +299,22 @@ def read_source_file(path: str, *, delimiter: str | None = None) -> Tuple[List[s
 
 def auto_detect_mapping(headers: Iterable[str]) -> dict[str, str | None]:
     mapping: dict[str, str | None] = {field["key"]: None for field in INVENTORY_FIELDS}
-    header_lookup = {header.lower().strip(): header for header in headers}
+    # Use canonicalized lookup so we can match e.g. "N. INV" and "N INV".
+    header_lookup = {_canon_header_cell(header): header for header in headers}
     for field in INVENTORY_FIELDS:
         targets = AUTO_GUESS.get(field["key"], set())
         for candidate in targets:
-            if candidate in header_lookup:
-                mapping[field["key"]] = header_lookup[candidate]
+            canon = _canon_header_cell(candidate)
+            if canon in header_lookup:
+                mapping[field["key"]] = header_lookup[canon]
                 break
+        # Helpful fallback for common exports: map "note" to location if notes are missing.
+        if field["key"] == "note" and mapping.get("note") is None:
+            for alt in ("ubicazione", "posizione", "location"):
+                canon_alt = _canon_header_cell(alt)
+                if canon_alt in header_lookup:
+                    mapping["note"] = header_lookup[canon_alt]
+                    break
     return mapping
 
 

@@ -140,11 +140,10 @@ def run_cd_mandato_closure_checks(*, start_date: str | None, end_date: str | Non
             uploaded_at = str(d.get("uploaded_at") or "")
             dv = uploaded_at[:10] if len(uploaded_at) >= 10 else uploaded_at
             verbale_numero = str(d.get("verbale_numero") or "").strip()
-            protocollo = str(d.get("protocollo") or "").strip()
             desc = str(d.get("descrizione") or "").strip()
             abs_path = str(d.get("absolute_path") or "").strip()
 
-            ref = f"Verbale sezione #{did} ({dv}) {verbale_numero} {protocollo} {desc}".strip()
+            ref = f"Verbale sezione #{did} ({dv}) {verbale_numero} {desc}".strip()
 
             if not abs_path:
                 errors.append(CdClosureIssue("missing_section_doc_path", ref, "Percorso assoluto non disponibile."))
@@ -154,8 +153,6 @@ def run_cd_mandato_closure_checks(*, start_date: str | None, end_date: str | Non
             # These are quality warnings, not hard errors.
             if not verbale_numero:
                 warnings.append(CdClosureIssue("verbale_missing_number", ref, "Verbale senza numero CD (verbale_numero vuoto)."))
-            if not protocollo:
-                warnings.append(CdClosureIssue("verbale_missing_protocol", ref, "Verbale senza protocollo."))
 
     except Exception as exc:
         logger.warning("Chiusura CD: check verbali sezione fallito: %s", exc)
