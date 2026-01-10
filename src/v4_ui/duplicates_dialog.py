@@ -307,7 +307,7 @@ class DuplicatesDialog:
         ttk.Label(
             self.selection_inner,
             text="Seleziona con le checkbox i campi da copiare scegliendo il socio sorgente (default: lascia il MASTER).",
-            font=("Segoe UI", 10, "bold"),
+            font="AppBold",
             wraplength=900,
             justify=tk.LEFT
         ).pack(anchor=tk.W, pady=(0, 10))
@@ -320,7 +320,7 @@ class DuplicatesDialog:
         ttk.Label(
             self.selection_inner,
             text="Suggerimento: imposta il MASTER sopra, poi scegli solo i campi realmente differenti.",
-            font=("Segoe UI", 9, "italic")
+            font="AppItalic"
         ).pack(anchor=tk.W, pady=(8, 0))
     
     def _render_two_member_selector(self, group):
@@ -375,7 +375,7 @@ class DuplicatesDialog:
 
             self.field_checkbox_vars[field] = checkbox_map
 
-            preview = ttk.Label(selector, text="(MASTER)", anchor=tk.CENTER, foreground="#555555")
+            preview = ttk.Label(selector, text="(MASTER)", anchor=tk.CENTER, foreground="gray40")
             preview.pack(anchor=tk.CENTER, pady=(6, 0))
             self.field_selection_labels[field] = preview
     

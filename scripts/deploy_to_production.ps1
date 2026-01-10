@@ -135,3 +135,5 @@ if (-not $DryRun) {
 
 Write-Info "Deploy completed."
 Write-Info "You can roll back by restoring EXE/DB from: $backupDir"
+
+exit 0

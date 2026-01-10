@@ -119,6 +119,59 @@ class MeetingDialog:
         self.entry_date.grid(row=row, column=1, sticky="w", padx=5, pady=5)
         self.entry_date.insert(0, datetime.now().strftime("%Y-%m-%d"))
         ttk.Button(main_frame, text="Oggi", command=self._set_today).grid(row=row, column=2, sticky="w", padx=5, pady=5)
+
+        # Mandato (optional override; otherwise inferred from date)
+        row += 1
+        ttk.Label(main_frame, text="Mandato:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
+        self._mandato_display_to_id: dict[str, int | None] = {"Auto (da data)": None}
+        self.mandato_display_var = tk.StringVar(value="Auto (da data)")
+        mandato_values = ["Auto (da data)"]
+        try:
+            from database import fetch_all
+
+            rows = fetch_all(
+                """
+                SELECT id, label, start_date, end_date, is_active
+                FROM cd_mandati
+                WHERE start_date IS NOT NULL AND TRIM(start_date) <> ''
+                  AND end_date IS NOT NULL AND TRIM(end_date) <> ''
+                ORDER BY is_active DESC, start_date DESC, id DESC
+                """
+            )
+            for r in rows or []:
+                try:
+                    mid = int(r["id"])
+                except Exception:
+                    continue
+                lbl = str(r.get("label") or "").strip() if hasattr(r, "get") else ""
+                s = str(r.get("start_date") or "").strip() if hasattr(r, "get") else ""
+                e = str(r.get("end_date") or "").strip() if hasattr(r, "get") else ""
+                span = f"{s[:4]}-{e[:4]}" if s and e else ""
+                span_lbl = f"Mandato {span}" if span else ""
+                display = lbl
+                if span_lbl and lbl:
+                    # Keep custom label visible but always show years too
+                    display = f"{lbl} ({span_lbl})"
+                elif span_lbl and not lbl:
+                    display = span_lbl
+                else:
+                    display = lbl or f"Mandato ID {mid}"
+                # Ensure uniqueness in the dropdown
+                if display in self._mandato_display_to_id and self._mandato_display_to_id.get(display) != mid:
+                    display = f"{display} #{mid}"
+                self._mandato_display_to_id[display] = mid
+                mandato_values.append(display)
+        except Exception:
+            pass
+
+        self.combo_mandato = ttk.Combobox(
+            main_frame,
+            state="readonly",
+            width=28,
+            values=mandato_values,
+            textvariable=self.mandato_display_var,
+        )
+        self.combo_mandato.grid(row=row, column=1, columnspan=3, sticky="w", padx=5, pady=5)
         
         # Oggetto
         row += 1
@@ -233,9 +286,9 @@ class MeetingDialog:
         self.text_odg = scrolledtext.ScrolledText(self.odg_frame, height=6, wrap=tk.WORD)
         self.text_odg.pack(fill=tk.BOTH, expand=True)
         
-        # Verbale section (solo per riunioni passate)
+        # Verbale section (anche bozza per riunioni future)
         row += 1
-        self.verbale_frame = ttk.LabelFrame(main_frame, text="Verbale", padding=4)
+        self.verbale_frame = ttk.LabelFrame(main_frame, text="Verbale / Bozza", padding=4)
         self.verbale_frame.grid(row=row, column=0, columnspan=4, sticky="ew", padx=5, pady=5)
         
         verbale_row = 0
@@ -493,18 +546,15 @@ class MeetingDialog:
         """Toggle visibility of sections based on meeting type"""
         is_passata = self.tipo_riunione_var.get() == "passata"
         
-        # Gestisci visibilità sezioni in base al tipo di riunione
-        if is_passata:
-            # Mostra sezioni verbale e delibere
-            if hasattr(self, 'verbale_frame'):
-                self.verbale_frame.grid()
-            if hasattr(self, 'delibere_frame'):
+        # Verbale: sempre visibile (permette bozza anche per riunioni future)
+        if hasattr(self, 'verbale_frame'):
+            self.verbale_frame.grid()
+
+        # Delibere: solo per riunioni passate
+        if hasattr(self, 'delibere_frame'):
+            if is_passata:
                 self.delibere_frame.grid()
-        else:
-            # Nascondi sezioni verbale e delibere
-            if hasattr(self, 'verbale_frame'):
-                self.verbale_frame.grid_remove()
-            if hasattr(self, 'delibere_frame'):
+            else:
                 self.delibere_frame.grid_remove()
 
         self._update_prepare_email_button_state()
@@ -782,6 +832,23 @@ class MeetingDialog:
             
             self.entry_date.delete(0, tk.END)
             self.entry_date.insert(0, meeting.get('data', ''))
+
+            # Load mandato override if present
+            try:
+                raw_mid = meeting.get("mandato_id")
+                mandato_id = int(raw_mid) if raw_mid is not None and str(raw_mid).strip() else None
+            except Exception:
+                mandato_id = None
+            try:
+                if mandato_id:
+                    for display, mid in getattr(self, "_mandato_display_to_id", {}).items():
+                        if mid == mandato_id:
+                            self.mandato_display_var.set(display)
+                            break
+                else:
+                    self.mandato_display_var.set("Auto (da data)")
+            except Exception:
+                pass
             
             self.entry_oggetto.delete(0, tk.END)
             self.entry_oggetto.insert(0, meeting.get('titolo', ''))
@@ -890,6 +957,14 @@ class MeetingDialog:
         verbale_path = verbale_path_raw if (verbale_path_raw and not verbale_section_doc_id) else None
         delibere_text = self.text_delibere.get("1.0", tk.END).strip() if hasattr(self, 'text_delibere') else None
 
+        mandato_display = getattr(self, "mandato_display_var", None)
+        mandato_id = None
+        try:
+            choice = mandato_display.get() if mandato_display is not None else "Auto (da data)"
+            mandato_id = getattr(self, "_mandato_display_to_id", {}).get(choice)
+        except Exception:
+            mandato_id = None
+
         meta_payload = {
             "version": 1,
             "tipo": self.meta_tipo_var.get().strip(),
@@ -952,6 +1027,7 @@ class MeetingDialog:
                     data=data,
                     titolo=oggetto if oggetto else None,
                     odg=odg_text if odg_text else None,
+                    mandato_id=mandato_id,
                     verbale_path=verbale_path,
                     verbale_section_doc_id=verbale_section_doc_id,
                     tipo_riunione=self.tipo_riunione_var.get(),
@@ -973,6 +1049,7 @@ class MeetingDialog:
                     numero_cd=numero_cd if numero_cd else None,
                     titolo=oggetto if oggetto else None,
                     odg=odg_text if odg_text else None,
+                    mandato_id=mandato_id,
                     verbale_path=verbale_path,
                     verbale_section_doc_id=verbale_section_doc_id,
                     tipo_riunione=self.tipo_riunione_var.get(),

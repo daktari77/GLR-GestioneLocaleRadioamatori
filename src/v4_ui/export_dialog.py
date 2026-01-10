@@ -19,6 +19,13 @@ class ExportDialog(tk.Toplevel):
         self.title("Esporta soci in CSV")
         self.geometry("600x500")
         self.resizable(True, True)
+
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.winfo_toplevel())
+        except Exception:
+            pass
         
         # Available fields from COLONNE
         self.all_fields = [
@@ -61,7 +68,7 @@ class ExportDialog(tk.Toplevel):
     def _build_ui(self):
         """Build the dialog UI."""
         # Header
-        header = ttk.Label(self, text="Seleziona i campi da esportare:", font=("Segoe UI", 10, "bold"))
+        header = ttk.Label(self, text="Seleziona i campi da esportare:", font="AppBold")
         header.pack(pady=10, padx=10)
         
         # Buttons for presets
@@ -75,7 +82,7 @@ class ExportDialog(tk.Toplevel):
         canvas_frame = ttk.Frame(self)
         canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        canvas = tk.Canvas(canvas_frame, bg="white")
+        canvas = tk.Canvas(canvas_frame)
         scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         

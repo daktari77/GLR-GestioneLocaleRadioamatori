@@ -522,6 +522,8 @@ def init_db():
         _ensure_column(conn, "cd_riunioni", "presenze_json", "TEXT")
         # Verbale linkage (canonical): points to section_documents.id
         _ensure_column(conn, "cd_riunioni", "verbale_section_doc_id", "INTEGER")
+        # Optional explicit mandate linkage (overrides date-based inference in UI)
+        _ensure_column(conn, "cd_riunioni", "mandato_id", "INTEGER")
         conn.execute(CREATE_CD_DELIBERE)
         # Best-effort migration for older DBs created before some CD columns existed
         _ensure_column(conn, "cd_delibere", "data_votazione", "TEXT")
@@ -554,6 +556,30 @@ def init_db():
         _ensure_column(conn, "cd_mandati", "is_active", "INTEGER DEFAULT 1")
         _ensure_column(conn, "cd_mandati", "created_at", "TEXT")
         _ensure_column(conn, "cd_mandati", "updated_at", "TEXT")
+
+        # Normalize mandate labels (best-effort):
+        # - if empty, set to "Mandato AAAA-BBBB" derived from dates
+        # - if label is plain "AAAA-BBBB", prefix with "Mandato "
+        try:
+            conn.execute(
+                """
+                UPDATE cd_mandati
+                SET label = 'Mandato ' || SUBSTR(start_date, 1, 4) || '-' || SUBSTR(end_date, 1, 4)
+                WHERE (label IS NULL OR TRIM(label) = '')
+                  AND start_date IS NOT NULL AND TRIM(start_date) <> ''
+                  AND end_date IS NOT NULL AND TRIM(end_date) <> ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE cd_mandati
+                SET label = 'Mandato ' || label
+                WHERE label GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'
+                  AND label NOT LIKE 'Mandato %'
+                """
+            )
+        except sqlite3.OperationalError as exc:
+            logger.warning("Impossibile normalizzare label cd_mandati: %s", exc)
         conn.execute(CREATE_CALENDAR_EVENTS)
         conn.execute(CREATE_PONTI)
         conn.execute(CREATE_PONTI_STATUS_HISTORY)

@@ -136,7 +136,7 @@ class MagazzinoImportDialog:
         self.main_frame = ttk.Frame(self.win)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.title_label = ttk.Label(self.main_frame, text="", font=("Segoe UI", 12, "bold"))
+        self.title_label = ttk.Label(self.main_frame, text="", font="AppTitle")
         self.title_label.pack(fill=tk.X, pady=(0, 10))
 
         self.content_frame = ttk.Frame(self.main_frame)
@@ -165,7 +165,7 @@ class MagazzinoImportDialog:
         ttk.Label(frame, text="Seleziona un file CSV o Excel da analizzare").pack(anchor="w")
         ttk.Button(frame, text="Scegli file...", command=self._select_file).pack(anchor="w", pady=6)
 
-        self.file_label = ttk.Label(frame, text="Nessun file selezionato", foreground="gray")
+        self.file_label = ttk.Label(frame, text="Nessun file selezionato", foreground="gray40")
         self.file_label.pack(anchor="w")
 
         self.file_info_label = ttk.Label(frame, text="")

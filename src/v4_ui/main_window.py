@@ -7,11 +7,13 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import logging
 from pathlib import Path
+import os
 from datetime import datetime, timedelta
 from typing import Literal, Mapping, Sequence
 
 from calendar_utils import events_to_ics
 from .calendar_wizard import CalendarWizard, EVENT_TYPES as CALENDAR_EVENT_TYPES
+from .treeview_tags import CategoryTagStyler, MEMBER_CATEGORY_PALETTE, SECTION_CATEGORY_PALETTE
 from .ponti_panel import PontiPanel
 from .magazzino_panel import MagazzinoPanel
 from .unified_export_wizard import UnifiedExportWizard
@@ -552,7 +554,7 @@ class App:
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Strumenti", menu=tools_menu)
-        tools_menu.add_command(label="📥 Importa dati CSV...", command=self._show_import_wizard)
+        tools_menu.add_command(label="📥 Importa dati CSV", command=self._show_import_wizard)
         tools_menu.add_command(label="📤 Esporta dati CSV", accelerator="Ctrl+E", command=self._show_export_dialog)
         tools_menu.add_command(label="🧩 Ricerca duplicati...", accelerator="Ctrl+M", command=self._show_duplicates_dialog)
         tools_menu.add_command(label="📄 Importa documenti...", command=self._import_documents_wizard)
@@ -856,6 +858,14 @@ class App:
             self.docs_preview_tree.tag_configure("missing", foreground="#b00020")
         except Exception:
             pass
+
+        # Row coloring by document category/type.
+        self._docs_preview_category_tags = CategoryTagStyler(
+            self.docs_preview_tree,
+            default_label="Altro",
+            palette=MEMBER_CATEGORY_PALETTE,
+            tag_prefix="docprev::",
+        )
 
         self.docs_preview_tree.pack(fill=tk.X, expand=False)
     
@@ -1208,7 +1218,31 @@ class App:
                     lbl = str(m.get("label") or "").strip()
                     if lbl:
                         return lbl
-                    return f"{s[:4]}-{e[:4]}"
+                    return f"Mandato {s[:4]}-{e[:4]}"
+            return ""
+
+        def _mandato_label_for_id(mandato_id: object) -> str:
+            try:
+                mid = int(str(mandato_id))
+            except Exception:
+                return ""
+            for m in mandati:
+                raw_id_s = str(m.get("id") or "").strip()
+                if not raw_id_s:
+                    continue
+                try:
+                    if int(raw_id_s) != mid:
+                        continue
+                except Exception:
+                    continue
+                lbl = str(m.get("label") or "").strip()
+                if lbl:
+                    return lbl
+                s = str(m.get("start_date") or "").strip()
+                e = str(m.get("end_date") or "").strip()
+                if s and e:
+                    return f"Mandato {s[:4]}-{e[:4]}"
+                return f"Mandato ID {mid}"
             return ""
 
         # Delibere summary by meeting
@@ -1281,7 +1315,13 @@ class App:
 
             vdoc = verbali_by_meeting.get(int(mid))
             verbale_title = _verbale_title(vdoc)
-            mandato_lbl = _mandato_label_for_date(meeting_date_iso)
+            mandato_lbl = ""
+            try:
+                mandato_lbl = _mandato_label_for_id(m.get("mandato_id"))
+            except Exception:
+                mandato_lbl = ""
+            if not mandato_lbl:
+                mandato_lbl = _mandato_label_for_date(meeting_date_iso)
             delibere_summary = _delibere_summary(int(mid))
 
             tv.insert(
@@ -1771,6 +1811,13 @@ class App:
         tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        category_tags = CategoryTagStyler(
+            tv,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="cdverb::",
+        )
+
         for m in meetings:
             mid = m.get("id")
             if mid is None:
@@ -1971,6 +2018,13 @@ class App:
         tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        category_tags = CategoryTagStyler(
+            tv,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="cdverb::",
+        )
+
         picked_by_iid: dict[str, int] = {}
         for idx, d in enumerate(docs):
             iid = str(idx)
@@ -1979,7 +2033,13 @@ class App:
             verbale_numero = str(d.get("verbale_numero") or "").strip()
             nome = str(d.get("nome_file") or "").strip()
             categoria = str(d.get("categoria") or "").strip()
-            tv.insert("", tk.END, iid=iid, values=(date_display, verbale_numero, nome, categoria))
+            tv.insert(
+                "",
+                tk.END,
+                iid=iid,
+                values=(date_display, verbale_numero, nome, categoria),
+                tags=(category_tags.tag_for(categoria),),
+            )
             raw_id = d.get("id")
             try:
                 doc_id = int(str(raw_id)) if raw_id is not None else 0
@@ -2221,7 +2281,7 @@ class App:
                     lbl = str(m.get("label") or "").strip()
                     if lbl:
                         return lbl
-                    return f"{s[:4]}-{e[:4]}"
+                    return f"Mandato {s[:4]}-{e[:4]}"
             return ""
 
         def _verbale_ref_date(doc: dict) -> str:
@@ -2587,6 +2647,18 @@ class App:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.calendar_tree.bind("<<TreeviewSelect>>", self._on_calendar_select)
 
+        # Row coloring by event type.
+        self._calendar_type_tags = CategoryTagStyler(
+            self.calendar_tree,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="cal::",
+        )
+        try:
+            self._calendar_type_tags.prime(self.calendar_type_labels.values())
+        except Exception:
+            pass
+
         details = ttk.LabelFrame(tab, text="Dettagli evento")
         details.pack(fill=tk.BOTH, expand=False, padx=5, pady=(0, 5))
         self.calendar_details = tk.Text(details, height=6, wrap=tk.WORD, state=tk.DISABLED)
@@ -2664,7 +2736,10 @@ class App:
                 ev.get("luogo", "") or "",
                 reminder_display,
             )
-            tree.insert("", tk.END, iid=str(ev.get("id")), values=values)
+            type_label = values[2]
+            tag_manager = getattr(self, "_calendar_type_tags", None)
+            tags = (tag_manager.tag_for(type_label),) if tag_manager is not None else ()
+            tree.insert("", tk.END, iid=str(ev.get("id")), values=values, tags=tags)
 
         if upcoming:
             suffix = "evento" if upcoming == 1 else "eventi"
@@ -2925,6 +3000,20 @@ class App:
 
         for doc in docs_sorted:
             info_text = format_file_info(doc.get('percorso') or '')
+            row_tags: list[str] = []
+            try:
+                if not os.path.exists(doc.get('percorso') or ''):
+                    row_tags.append("missing")
+            except Exception:
+                pass
+
+            tag_manager = getattr(self, "_docs_preview_category_tags", None)
+            if tag_manager is not None:
+                try:
+                    row_tags.append(tag_manager.tag_for(doc.get('categoria') or ''))
+                except Exception:
+                    pass
+
             tree.insert(
                 "",
                 tk.END,
@@ -2937,6 +3026,7 @@ class App:
                     (doc.get('data_caricamento') or '')[:10],
                     info_text,
                 ),
+                tags=tuple(row_tags) if row_tags else (),
             )
 
         count = len(docs_sorted)
@@ -3020,7 +3110,7 @@ Generale:
         dialog.grab_set()
         
         # Text widget with shortcuts
-        text = tk.Text(dialog, wrap=tk.WORD, font=("Courier", 10), padx=20, pady=20)
+        text = tk.Text(dialog, wrap=tk.WORD, font="AppMono", padx=20, pady=20)
         text.pack(fill=tk.BOTH, expand=True)
         text.insert("1.0", shortcuts_text.strip())
         text.config(state=tk.DISABLED)
@@ -3234,7 +3324,7 @@ Generale:
         toolbar = ttk.Frame(trash_win)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(toolbar, text="Soci eliminati (soft delete)", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(toolbar, text="Soci eliminati (soft delete)", font="AppBold").pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="Svuota cestino", command=lambda: self._empty_trash(trash_tree)).pack(side=tk.RIGHT, padx=2)
         ttk.Button(toolbar, text="Ripristina", command=lambda: self._restore_member(trash_tree, trash_win)).pack(side=tk.RIGHT, padx=2)
         ttk.Button(toolbar, text="Elimina definitivamente", command=lambda: self._hard_delete_member(trash_tree)).pack(side=tk.RIGHT, padx=2)

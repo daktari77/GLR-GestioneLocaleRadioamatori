@@ -53,20 +53,40 @@ def ensure_app_named_fonts(root) -> None:
 
     base_actual = base.actual()
 
-    def _upsert(name: str, *, weight: str):
+    def _upsert(
+        name: str,
+        *,
+        weight: str = "normal",
+        slant: str | None = None,
+        size: int | None = None,
+        family: str | None = None,
+    ):
         try:
             f = tkfont.nametofont(name)
         except tk.TclError:
             f = tkfont.Font(master=root, name=name, exists=False)
         cfg = dict(base_actual)
         cfg["weight"] = weight
+        if slant is not None:
+            cfg["slant"] = slant
+        if size is not None:
+            cfg["size"] = size
+        if family is not None:
+            cfg["family"] = family
         try:
             f.configure(**cfg)
         except Exception:
             pass
 
-    _upsert("AppNormal", weight="normal")
-    _upsert("AppBold", weight="bold")
+    base_size = int(base_actual.get("size") or 9)
+
+    _upsert("AppSmall", weight="normal", size=max(8, base_size - 1))
+    _upsert("AppNormal", weight="normal", size=base_size)
+    _upsert("AppBold", weight="bold", size=base_size)
+    _upsert("AppItalic", weight="normal", slant="italic", size=base_size)
+    _upsert("AppTitle", weight="bold", size=base_size + 3)
+    _upsert("AppHeading", weight="bold", size=base_size + 5)
+    _upsert("AppMono", weight="normal", family="Courier New", size=base_size + 1)
 
 class Theme:
     """Base theme class"""

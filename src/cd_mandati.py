@@ -75,7 +75,7 @@ def save_cd_mandato(
     note_value = (note or "").strip() or None
 
     if not label:
-        label = f"{start_date[:4]}-{end_date[:4]}" if start_date and end_date else "Mandato CD"
+        label = f"Mandato {start_date[:4]}-{end_date[:4]}" if start_date and end_date else "Mandato CD"
 
     comp_json = json.dumps(composizione or [], ensure_ascii=False)
     ts = now_iso()

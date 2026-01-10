@@ -11,7 +11,6 @@ import os
 import subprocess
 import sys
 import csv
-import zlib
 from collections.abc import Callable, Iterable
 
 from document_types_catalog import DEFAULT_SECTION_CATEGORY
@@ -31,80 +30,11 @@ from section_documents import (
 
 logger = logging.getLogger("librosoci")
 
-_MEMBER_CATEGORY_PALETTE: tuple[str, ...] = (
-    "#FFE5E0",
-    "#FFEFD2",
-    "#FFF8C2",
-    "#E3F2FD",
-    "#E8F5E9",
-    "#F3E5F5",
-    "#E0F7FA",
-    "#FFF0F5",
-    "#EDE7F6",
-    "#F1F8E9",
+from .treeview_tags import (
+    CategoryTagStyler,
+    MEMBER_CATEGORY_PALETTE,
+    SECTION_CATEGORY_PALETTE,
 )
-
-_SECTION_CATEGORY_PALETTE: tuple[str, ...] = (
-    "#E3F2FD",
-    "#E0F7FA",
-    "#FFF4E6",
-    "#F3E5F5",
-    "#E8F5E9",
-    "#FFF8E1",
-    "#EDE7F6",
-    "#FCE4EC",
-)
-
-
-def _hex_to_rgb_components(value: str) -> tuple[int, int, int]:
-    color = value.lstrip("#")
-    if len(color) != 6:
-        return (255, 255, 255)
-    try:
-        return tuple(int(color[i : i + 2], 16) for i in (0, 2, 4))
-    except ValueError:
-        return (255, 255, 255)
-
-
-def _ideal_foreground_for(bg_hex: str) -> str:
-    r, g, b = _hex_to_rgb_components(bg_hex)
-    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return "#202124" if luminance > 0.6 else "#ffffff"
-
-
-class _CategoryTagStyler:
-    """Assign deterministic Treeview tag colors per document type."""
-
-    def __init__(self, tree: ttk.Treeview, *, default_category: str, palette: tuple[str, ...]):
-        self.tree = tree
-        self.default_category = (default_category or "Altro").strip() or "Altro"
-        self.palette = palette or ("#E8EAED",)
-        self._tag_cache: dict[str, str] = {}
-
-    def _normalized_label(self, category: str | None) -> str:
-        candidate = (category or self.default_category).strip()
-        return candidate or self.default_category
-
-    def _color_for_key(self, key: str) -> str:
-        index = zlib.crc32(key.encode("utf-8")) % len(self.palette)
-        return self.palette[index]
-
-    def tag_for(self, category: str | None) -> str:
-        label = self._normalized_label(category)
-        cache_key = label.lower()
-        if cache_key in self._tag_cache:
-            return self._tag_cache[cache_key]
-        tag_name = f"cat::{cache_key}"
-        color = self._color_for_key(cache_key)
-        self.tree.tag_configure(tag_name, background=color, foreground=_ideal_foreground_for(color))
-        self._tag_cache[cache_key] = tag_name
-        return tag_name
-
-    def prime(self, categories: Iterable[str] | None):
-        if not categories:
-            return
-        for category in categories:
-            self.tag_for(category)
 
 
 class DocumentPanel(ttk.Frame):
@@ -122,7 +52,7 @@ class DocumentPanel(ttk.Frame):
         self.member_filter_var = tk.StringVar(value="Tutti i soci")
         self.category_filter_var = tk.StringVar(value=self.category_filter_default)
         self.search_var = tk.StringVar()
-        self._category_tag_manager: _CategoryTagStyler | None = None
+        self._category_tag_manager: CategoryTagStyler | None = None
         default_message = (
             "Visualizzazione di tutti i documenti caricati."
             if self.show_all_documents
@@ -274,10 +204,10 @@ class DocumentPanel(ttk.Frame):
         self.tv_docs.bind("<<TreeviewSelect>>", self._on_tree_selection_changed)
         self.tv_docs.bind("<Double-1>", lambda _e: self._open_document())
 
-        self._category_tag_manager = _CategoryTagStyler(
+        self._category_tag_manager = CategoryTagStyler(
             self.tv_docs,
-            default_category=DEFAULT_DOCUMENT_CATEGORY,
-            palette=_MEMBER_CATEGORY_PALETTE,
+            default_label=DEFAULT_DOCUMENT_CATEGORY,
+            palette=MEMBER_CATEGORY_PALETTE,
         )
         self._category_tag_manager.prime(get_document_categories())
     
@@ -984,7 +914,7 @@ class SectionDocumentPanel(ttk.Frame):
         self.upload_category_var = tk.StringVar(value=default_cat)
         self._doc_path_map: dict[str, str] = {}
         self._doc_meta_map: dict[str, dict] = {}
-        self._category_tag_manager: _CategoryTagStyler | None = None
+        self._category_tag_manager: CategoryTagStyler | None = None
         self._build_ui()
         self.refresh()
 
@@ -1096,10 +1026,10 @@ class SectionDocumentPanel(ttk.Frame):
         self.tv_docs.bind("<Double-1>", _open_edit_for_event)
         self.tv_docs.bind("<Return>", lambda _e: self._edit_document())
 
-        self._category_tag_manager = _CategoryTagStyler(
+        self._category_tag_manager = CategoryTagStyler(
             self.tv_docs,
-            default_category=DEFAULT_SECTION_CATEGORY,
-            palette=_SECTION_CATEGORY_PALETTE,
+            default_label=DEFAULT_SECTION_CATEGORY,
+            palette=SECTION_CATEGORY_PALETTE,
         )
         self._category_tag_manager.prime(get_section_document_categories())
 
@@ -1592,6 +1522,13 @@ class EventLogPanel(ttk.Frame):
         self.tv_events.column("dettagli", width=300)
         
         self.tv_events.pack(fill=tk.BOTH, expand=True)
+
+        self._event_type_tags = CategoryTagStyler(
+            self.tv_events,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="evt::",
+        )
     
     def refresh(self):
         """Refresh event log"""
@@ -1608,12 +1545,15 @@ class EventLogPanel(ttk.Frame):
             )
             
             for event in events:
+                tag_manager = getattr(self, "_event_type_tags", None)
+                tipo = event.get("tipo_evento")
+                tags = (tag_manager.tag_for(str(tipo)),) if tag_manager is not None else ()
                 self.tv_events.insert("", tk.END, values=(
                     event["ts"],
                     event["tipo_evento"],
                     f"#{event['socio_id']}",
                     event["dettagli_json"][:50]
-                ))
+                ), tags=tags)
         except Exception as e:
             logger.warning("Failed to load events: %s", e)
     

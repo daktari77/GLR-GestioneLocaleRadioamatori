@@ -58,7 +58,7 @@ class PreferencesDialog(tk.Toplevel):
         style = ttk.Style(self)
         style.configure(
             "PreferencesNotebook.TNotebook.Tab",
-            font=("Segoe UI", 10, "bold"),
+            font="AppBold",
             padding=(16, 6, 16, 6),
         )
         notebook = ttk.Notebook(container, style="PreferencesNotebook.TNotebook")

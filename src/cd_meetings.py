@@ -14,6 +14,8 @@ from pathlib import Path
 
 logger = logging.getLogger("librosoci")
 
+_UNSET = object()
+
 
 def _odg_text_to_json(odg_text: str | None) -> str | None:
     if not odg_text:
@@ -153,7 +155,10 @@ def get_all_meetings() -> List[Dict]:
     """
     from database import fetch_all
     try:
-        sql = "SELECT id, numero_cd, data, titolo, meta_json, verbale_section_doc_id, verbale_path, created_at FROM cd_riunioni ORDER BY data DESC"
+        sql = (
+            "SELECT id, numero_cd, data, titolo, mandato_id, meta_json, verbale_section_doc_id, verbale_path, created_at "
+            "FROM cd_riunioni ORDER BY data DESC"
+        )
         rows = fetch_all(sql)
         return [dict(row) for row in rows]
     except Exception as e:
@@ -173,7 +178,7 @@ def get_meeting_by_id(meeting_id: int) -> Optional[Dict]:
     from database import fetch_one
     try:
         sql = """
-            SELECT id, numero_cd, data, titolo, note, tipo_riunione, odg_json, meta_json, presenze_json, verbale_section_doc_id, verbale_path, created_at
+            SELECT id, numero_cd, data, titolo, mandato_id, note, tipo_riunione, odg_json, meta_json, presenze_json, verbale_section_doc_id, verbale_path, created_at
             FROM cd_riunioni
             WHERE id=?
         """
@@ -196,6 +201,7 @@ def add_meeting(
     numero_cd: str | None = None,
     titolo: str | None = None,
     odg: str | None = None,
+    mandato_id: int | None = None,
     tipo_riunione: str | None = None,
     verbale_path: str | None = None,
     verbale_section_doc_id: int | None = None,
@@ -229,8 +235,8 @@ def add_meeting(
         with get_connection() as conn:
             cursor = conn.cursor()
             sql = """
-                INSERT INTO cd_riunioni (numero_cd, data, titolo, note, tipo_riunione, meta_json, odg_json, presenze_json, verbale_section_doc_id, verbale_path, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cd_riunioni (numero_cd, data, titolo, mandato_id, note, tipo_riunione, meta_json, odg_json, presenze_json, verbale_section_doc_id, verbale_path, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             cursor.execute(
                 sql,
@@ -238,6 +244,7 @@ def add_meeting(
                     numero_cd,
                     data,
                     titolo,
+                    int(mandato_id) if mandato_id else None,
                     odg,
                     tipo_riunione,
                     meta_json,
@@ -290,6 +297,7 @@ def update_meeting(
     data: str | None = None,
     titolo: str | None = None,
     odg: str | None = None,
+    mandato_id: int | None | object = _UNSET,
     tipo_riunione: str | None = None,
     verbale_path: str | None = None,
     verbale_section_doc_id: int | None = None,
@@ -325,6 +333,9 @@ def update_meeting(
         if titolo is not None:
             updates.append("titolo=?")
             values.append(titolo)
+        if mandato_id is not _UNSET:
+            updates.append("mandato_id=?")
+            values.append(int(mandato_id) if mandato_id else None)
         if tipo_riunione is not None:
             updates.append("tipo_riunione=?")
             values.append(tipo_riunione)

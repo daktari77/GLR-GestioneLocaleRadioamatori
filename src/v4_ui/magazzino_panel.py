@@ -158,7 +158,7 @@ class MagazzinoPanel(ttk.Frame):
         self.altre_notizie_text = tk.Text(form, height=3, width=80, wrap=tk.WORD)
         self.altre_notizie_text.grid(row=7, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
 
-        ttk.Label(form, textvariable=self.status_var, foreground="#444").grid(row=8, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+        ttk.Label(form, textvariable=self.status_var, foreground="gray40").grid(row=8, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
         ttk.Label(form, textvariable=self.loan_info_var, foreground="#b35a00").grid(row=8, column=2, columnspan=2, sticky="e", padx=4, pady=(4, 2))
 
         form.columnconfigure(1, weight=1)
@@ -510,7 +510,7 @@ class LoanDialog(simpledialog.Dialog):
 
     def body(self, master):
         ttk.Label(master, text="Socio").grid(row=0, column=0, sticky="w", padx=4, pady=2)
-        ttk.Label(master, textvariable=self.socio_label, foreground="#444").grid(row=0, column=1, sticky="w", padx=4, pady=2)
+        ttk.Label(master, textvariable=self.socio_label, foreground="gray40").grid(row=0, column=1, sticky="w", padx=4, pady=2)
         ttk.Button(master, text="Seleziona", command=self._pick_member).grid(row=0, column=2, sticky="w", padx=4, pady=2)
 
         ttk.Label(master, text="Data prestito (gg/mm/aaaa)").grid(row=1, column=0, sticky="w", padx=4, pady=2)

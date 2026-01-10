@@ -10,6 +10,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from utils import open_path
 
+from .treeview_tags import CategoryTagStyler, SECTION_CATEGORY_PALETTE
+
 from ponti_manager import (
     DEFAULT_REMINDER_DAYS,
     add_ponte_document,
@@ -228,6 +230,13 @@ class PontiPanel(ttk.Frame):
         self.docs_tree.column("tipo", width=120)
         self.docs_tree.column("note", width=240)
         self.docs_tree.column("percorso", width=360)
+
+        self._doc_type_tags = CategoryTagStyler(
+            self.docs_tree,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="ponte_doc::",
+        )
 
     # ------------------------------------------------------------------
     # Data handling
@@ -538,11 +547,15 @@ class PontiPanel(ttk.Frame):
         for row in rows:
             doc_id = int(row.get("id"))
             self.doc_rows[doc_id] = row
+            tipo = str(row.get("tipo") or "").strip()
+            tag_manager = getattr(self, "_doc_type_tags", None)
+            tags = (tag_manager.tag_for(tipo),) if tag_manager is not None else ()
             tree.insert(
                 "",
                 tk.END,
                 iid=str(doc_id),
                 values=(row.get("tipo", ""), row.get("note", ""), row.get("document_path", "")),
+                tags=tags,
             )
 
     def _selected_document(self) -> dict | None:

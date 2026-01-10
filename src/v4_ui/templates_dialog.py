@@ -8,6 +8,8 @@ from tkinter import ttk, filedialog, messagebox
 import logging
 import os
 
+from .treeview_tags import CategoryTagStyler, SECTION_CATEGORY_PALETTE
+
 logger = logging.getLogger("librosoci")
 
 class TemplatesDialog(tk.Toplevel):
@@ -19,6 +21,13 @@ class TemplatesDialog(tk.Toplevel):
         self.title("Gestione Template Documenti")
         self.geometry("900x600")
         self.resizable(True, True)
+
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.winfo_toplevel())
+        except Exception:
+            pass
         
         self._build_ui()
         self._refresh_templates()
@@ -36,7 +45,7 @@ class TemplatesDialog(tk.Toplevel):
         # Header
         header = ttk.Frame(self, padding=10)
         header.pack(fill=tk.X)
-        ttk.Label(header, text="Template Documenti", font=("Segoe UI", 12, "bold")).pack(side=tk.LEFT)
+        ttk.Label(header, text="Template Documenti", font="AppTitle").pack(side=tk.LEFT)
         
         # Toolbar
         toolbar = ttk.Frame(self, padding=(10, 0, 10, 10))
@@ -97,6 +106,20 @@ class TemplatesDialog(tk.Toplevel):
         
         list_frame.columnconfigure(0, weight=1)
         list_frame.rowconfigure(0, weight=1)
+
+        # Row coloring by template type (deterministic).
+        self._type_tag_manager = CategoryTagStyler(
+            self.tv_templates,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="tmpl::",
+        )
+        try:
+            from templates_manager import TEMPLATE_TYPES
+
+            self._type_tag_manager.prime(TEMPLATE_TYPES.values())
+        except Exception:
+            pass
         
         # Info panel
         info_frame = ttk.LabelFrame(self, text="Informazioni", padding=10)
@@ -126,7 +149,10 @@ Formati supportati: .txt, .html, .doc, .docx, .odt
             for tmpl in templates:
                 tipo_label = TEMPLATE_TYPES.get(tmpl['tipo'], tmpl['tipo'])
                 created = tmpl.get('created_at', '')[:10] if tmpl.get('created_at') else ''
-                
+
+                tag = getattr(self, "_type_tag_manager", None)
+                row_tags = (tag.tag_for(tipo_label),) if tag is not None else ()
+
                 self.tv_templates.insert("", "end", values=(
                     tmpl['id'],
                     tmpl['nome'],
@@ -134,7 +160,7 @@ Formati supportati: .txt, .html, .doc, .docx, .odt
                     tmpl.get('descrizione', ''),
                     tmpl.get('placeholders', ''),
                     created
-                ))
+                ), tags=row_tags)
         except Exception as e:
             logger.error(f"Failed to refresh templates: {e}")
             messagebox.showerror("Errore", f"Errore nel caricamento template: {e}")
@@ -157,7 +183,10 @@ Formati supportati: .txt, .html, .doc, .docx, .odt
             for tmpl in templates:
                 tipo_label = TEMPLATE_TYPES.get(tmpl['tipo'], tmpl['tipo'])
                 created = tmpl.get('created_at', '')[:10] if tmpl.get('created_at') else ''
-                
+
+                tag = getattr(self, "_type_tag_manager", None)
+                row_tags = (tag.tag_for(tipo_label),) if tag is not None else ()
+
                 self.tv_templates.insert("", "end", values=(
                     tmpl['id'],
                     tmpl['nome'],
@@ -165,7 +194,7 @@ Formati supportati: .txt, .html, .doc, .docx, .odt
                     tmpl.get('descrizione', ''),
                     tmpl.get('placeholders', ''),
                     created
-                ))
+                ), tags=row_tags)
         except Exception as e:
             logger.error(f"Failed to apply filter: {e}")
     
@@ -283,14 +312,14 @@ class AddTemplateDialog(tk.Toplevel):
         ttk.Label(main_frame, text="Placeholder:").grid(row=3, column=0, sticky="w", pady=5)
         self.placeholders_var = tk.StringVar()
         ttk.Entry(main_frame, textvariable=self.placeholders_var, width=40).grid(row=3, column=1, pady=5)
-        ttk.Label(main_frame, text="(separati da virgola)", font=("Segoe UI", 8)).grid(row=4, column=1, sticky="w")
+        ttk.Label(main_frame, text="(separati da virgola)", font="AppSmall").grid(row=4, column=1, sticky="w")
         
         # File selection
         ttk.Label(main_frame, text="File Template:").grid(row=5, column=0, sticky="w", pady=5)
         file_frame = ttk.Frame(main_frame)
         file_frame.grid(row=5, column=1, pady=5, sticky="ew")
         
-        self.file_label = ttk.Label(file_frame, text="Nessun file selezionato", foreground="gray")
+        self.file_label = ttk.Label(file_frame, text="Nessun file selezionato", foreground="gray40")
         self.file_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         ttk.Button(file_frame, text="Sfoglia...", command=self._select_file).pack(side=tk.RIGHT)
@@ -317,7 +346,7 @@ class AddTemplateDialog(tk.Toplevel):
         
         if filename:
             self.source_file = filename
-            self.file_label.config(text=os.path.basename(filename), foreground="black")
+            self.file_label.config(text=os.path.basename(filename))
     
     def _save(self):
         """Save template."""
