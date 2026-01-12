@@ -14,6 +14,8 @@ import logging
 import os
 import secrets
 import shutil
+import time
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List
@@ -32,6 +34,55 @@ logger = logging.getLogger("librosoci")
 # Naming convention aligned with member docs: <hex token> + extension.
 # Use a different length to distinguish section docs from member docs.
 SECTION_DOC_TOKEN_LENGTH = 15
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _safe_sha256_file(path: Path) -> str | None:
+    try:
+        return _sha256_file(path)
+    except Exception:
+        return None
+
+
+def _iter_files_in_dir(directory: Path) -> Iterable[Path]:
+    try:
+        for p in directory.iterdir():
+            if p.is_file():
+                yield p
+    except Exception:
+        return
+
+
+def _build_hash_index(directory: Path) -> dict[str, Path]:
+    """Build a best-effort SHA256 -> Path map for files in directory."""
+    index: dict[str, Path] = {}
+    for p in _iter_files_in_dir(directory):
+        # Skip non-doc helper files
+        if p.name.lower() == SECTION_DOCUMENT_INDEX_FILENAME.lower():
+            continue
+        digest = _safe_sha256_file(p)
+        if not digest:
+            continue
+        index.setdefault(digest, p)
+    return index
+
+
+def _preferred_token_for_content(digest_hex: str) -> str | None:
+    d = (digest_hex or "").strip().lower()
+    if len(d) < SECTION_DOC_TOKEN_LENGTH:
+        return None
+    prefix = d[:SECTION_DOC_TOKEN_LENGTH]
+    return prefix if _is_hex_token(prefix, length=SECTION_DOC_TOKEN_LENGTH) else None
 
 
 def _is_hex_token(value: str, *, length: int) -> bool:
@@ -131,26 +182,39 @@ def _db_backfill_registry() -> None:
         uploaded_at: str,
         absolute_path: str,
     ):
-        try:
-            if get_section_document_by_relative_path(relative_path):
+        # Best-effort: tolerate transient locks (e.g. antivirus/backup or concurrent instance)
+        for attempt in range(3):
+            try:
+                if get_section_document_by_relative_path(relative_path):
+                    return
+                add_section_document_record(
+                    hash_id=hash_id,
+                    nome_file=stored_name,
+                    percorso=absolute_path,
+                    tipo="documento",
+                    data_caricamento=uploaded_at,
+                    categoria=categoria,
+                    descrizione=descrizione,
+                    protocollo=protocollo,
+                    verbale_numero=verbale_numero,
+                    original_name=original_name,
+                    stored_name=stored_name,
+                    relative_path=relative_path,
+                    uploaded_at=uploaded_at,
+                )
                 return
-            add_section_document_record(
-                hash_id=hash_id,
-                nome_file=stored_name,
-                percorso=absolute_path,
-                tipo="documento",
-                data_caricamento=uploaded_at,
-                categoria=categoria,
-                descrizione=descrizione,
-                protocollo=protocollo,
-                verbale_numero=verbale_numero,
-                original_name=original_name,
-                stored_name=stored_name,
-                relative_path=relative_path,
-                uploaded_at=uploaded_at,
-            )
-        except Exception:
-            return
+            except Exception as exc:
+                try:
+                    from exceptions import DatabaseLockError
+
+                    is_lock = isinstance(exc, DatabaseLockError)
+                except Exception:
+                    is_lock = False
+
+                if is_lock and attempt < 2:
+                    time.sleep(0.25 * (attempt + 1))
+                    continue
+                return
 
     # 1) Import existing metadata.json entries
     metadata = _load_metadata()
@@ -428,9 +492,15 @@ def ensure_section_structure():
         _category_dir(cat)
 
 
-def list_section_documents() -> List[Dict[str, object]]:
+def list_section_documents(*, include_missing: bool = False) -> List[Dict[str, object]]:
     ensure_section_structure()
     _db_backfill_registry()
+
+    # Best-effort: recover original filenames from metadata.json.
+    try:
+        metadata_by_hash = _load_metadata()
+    except Exception:
+        metadata_by_hash = {}
 
     try:
         from database import list_section_document_records
@@ -443,6 +513,9 @@ def list_section_documents() -> List[Dict[str, object]]:
 
     # DB-first: produce the structure expected by the UI panel.
     for row in rows:
+        hash_id = str(row.get("hash_id") or "").strip()
+        payload = metadata_by_hash.get(hash_id) if hash_id else None
+
         abs_path = _resolve_to_absolute(
             str(row.get("percorso") or ""),
             fallback_rel=str(row.get("relative_path") or ""),
@@ -450,7 +523,10 @@ def list_section_documents() -> List[Dict[str, object]]:
         if not abs_path:
             continue
         if not abs_path.exists() or not abs_path.is_file():
-            # Keep the record but signal missing file through stats; UI already highlights missing paths.
+            # By default hide missing documents (prevents confusing size=0 entries and avoids
+            # apparent duplicates after a manual disk cleanup + re-import).
+            if not include_missing:
+                continue
             size = 0
             mtime = None
         else:
@@ -463,11 +539,16 @@ def list_section_documents() -> List[Dict[str, object]]:
                 mtime = None
 
         rel_display = _relative_to_root(abs_path) or str(row.get("relative_path") or "") or abs_path.name
-        original_name = (row.get("nome_file") or row.get("stored_name") or abs_path.name) or abs_path.name
-        stored_name = (row.get("stored_name") or abs_path.name) or abs_path.name
+        stored_name = (row.get("stored_name") or row.get("nome_file") or abs_path.name) or abs_path.name
+        # DB does not persist original filenames; prefer metadata.json when available.
+        original_name = (
+            (payload.get("original_name") if isinstance(payload, dict) else None)
+            or abs_path.name
+        )
         docs.append(
             {
                 "id": row.get("id"),
+                # Show original filename when available (better UX than hashed stored name).
                 "nome_file": original_name,
                 "categoria": row.get("categoria"),
                 "percorso": rel_display,
@@ -494,7 +575,75 @@ def list_section_documents() -> List[Dict[str, object]]:
     return docs
 
 
-def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | None = None) -> list[dict]:
+def recalc_section_documents_data_caricamento(docs: Iterable[Dict[str, object]]) -> tuple[int, int, list[str]]:
+    """Recalculate section document dates using the file modification time.
+
+    This updates the DB field `section_documents.data_caricamento` (used by filters
+    like CD verbali by mandate) and also updates `metadata.json`'s `uploaded_at`
+    best-effort for backward compatibility.
+
+    Args:
+        docs: iterable of doc dicts (must contain `id` and a path like `absolute_path`).
+
+    Returns:
+        (updated_count, missing_count, errors)
+    """
+
+    try:
+        from database import update_section_document_record
+    except Exception as exc:  # pragma: no cover
+        return 0, 0, [f"DB non disponibile: {exc}"]
+
+    updated = 0
+    missing = 0
+    errors: list[str] = []
+
+    try:
+        metadata = _load_metadata()
+    except Exception:
+        metadata = {}
+    meta_changed = False
+
+    for doc in docs or []:
+        try:
+            record_id = int(doc.get("id"))
+        except Exception:
+            continue
+
+        abs_path = str(doc.get("absolute_path") or doc.get("percorso") or "").strip()
+        if not abs_path or not os.path.exists(abs_path):
+            missing += 1
+            continue
+
+        try:
+            mtime = os.path.getmtime(abs_path)
+            ts = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+            update_section_document_record(record_id, data_caricamento=ts)
+            updated += 1
+
+            hash_id = str(doc.get("hash_id") or "").strip()
+            if hash_id and hash_id in metadata and isinstance(metadata.get(hash_id), dict):
+                if metadata[hash_id].get("uploaded_at") != ts:
+                    metadata[hash_id]["uploaded_at"] = ts
+                    meta_changed = True
+        except Exception as exc:
+            errors.append(f"{record_id}: {exc}")
+
+    if meta_changed:
+        try:
+            _save_metadata(metadata)
+        except Exception:
+            pass
+
+    return updated, missing, errors
+
+
+def list_cd_verbali_documents(
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    include_missing: bool = False,
+) -> list[dict]:
     """Return section documents that should be considered CD verbali.
 
     Heuristic rules:
@@ -507,7 +656,7 @@ def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | 
     Result is sorted descending by date.
     """
 
-    docs = list_section_documents()
+    docs = list_section_documents(include_missing=include_missing)
     verbali: list[dict] = []
     for doc in docs:
         categoria = str(doc.get("categoria") or "").strip().lower()
@@ -520,17 +669,144 @@ def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | 
         raw = str(d.get("uploaded_at") or "").strip()
         return raw[:10] if len(raw) >= 10 else raw
 
+    def _extract_year_from_verbale_numero(raw: str) -> int | None:
+        s = str(raw or "").strip()
+        if not s:
+            return None
+        # Common formats: "12/2025", "12-2025", "2025/12", "2025-12".
+        digits = []
+        cur = ""
+        for ch in s:
+            if ch.isdigit():
+                cur += ch
+            else:
+                if cur:
+                    digits.append(cur)
+                    cur = ""
+        if cur:
+            digits.append(cur)
+
+        for token in digits:
+            if len(token) == 4:
+                try:
+                    year = int(token)
+                except Exception:
+                    continue
+                if 1900 <= year <= 2200:
+                    return year
+        return None
+
+    def _extract_iso_date_from_text(text: str | None) -> str | None:
+        """Extract an ISO date (YYYY-MM-DD) from a free-form string.
+
+        Supports common patterns:
+        - YYYY-MM-DD / YYYY_MM_DD / YYYY.MM.DD / YYYY/MM/DD
+        - DD-MM-YYYY / DD_MM_YYYY / DD.MM.YYYY / DD/MM/YYYY
+        """
+
+        s = str(text or "")
+        if not s:
+            return None
+
+        # Normalize separators to '-'
+        norm = []
+        for ch in s:
+            if ch in "_./\\":
+                norm.append("-")
+            else:
+                norm.append(ch)
+        s2 = "".join(norm)
+
+        def _is_valid_ymd(y: int, m: int, d: int) -> bool:
+            if y < 1900 or y > 2200:
+                return False
+            if m < 1 or m > 12:
+                return False
+            if d < 1 or d > 31:
+                return False
+            return True
+
+        # Scan for YYYY-MM-DD
+        for i in range(0, max(0, len(s2) - 9)):
+            chunk = s2[i : i + 10]
+            if len(chunk) != 10:
+                continue
+            if chunk[4] != "-" or chunk[7] != "-":
+                continue
+            y_str, m_str, d_str = chunk[0:4], chunk[5:7], chunk[8:10]
+            if not (y_str.isdigit() and m_str.isdigit() and d_str.isdigit()):
+                continue
+            y, m, d = int(y_str), int(m_str), int(d_str)
+            if _is_valid_ymd(y, m, d):
+                return f"{y:04d}-{m:02d}-{d:02d}"
+
+        # Scan for DD-MM-YYYY
+        for i in range(0, max(0, len(s2) - 9)):
+            chunk = s2[i : i + 10]
+            if len(chunk) != 10:
+                continue
+            if chunk[2] != "-" or chunk[5] != "-":
+                continue
+            d_str, m_str, y_str = chunk[0:2], chunk[3:5], chunk[6:10]
+            if not (y_str.isdigit() and m_str.isdigit() and d_str.isdigit()):
+                continue
+            y, m, d = int(y_str), int(m_str), int(d_str)
+            if _is_valid_ymd(y, m, d):
+                return f"{y:04d}-{m:02d}-{d:02d}"
+
+        return None
+
     start_iso = (start_date or "").strip() or None
     end_iso = (end_date or "").strip() or None
     if start_iso or end_iso:
+        start_year = None
+        end_year = None
+        try:
+            start_year = int(start_iso[:4]) if start_iso else None
+        except Exception:
+            start_year = None
+        try:
+            end_year = int(end_iso[:4]) if end_iso else None
+        except Exception:
+            end_year = None
+
         filtered: list[dict] = []
         for d in verbali:
             dv = _date_value(d)
-            if not dv:
+            if dv:
+                if start_iso and dv < start_iso:
+                    pass
+                elif end_iso and dv > end_iso:
+                    pass
+                else:
+                    filtered.append(d)
+                    continue
+
+            # Fallback #1: try extracting a date from filename/description/protocollo
+            # (useful when importing old verbali after the mandate end).
+            extracted = (
+                _extract_iso_date_from_text(d.get("original_name"))
+                or _extract_iso_date_from_text(d.get("nome_file"))
+                or _extract_iso_date_from_text(d.get("descrizione"))
+                or _extract_iso_date_from_text(d.get("protocollo"))
+            )
+            if extracted:
+                if start_iso and extracted < start_iso:
+                    pass
+                elif end_iso and extracted > end_iso:
+                    pass
+                else:
+                    filtered.append(d)
+                    continue
+
+            # Fallback: if the document is clearly a CD verbale, and it has a year
+            # in `verbale_numero`, include it when the year is within the mandate years.
+            year = _extract_year_from_verbale_numero(d.get("verbale_numero"))
+            if year is None:
                 continue
-            if start_iso and dv < start_iso:
+            if start_year and year < start_year:
                 continue
-            if end_iso and dv > end_iso:
+            if end_year and year > end_year:
                 continue
             filtered.append(d)
         verbali = filtered
@@ -544,6 +820,121 @@ def list_cd_verbali_documents(*, start_date: str | None = None, end_date: str | 
         reverse=True,
     )
     return verbali
+
+
+def list_cd_verbali_linked_documents(
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    include_missing: bool = False,
+) -> list[dict]:
+    """Return CD verbali that are *canonically* linked to meetings.
+
+    Source of truth is the meeting table (`cd_riunioni.verbale_section_doc_id`) joined
+    to `section_documents`.
+
+    Optionally filters by meeting date range (inclusive) using ISO dates.
+    """
+
+    try:
+        from database import fetch_all, get_conn
+    except Exception:
+        return []
+
+    # Be tolerant to production DBs that may lag behind the latest schema.
+    # (e.g. older `section_documents` without `original_name` column.)
+    cols: set[str] = set()
+    try:
+        conn = get_conn()
+        cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(section_documents)").fetchall()}
+        try:
+            conn.close()
+        except Exception:
+            pass
+    except Exception:
+        cols = set()
+
+    where: list[str] = ["r.verbale_section_doc_id IS NOT NULL"]
+    if "deleted_at" in cols:
+        where.append("(d.deleted_at IS NULL OR TRIM(d.deleted_at) = '')")
+    params: list[object] = []
+    if (start_date or "").strip():
+        where.append("r.data >= ?")
+        params.append(str(start_date).strip())
+    if (end_date or "").strip():
+        where.append("r.data <= ?")
+        params.append(str(end_date).strip())
+
+    def _col(name: str, *, alias: str | None = None) -> str:
+        a = alias or name
+        return f"d.{name} AS {a}" if name in cols else f"NULL AS {a}"
+
+    if "uploaded_at" in cols and "data_caricamento" in cols:
+        uploaded_expr = "COALESCE(d.uploaded_at, d.data_caricamento) AS uploaded_at"
+    elif "uploaded_at" in cols:
+        uploaded_expr = "d.uploaded_at AS uploaded_at"
+    elif "data_caricamento" in cols:
+        uploaded_expr = "d.data_caricamento AS uploaded_at"
+    else:
+        uploaded_expr = "NULL AS uploaded_at"
+
+    sql = f"""
+        SELECT
+            r.id AS meeting_id,
+            r.data AS meeting_date,
+            r.numero_cd AS meeting_numero_cd,
+            d.id,
+            {_col('hash_id')},
+            {_col('nome_file')},
+            {_col('percorso')},
+            {_col('tipo')},
+            {_col('categoria')},
+            {_col('descrizione')},
+            {_col('protocollo')},
+            {_col('verbale_numero')},
+            {_col('original_name')},
+            {_col('stored_name')},
+            {_col('relative_path')},
+            {uploaded_expr}
+        FROM cd_riunioni r
+        JOIN section_documents d ON d.id = r.verbale_section_doc_id
+        WHERE {' AND '.join(where)}
+        ORDER BY r.data DESC, r.numero_cd DESC, r.id DESC
+    """
+
+    try:
+        rows = fetch_all(sql, tuple(params))
+    except Exception:
+        return []
+
+    out: list[dict] = []
+    for row in rows or []:
+        d = dict(row)
+
+        # Add an absolute_path key compatible with list_section_documents()
+        abs_path = None
+        try:
+            resolved = _resolve_to_absolute(
+                str(d.get("percorso") or "") or None,
+                fallback_rel=str(d.get("relative_path") or "") or None,
+            )
+            abs_path = str(resolved) if resolved is not None else ""
+        except Exception:
+            abs_path = str(d.get("percorso") or "")
+
+        d["absolute_path"] = abs_path
+        if not include_missing:
+            if not abs_path:
+                continue
+            try:
+                if not os.path.exists(abs_path):
+                    continue
+            except Exception:
+                continue
+
+        out.append(d)
+
+    return out
 
 
 def add_section_document(
@@ -566,42 +957,77 @@ def add_section_document(
     description_value = (descrizione or "").strip()
     protocollo_value = (protocollo or "").strip()
     verbale_numero_value = (verbale_numero or "").strip()
-    existing_tokens = set(metadata.keys())
-    while True:
-        hash_id = _generate_hash_token(existing_tokens, length=SECTION_DOC_TOKEN_LENGTH)
-        candidate_name = f"{hash_id}{src.suffix.lower()}"
-        dest = target_dir / candidate_name
-        if not dest.exists():
-            break
-        existing_tokens.add(hash_id)
 
-    shutil.copy2(src, dest)
+    # De-duplication by content: if the same file already exists in the target category,
+    # reuse it instead of creating a new copy with a different token.
+    src_digest = _safe_sha256_file(src)
+    existing_hash_index = _build_hash_index(target_dir) if src_digest else {}
+    if src_digest and src_digest in existing_hash_index:
+        dest = existing_hash_index[src_digest]
+        hash_id = dest.stem
+    else:
+        # Prefer a deterministic token derived from SHA256 to prevent future duplicates.
+        preferred = _preferred_token_for_content(src_digest) if src_digest else None
+
+        existing_tokens = set(metadata.keys())
+        if preferred:
+            existing_tokens.add(preferred)
+
+        # Try preferred token first; fall back to random token on collision.
+        candidates: list[str] = []
+        if preferred:
+            candidates.append(preferred)
+
+        for _ in range(50):
+            candidates.append(_generate_hash_token(existing_tokens, length=SECTION_DOC_TOKEN_LENGTH))
+
+        chosen: str | None = None
+        for token in candidates:
+            candidate_name = f"{token}{src.suffix.lower()}"
+            candidate_dest = target_dir / candidate_name
+            if not candidate_dest.exists():
+                chosen = token
+                dest = candidate_dest
+                break
+        if not chosen:
+            raise RuntimeError("Impossibile determinare un nome file univoco per il documento di sezione")
+        hash_id = chosen
+
+        shutil.copy2(src, dest)
 
     relative_path = _relative_to_root(dest)
     if not relative_path:
         raise RuntimeError("Impossibile determinare il percorso relativo del documento di sezione")
 
-    uploaded_at = datetime.now().isoformat(timespec="seconds")
-
-    # Persist DB tracking (primary)
+    # Use the file modification time as the document date shown in UI.
+    # Keep the import timestamp separate.
+    import_ts = datetime.now().isoformat(timespec="seconds")
     try:
-        from database import add_section_document_record
+        st = src.stat()
+        doc_ts = datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")
+    except OSError:
+        doc_ts = import_ts
 
-        add_section_document_record(
-            hash_id=hash_id,
-            nome_file=dest.name,
-            percorso=str(dest.resolve()),
-            tipo="documento",
-            data_caricamento=uploaded_at,
-            categoria=normalized_category,
-            descrizione=description_value,
-            protocollo=protocollo_value or None,
-            verbale_numero=verbale_numero_value or None,
-            original_name=src.name,
-            stored_name=dest.name,
-            relative_path=relative_path,
-            uploaded_at=uploaded_at,
-        )
+    # Persist DB tracking (primary). Avoid duplicate registry rows when reusing an existing file.
+    try:
+        from database import add_section_document_record, get_section_document_by_relative_path
+
+        if not get_section_document_by_relative_path(str(dest.resolve())) and not get_section_document_by_relative_path(relative_path):
+            add_section_document_record(
+                hash_id=hash_id,
+                nome_file=dest.name,
+                percorso=str(dest.resolve()),
+                tipo="documento",
+                data_caricamento=doc_ts,
+                categoria=normalized_category,
+                descrizione=description_value,
+                protocollo=protocollo_value or None,
+                verbale_numero=verbale_numero_value or None,
+                original_name=src.name,
+                stored_name=dest.name,
+                relative_path=relative_path,
+                uploaded_at=import_ts,
+            )
     except Exception as exc:
         logger.warning("Impossibile registrare documento sezione su DB: %s", exc)
 
@@ -615,7 +1041,7 @@ def add_section_document(
             "description": description_value,
             "protocollo": protocollo_value,
             "verbale_numero": verbale_numero_value,
-            "uploaded_at": uploaded_at,
+            "uploaded_at": doc_ts,
             "relative_path": relative_path,
         }
         _save_metadata(metadata)
@@ -661,6 +1087,9 @@ def bulk_import_section_documents(
     failed = 0
     details: list[str] = []
 
+    # Build a hash index once to avoid creating duplicates (same content, different name).
+    existing_hash_index = _build_hash_index(target_dir)
+
     try:
         filenames = sorted(os.listdir(src_root))
     except OSError as exc:
@@ -672,41 +1101,112 @@ def bulk_import_section_documents(
             continue
 
         metadata = _load_metadata()
-        existing_tokens = set(metadata.keys())
-        while True:
-            hash_id = _generate_hash_token(existing_tokens, length=SECTION_DOC_TOKEN_LENGTH)
-            candidate_name = f"{hash_id}{src.suffix.lower()}"
-            dest = target_dir / candidate_name
-            if not dest.exists():
-                break
-            existing_tokens.add(hash_id)
+        src_digest = _safe_sha256_file(src)
+        if src_digest and src_digest in existing_hash_index:
+            # Reuse existing file and only ensure DB registry exists.
+            dest = existing_hash_index[src_digest]
+            hash_id = dest.stem
+            reused = True
+        else:
+            reused = False
+            preferred = _preferred_token_for_content(src_digest) if src_digest else None
+            existing_tokens = set(metadata.keys())
+            if preferred:
+                existing_tokens.add(preferred)
+
+            candidates: list[str] = []
+            if preferred:
+                candidates.append(preferred)
+            for _ in range(50):
+                candidates.append(_generate_hash_token(existing_tokens, length=SECTION_DOC_TOKEN_LENGTH))
+
+            chosen: str | None = None
+            dest = None
+            for token in candidates:
+                candidate_name = f"{token}{src.suffix.lower()}"
+                candidate_dest = target_dir / candidate_name
+                if not candidate_dest.exists():
+                    chosen = token
+                    dest = candidate_dest
+                    break
+
+            if not chosen or dest is None:
+                failed += 1
+                details.append(f"{name}: impossibile determinare nome univoco")
+                continue
+
+            hash_id = chosen
 
         try:
-            shutil.copy2(src, dest)
+            if not reused:
+                shutil.copy2(src, dest)
 
             relative_path = _relative_to_root(dest)
             if not relative_path:
                 raise RuntimeError("Impossibile determinare il percorso relativo del documento di sezione")
 
-            uploaded_at = datetime.now().isoformat(timespec="seconds")
+            import_ts = datetime.now().isoformat(timespec="seconds")
+            try:
+                st = src.stat()
+                doc_ts = datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")
+            except OSError:
+                doc_ts = import_ts
 
             from database import add_section_document_record
 
-            add_section_document_record(
-                hash_id=hash_id,
-                nome_file=dest.name,
-                percorso=str(dest.resolve()),
-                tipo="documento",
-                data_caricamento=uploaded_at,
-                categoria=normalized_category,
-                descrizione=description_value,
-                protocollo=protocollo_value or None,
-                verbale_numero=verbale_numero_value or None,
-                original_name=src.name,
-                stored_name=dest.name,
-                relative_path=relative_path,
-                uploaded_at=uploaded_at,
-            )
+            # Ensure we don't create duplicate DB rows when reusing an existing file
+            try:
+                from database import get_section_document_by_relative_path
+
+                exists_row = get_section_document_by_relative_path(str(dest.resolve())) or get_section_document_by_relative_path(relative_path)
+            except Exception:
+                exists_row = None
+
+            if exists_row:
+                imported += 1
+                details.append(f"{name}: duplicato (riusato {dest.name})")
+                continue
+
+            inserted = False
+            last_exc: Exception | None = None
+            for attempt in range(3):
+                try:
+                    add_section_document_record(
+                        hash_id=hash_id,
+                        nome_file=dest.name,
+                        percorso=str(dest.resolve()),
+                        tipo="documento",
+                        data_caricamento=doc_ts,
+                        categoria=normalized_category,
+                        descrizione=description_value,
+                        protocollo=protocollo_value or None,
+                        verbale_numero=verbale_numero_value or None,
+                        original_name=src.name,
+                        stored_name=dest.name,
+                        relative_path=relative_path,
+                        uploaded_at=import_ts,
+                    )
+                    inserted = True
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    try:
+                        from exceptions import DatabaseLockError
+
+                        is_lock = isinstance(exc, DatabaseLockError)
+                    except Exception:
+                        is_lock = False
+
+                    if is_lock and attempt < 2:
+                        time.sleep(0.25 * (attempt + 1))
+                        continue
+                    break
+
+            if not inserted:
+                raise RuntimeError(f"DB insert failed: {last_exc}")
+
+            if src_digest:
+                existing_hash_index.setdefault(src_digest, dest)
 
             # Mantieni metadata.json solo per compatibilita' (best effort)
             try:
@@ -718,7 +1218,7 @@ def bulk_import_section_documents(
                     "description": description_value,
                     "protocollo": protocollo_value,
                     "verbale_numero": verbale_numero_value,
-                    "uploaded_at": uploaded_at,
+                    "uploaded_at": doc_ts,
                     "relative_path": relative_path,
                 }
                 _save_metadata(metadata)

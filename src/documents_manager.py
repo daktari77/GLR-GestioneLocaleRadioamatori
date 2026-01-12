@@ -10,6 +10,7 @@ import logging
 import secrets
 from pathlib import Path
 from datetime import datetime
+from typing import Iterable
 
 from documents_catalog import ensure_category
 from file_archiver import unique_hex_filename
@@ -77,10 +78,25 @@ def upload_document(
         
         # Copy file
         shutil.copy2(file_path, dest_path)
+
+        # Use document mtime (creation/modification proxy) instead of import time
+        try:
+            src_mtime = os.path.getmtime(file_path)
+            doc_ts = datetime.fromtimestamp(src_mtime).isoformat(timespec="seconds")
+        except Exception:
+            doc_ts = None
         
         # Store in database
         from database import add_documento
-        doc_id = add_documento(socio_id, dest_filename, dest_path, doc_type, categoria_value, description_value)
+        doc_id = add_documento(
+            socio_id,
+            dest_filename,
+            dest_path,
+            doc_type,
+            categoria_value,
+            description_value,
+            data_caricamento=doc_ts,
+        )
         
         logger.info("Document uploaded: %s (ID: %d)", dest_path, doc_id)
         _refresh_member_document_indexes(socio_id)
@@ -233,6 +249,59 @@ def update_document_description(doc_id: int, descrizione: str | None) -> tuple[b
     except Exception as exc:
         logger.error("Failed to update document description %s: %s", doc_id, exc)
         return False, f"Errore: {exc}"
+
+
+def recalc_member_documents_data_caricamento(docs: Iterable[dict]) -> tuple[int, int, list[str]]:
+    """Recalculate member document dates using the file modification time.
+
+    Args:
+        docs: iterable of document dicts (must contain at least `id` and `percorso`).
+
+    Returns:
+        (updated_count, missing_count, errors)
+    """
+
+    from database import update_documento_data_caricamento
+
+    updated = 0
+    missing = 0
+    errors: list[str] = []
+
+    owner_ids: set[int] = set()
+    for doc in docs or []:
+        try:
+            doc_id = int(doc.get("id"))
+        except Exception:
+            continue
+
+        socio_id = doc.get("socio_id")
+        if socio_id is not None:
+            try:
+                owner_ids.add(int(socio_id))
+            except Exception:
+                pass
+
+        path = str(doc.get("percorso") or "").strip()
+        if not path or not os.path.exists(path):
+            missing += 1
+            continue
+
+        try:
+            mtime = os.path.getmtime(path)
+            ts = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+            update_documento_data_caricamento(doc_id, ts)
+            updated += 1
+        except Exception as exc:
+            errors.append(f"{doc_id}: {exc}")
+
+    # Best-effort refresh of on-disk index files.
+    for owner_id in sorted(owner_ids):
+        try:
+            _refresh_member_document_indexes(int(owner_id))
+        except Exception:
+            pass
+
+    return updated, missing, errors
 
 
 def relink_missing_documents(new_root: str) -> tuple[int, int, list[str]]:

@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
-"""
-Main application window for GLR - Gestione Locale Radioamatori
-"""
+"""Main application window for GLR - Gestione Locale Radioamatori."""
 
 import csv
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import logging
 from pathlib import Path
+import os
 from datetime import datetime, timedelta
 from typing import Literal, Mapping, Sequence
 
 from calendar_utils import events_to_ics
 from .calendar_wizard import CalendarWizard, EVENT_TYPES as CALENDAR_EVENT_TYPES
+from .treeview_tags import CategoryTagStyler, MEMBER_CATEGORY_PALETTE, SECTION_CATEGORY_PALETTE
 from .ponti_panel import PontiPanel
 from .magazzino_panel import MagazzinoPanel
 from .unified_export_wizard import UnifiedExportWizard
@@ -103,6 +104,12 @@ class App:
         self.calendar_type_labels = {code: label for code, label in CALENDAR_EVENT_TYPES}
         self.member_lookup = {}
         self.startup_issues = list(startup_issues or [])
+
+        # Optional UI widgets created lazily by tab builders (helps static analysis)
+        self.tv_cd_riunioni: ttk.Treeview | None = None
+        self.tv_cd_delibere_overview: ttk.Treeview | None = None
+        # Legacy attribute used by older CD delibere tab implementations
+        self.tv_cd_delibere: ttk.Treeview | None = None
         
         # Update title with section info
         self._update_title()
@@ -115,9 +122,148 @@ class App:
         
         # Load initial data
         self._refresh_member_list()
+
+        # Betatest presentation (first run only, per version)
+        try:
+            self.root.after(500, self._maybe_show_betatest_intro)
+        except Exception:
+            pass
         
         # Start event loop
         self.root.mainloop()
+
+    def _maybe_show_betatest_intro(self):
+        """Show the betatest welcome guide once per app version."""
+        try:
+            from config import APP_VERSION
+
+            # Betatest is scoped to the 0.4.5* line.
+            if not str(APP_VERSION).startswith("0.4.5"):
+                return
+
+            key = f"betatest_intro_shown::{APP_VERSION}"
+            already_shown = bool((self.cfg or {}).get(key))
+            if already_shown:
+                return
+
+            self._show_betatest_intro_dialog(version=APP_VERSION, flag_key=key)
+        except Exception:
+            return
+
+    def _read_betatest_guide_text(self) -> str:
+        """Load the betatest guide markdown as plain text (best-effort)."""
+        candidates: list[Path] = []
+        try:
+            # Source layout: repo root is two levels above v4_ui/
+            candidates.append(Path(__file__).resolve().parents[2] / "docs" / "BETATEST_GUIDE.md")
+        except Exception:
+            pass
+
+        try:
+            if getattr(sys, "frozen", False):
+                exe_dir = Path(sys.executable).resolve().parent
+                candidates.append(exe_dir / "docs" / "BETATEST_GUIDE.md")
+                # Seeded portable layout: build script copies seed under dist\data\...
+                candidates.append(exe_dir / "data" / "docs" / "BETATEST_GUIDE.md")
+                candidates.append(exe_dir / "data" / "BETATEST_GUIDE.md")
+        except Exception:
+            pass
+
+        for p in candidates:
+            try:
+                if p.exists():
+                    return p.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+        return (
+            "Benvenuto nel betatest di GLR – Gestione Locale Radioamatori.\n\n"
+            "La guida completa non è stata trovata sul disco (docs/BETATEST_GUIDE.md).\n"
+            "Contatta il coordinatore del betatest per ottenerla.\n"
+        )
+
+    def _show_betatest_intro_dialog(self, *, version: str, flag_key: str) -> None:
+        """Modal welcome dialog that displays the betatest guide."""
+        win = tk.Toplevel(self.root)
+        win.title(f"Benvenuto al betatest – v{version}")
+        try:
+            win.transient(self.root)
+        except Exception:
+            pass
+
+        # Reasonable default size; user can resize.
+        try:
+            win.geometry("900x700")
+            win.minsize(720, 520)
+        except Exception:
+            pass
+
+        container = ttk.Frame(win)
+        container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        header = ttk.Label(container, text=f"Guida Betatest (v{version})", font="AppBold")
+        header.pack(anchor="w")
+
+        sub = ttk.Label(
+            container,
+            text="Leggi le istruzioni e la checklist. Questa schermata viene mostrata solo al primo avvio.",
+        )
+        sub.pack(anchor="w", pady=(2, 10))
+
+        text_frame = ttk.Frame(container)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        yscroll = ttk.Scrollbar(text_frame, orient="vertical")
+        yscroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        text = tk.Text(
+            text_frame,
+            wrap="word",
+            yscrollcommand=yscroll.set,
+        )
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        yscroll.config(command=text.yview)
+
+        guide_text = self._read_betatest_guide_text()
+        try:
+            text.insert("1.0", guide_text)
+        except Exception:
+            pass
+        try:
+            text.config(state="disabled")
+        except Exception:
+            pass
+
+        btns = ttk.Frame(container)
+        btns.pack(fill=tk.X, pady=(10, 0))
+
+        def _close():
+            try:
+                cfg = dict(self.cfg or {})
+                cfg[flag_key] = True
+                self.cfg = cfg
+                from config_manager import save_config
+
+                save_config(cfg)
+            except Exception:
+                pass
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        ttk.Button(btns, text="Chiudi", command=_close).pack(side=tk.RIGHT)
+
+        try:
+            win.protocol("WM_DELETE_WINDOW", _close)
+        except Exception:
+            pass
+
+        try:
+            win.grab_set()
+            win.focus_set()
+        except Exception:
+            pass
     
     def _update_title(self):
         """Update window title with section information."""
@@ -153,6 +299,42 @@ class App:
         
         # Ctrl+B: Backup
         self.root.bind("<Control-b>", lambda e: self._manual_backup())
+
+        # Global Delete handling (only for Magazzino treeview)
+        # This improves reliability of the "Canc" key without affecting text fields.
+        try:
+            self.root.bind("<Delete>", self._on_global_delete_key)
+            self.root.bind("<KP_Delete>", self._on_global_delete_key)
+        except Exception:
+            pass
+
+    def _on_global_delete_key(self, event):
+        """Handle Delete key globally but only when Magazzino Treeview has focus."""
+        try:
+            panel = getattr(self, "magazzino_panel", None)
+            if panel is None:
+                return None
+
+            tree = getattr(panel, "tree", None)
+            if tree is None:
+                return None
+
+            try:
+                focused = self.root.focus_get()
+            except Exception:
+                focused = None
+
+            if focused is tree:
+                handler = getattr(panel, "_on_delete_key", None)
+                if callable(handler):
+                    try:
+                        return handler(event)
+                    except Exception:
+                        return "break"
+        except Exception:
+            return None
+
+        return None
 
     def _show_preferences_dialog(self):
         """Show the preferences dialog for customizable options."""
@@ -347,15 +529,33 @@ class App:
             self.root.after(300, self._show_startup_issues)
 
     @staticmethod
+    def _normalize_tab_label(label: str) -> str:
+        """Normalize a tab label by removing leading emoji/pictograms.
+
+        This allows changing visible labels (e.g. adding emojis) without breaking
+        code that navigates tabs by text.
+        """
+        text = (label or "").strip()
+        # Strip leading non-alphanumeric symbols (emoji/pictograms) plus spaces.
+        while text and not text[0].isalnum():
+            text = text[1:].lstrip()
+        return text
+
+    @staticmethod
     def _select_notebook_tab_by_text(notebook: ttk.Notebook, label: str) -> bool:
         """Select a notebook tab by its visible label."""
         try:
-            wanted = (label or "").strip()
-            if not wanted:
+            wanted_raw = (label or "").strip()
+            if not wanted_raw:
                 return False
+            wanted_raw_cf = wanted_raw.casefold()
+            wanted_norm_cf = App._normalize_tab_label(wanted_raw).casefold()
             for tab_id in notebook.tabs():
                 try:
-                    if (notebook.tab(tab_id, "text") or "").strip() == wanted:
+                    tab_text = (notebook.tab(tab_id, "text") or "").strip()
+                    tab_text_cf = tab_text.casefold()
+                    tab_norm_cf = App._normalize_tab_label(tab_text).casefold()
+                    if tab_text_cf == wanted_raw_cf or tab_norm_cf == wanted_norm_cf:
                         notebook.select(tab_id)
                         return True
                 except Exception:
@@ -372,53 +572,53 @@ class App:
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Apri...", command=self._not_implemented)
-        file_menu.add_command(label="Salva                    Ctrl+S", command=self._save_if_editing)
+        file_menu.add_command(label="📂 Apri...", command=self._not_implemented)
+        file_menu.add_command(label="💾 Salva", accelerator="Ctrl+S", command=self._save_if_editing)
         file_menu.add_separator()
-        file_menu.add_command(label="Esci                     Ctrl+Q", command=self.root.quit)
+        file_menu.add_command(label="🚪 Esci", accelerator="Ctrl+Q", command=self.root.quit)
         
         # Edit menu
         edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Modifica", menu=edit_menu)
-        edit_menu.add_command(label="Nuovo socio              Ctrl+N", command=self._add_member)
-        edit_menu.add_command(label="Modifica socio", command=self._edit_member)
-        edit_menu.add_command(label="Elimina socio            Ctrl+Del", command=self._delete_member)
+        edit_menu.add_command(label="➕  Nuovo socio", accelerator="Ctrl+N", command=self._add_member)
+        edit_menu.add_command(label="✏️  Modifica socio", command=self._edit_member)
+        edit_menu.add_command(label="🗑️  Elimina socio", accelerator="Ctrl+Del", command=self._delete_member)
         edit_menu.add_separator()
-        edit_menu.add_command(label="Cerca...                 Ctrl+F", command=self._focus_search)
-        edit_menu.add_command(label="Aggiorna lista           F5", command=self._refresh_member_list)
+        edit_menu.add_command(label="🔎 Cerca...", accelerator="Ctrl+F", command=self._focus_search)
+        edit_menu.add_command(label="🔄 Aggiorna lista", accelerator="F5", command=self._refresh_member_list)
         
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Strumenti", menu=tools_menu)
-        tools_menu.add_command(label="Importa dati CSV", command=self._show_import_wizard)
-        tools_menu.add_command(label="Esporta dati             Ctrl+E", command=self._show_export_dialog)
-        tools_menu.add_command(label="Ricerca Duplicati        Ctrl+M", command=self._show_duplicates_dialog)
-        tools_menu.add_command(label="Import documenti", command=self._import_documents_wizard)
+        tools_menu.add_command(label="📥 Importa dati CSV", command=self._show_import_wizard)
+        tools_menu.add_command(label="📤 Esporta dati CSV", accelerator="Ctrl+E", command=self._show_export_dialog)
+        tools_menu.add_command(label="🧩 Ricerca duplicati...", accelerator="Ctrl+M", command=self._show_duplicates_dialog)
+        tools_menu.add_command(label="📄 Importa documenti...", command=self._import_documents_wizard)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Modifica campi comuni", command=self._show_batch_edit_dialog)
+        tools_menu.add_command(label="🧾 Modifica campi comuni...", command=self._show_batch_edit_dialog)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Aggiorna stato soci", command=self._show_update_status_wizard)
+        tools_menu.add_command(label="🔁 Aggiorna stato soci...", command=self._show_update_status_wizard)
         tools_menu.add_separator()
-        tools_menu.add_command(label="📄 Gestione Template", command=self._show_templates_dialog)
-        tools_menu.add_command(label="📧 Email", command=self._open_email_wizard)
+        tools_menu.add_command(label="🧩 Gestione template...", command=self._show_templates_dialog)
+        tools_menu.add_command(label="✉️ Email...", command=self._open_email_wizard)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Legenda codici quote", command=self._show_quota_legend)
+        tools_menu.add_command(label="🏷️ Legenda codici quote...", command=self._show_quota_legend)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Preferenze", command=self._show_preferences_dialog)
+        tools_menu.add_command(label="⚙️ Preferenze...", command=self._show_preferences_dialog)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Configurazione sezione", command=self._show_section_config_dialog)
-        tools_menu.add_command(label="Backup database          Ctrl+B", command=self._manual_backup)
-        tools_menu.add_command(label="Riallinea percorsi documenti", command=self._relink_document_paths)
-        tools_menu.add_command(label="Verifica integrità DB", command=self._not_implemented)
-        tools_menu.add_command(label="Log eventi", command=self._show_event_log)
+        tools_menu.add_command(label="🏠 Configurazione sezione...", command=self._show_section_config_dialog)
+        tools_menu.add_command(label="🛡️ Backup database...", accelerator="Ctrl+B", command=self._manual_backup)
+        tools_menu.add_command(label="🔗 Riallinea percorsi documenti...", command=self._relink_document_paths)
+        tools_menu.add_command(label="🧪 Verifica integrità DB...", command=self._not_implemented)
+        tools_menu.add_command(label="📜 Log eventi...", command=self._show_event_log)
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Aiuto", menu=help_menu)
-        help_menu.add_command(label="Guida rapida", command=self._open_help)
-        help_menu.add_command(label="Scorciatoie da tastiera", command=self._show_shortcuts_help)
+        help_menu.add_command(label="📖 Guida rapida", command=self._open_help)
+        help_menu.add_command(label="⌨️ Scorciatoie da tastiera", command=self._show_shortcuts_help)
         help_menu.add_separator()
-        help_menu.add_command(label="Informazioni", command=self._show_about)
+        help_menu.add_command(label="ℹ️ Informazioni", command=self._show_about)
 
     def _open_help(self):
         """Apri il file HELP.md con il visualizzatore di default."""
@@ -429,7 +629,10 @@ class App:
         try:
             from utils import open_path
 
-            open_path(str(help_path), on_error=lambda msg: messagebox.showerror("Aiuto", msg))
+            def _on_open_help_error(msg: str) -> None:
+                messagebox.showerror("Aiuto", msg)
+
+            open_path(str(help_path), on_error=_on_open_help_error)
         except Exception as exc:
             logger.error("Impossibile aprire l'help: %s", exc)
             messagebox.showerror("Aiuto", f"Impossibile aprire l'help:\n{exc}")
@@ -481,7 +684,7 @@ class App:
     def _create_soci_tab(self):
         """Create the Soci (members) tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Soci")
+        self.notebook.add(tab, text="👥 Soci")
 
         # Main toolbar
         toolbar = ttk.Frame(tab)
@@ -692,12 +895,20 @@ class App:
         except Exception:
             pass
 
+        # Row coloring by document category/type.
+        self._docs_preview_category_tags = CategoryTagStyler(
+            self.docs_preview_tree,
+            default_label="Altro",
+            palette=MEMBER_CATEGORY_PALETTE,
+            tag_prefix="docprev::",
+        )
+
         self.docs_preview_tree.pack(fill=tk.X, expand=False)
     
     def _create_docs_tab(self):
         """Create the Documents tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Documenti")
+        self.notebook.add(tab, text="📄 Documenti")
         
         from .panels import DocumentPanel, SectionDocumentPanel
 
@@ -705,22 +916,22 @@ class App:
         self.docs_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.section_docs_panel = SectionDocumentPanel(self.docs_notebook)
-        self.docs_notebook.add(self.section_docs_panel, text="Documenti sezione")
+        self.docs_notebook.add(self.section_docs_panel, text="🏠 Documenti sezione")
 
         self.panel_docs = DocumentPanel(self.docs_notebook, show_all_documents=True)
-        self.docs_notebook.add(self.panel_docs, text="Documenti soci")
+        self.docs_notebook.add(self.panel_docs, text="👥 Documenti soci")
 
     def _create_magazzino_tab(self):
         """Create the inventory (magazzino) tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Magazzino")
+        self.notebook.add(tab, text="📦 Magazzino")
         self.magazzino_panel = MagazzinoPanel(tab)
         self.magazzino_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
     def _create_ponti_tab(self):
         """Create the Ponti (repeaters) management tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Ponti")
+        self.notebook.add(tab, text="📡 Ponti")
         self.ponti_panel = PontiPanel(tab)
         self.ponti_panel.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
     
@@ -731,16 +942,13 @@ class App:
         except Exception:
             return
         tab_text = (self.notebook.tab(tab_id, "text") or "").strip()
-        if tab_text == "Consiglio Direttivo":
+        tab_key = self._normalize_tab_label(tab_text)
+        if tab_key == "Consiglio Direttivo":
             try:
-                self._refresh_cd_delibere()
+                self._refresh_cd_riunioni()
             except Exception:
                 pass
-            try:
-                self._refresh_cd_verbali_docs()
-            except Exception:
-                pass
-        elif tab_text == "Statistiche" and hasattr(self, "stats_panel"):
+        elif tab_key == "Statistiche" and hasattr(self, "stats_panel"):
             self.stats_panel.refresh()
 
     def _make_treeview_sortable(self, tv, cols):
@@ -763,197 +971,1219 @@ class App:
                 pass
 
     def _create_consiglio_direttivo_tab(self):
-        """Create the consolidated Consiglio Direttivo area (Delibere/Verbali + documentale integration)."""
+        """Create the Consiglio Direttivo area (single consolidated view)."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Consiglio Direttivo")
-
-        from .panels import SectionDocumentPanel
+        self.notebook.add(tab, text="🏛️ Consiglio Direttivo")
 
         # CD actions toolbar (single access point for Riunioni CD)
         cd_toolbar = ttk.Frame(tab)
         cd_toolbar.pack(fill=tk.X, padx=5, pady=(5, 0))
-        ttk.Button(cd_toolbar, text="Nuova riunione CD", command=self._new_cd_meeting).pack(side=tk.LEFT, padx=2)
-        ttk.Button(cd_toolbar, text="Gestisci riunioni CD", command=self._open_cd_meetings_list).pack(
+        ttk.Button(cd_toolbar, text="Esporta libro verbali", command=self._export_libro_verbali).pack(
+            side=tk.LEFT, padx=2
+        )
+        ttk.Button(cd_toolbar, text="Esporta libro delibere", command=self._export_libro_delibere).pack(
             side=tk.LEFT, padx=2
         )
 
-        cd_notebook = ttk.Notebook(tab)
-        cd_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Single unified view (Riunioni + Verbali + Delibere in one tab)
+        self._build_cd_riunioni_view(tab)
 
-        delibere_tab = ttk.Frame(cd_notebook)
-        cd_notebook.add(delibere_tab, text="Delibere")
-        self._build_cd_delibere_view(delibere_tab)
+    def _export_libro_verbali(self):
+        """Export the 'Libro verbali' Excel file from cd_riunioni."""
+        from tkinter import filedialog, messagebox
 
-        verbali_tab = ttk.Frame(cd_notebook)
-        cd_notebook.add(verbali_tab, text="Verbali")
-        self._build_cd_verbali_docs_view(verbali_tab)
-
-        docs_tab = ttk.Frame(cd_notebook)
-        cd_notebook.add(docs_tab, text="Documenti")
-        self.cd_section_docs_panel = SectionDocumentPanel(docs_tab, on_changed=self._refresh_cd_verbali_docs)
-        self.cd_section_docs_panel.pack(fill=tk.BOTH, expand=True)
-
-        try:
-            from preferences import get_section_document_categories
-
-            cats = set(get_section_document_categories(self.cfg))
-            if "Verbali" in cats:
-                self.cd_section_docs_panel.filter_var.set("Verbali")
-                self.cd_section_docs_panel.upload_category_var.set("Verbali")
-                self.cd_section_docs_panel.refresh()
-        except Exception:
-            pass
-
-        try:
-            cd_notebook.bind("<<NotebookTabChanged>>", lambda _e: self._on_cd_area_tab_changed(cd_notebook))
-        except Exception:
-            pass
-
-    def _on_cd_area_tab_changed(self, cd_notebook: ttk.Notebook):
-        """Refresh CD subviews when switching inside the CD area."""
-        try:
-            tab_id = cd_notebook.select()
-        except Exception:
+        default_name = "Libro_verbali.xlsx"
+        file_path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Esporta libro verbali",
+            initialfile=default_name,
+            defaultextension=".xlsx",
+            filetypes=(("Excel (.xlsx)", "*.xlsx"), ("Tutti i file", "*.*")),
+        )
+        if not file_path:
             return
-        tab_text = (cd_notebook.tab(tab_id, "text") or "").strip()
-        if tab_text == "Delibere":
-            self._refresh_cd_delibere()
-        elif tab_text == "Verbali":
-            self._refresh_cd_verbali_docs()
 
-    def _build_cd_delibere_view(self, parent: ttk.Frame):
-        """Build the delibere view inside the consolidated CD area."""
+        try:
+            from cd_reports import export_libro_verbali_xlsx
+
+            count, warnings = export_libro_verbali_xlsx(file_path)
+            lines = [f"Righe esportate: {count}", f"File: {file_path}"]
+            if warnings:
+                lines.append("")
+                lines.append("Avvisi:")
+                lines.extend(warnings)
+            messagebox.showinfo("Libro verbali", "\n".join(lines))
+        except Exception as exc:
+            messagebox.showerror("Libro verbali", f"Errore durante l'esportazione:\n{exc}")
+
+    def _export_libro_delibere(self):
+        """Export the 'Libro delibere' (Word or Excel) from cd_delibere."""
+        from tkinter import filedialog, messagebox
+
+        default_name = "Libro_delibere.docx"
+        file_path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Esporta libro delibere",
+            initialfile=default_name,
+            defaultextension=".docx",
+            filetypes=(
+                ("Word (.docx)", "*.docx"),
+                ("Excel (.xlsx)", "*.xlsx"),
+                ("Tutti i file", "*.*"),
+            ),
+        )
+        if not file_path:
+            return
+
+        try:
+            suffix = (str(file_path).lower().rsplit(".", 1)[-1] if "." in str(file_path) else "").strip()
+            if suffix == "xlsx":
+                from cd_reports import export_libro_delibere_xlsx
+
+                count, warnings = export_libro_delibere_xlsx(file_path)
+            else:
+                # Default: DOCX template-based export (best-effort).
+                template = r"e:\ARI-BG - 2023-2025\CD\Delibere\ARIBG_Libro Delibere 2023.docx"
+                from cd_reports import export_libro_delibere_docx
+
+                count, warnings = export_libro_delibere_docx(file_path, template_path=template)
+
+            lines = [f"Righe esportate: {count}", f"File: {file_path}"]
+            if warnings:
+                lines.append("")
+                lines.append("Avvisi:")
+                lines.extend(warnings)
+            messagebox.showinfo("Libro delibere", "\n".join(lines))
+        except Exception as exc:
+            messagebox.showerror("Libro delibere", f"Errore durante l'esportazione:\n{exc}")
+
+    def _build_cd_riunioni_view(self, parent: ttk.Frame):
+        """Build the single CD view (riunioni overview + delibere list) inside the CD tab."""
         toolbar = ttk.Frame(parent)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text="Nuova delibera", command=self._new_cd_delibera).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Modifica", command=self._edit_cd_delibera).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina", command=self._delete_cd_delibera).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Nuova riunione", command=self._new_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Modifica riunione", command=self._edit_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Elimina riunione", command=self._delete_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
 
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
+        ttk.Button(toolbar, text="Nuova delibera", command=self._new_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Modifica delibera", command=self._edit_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Elimina delibera", command=self._delete_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
+
+        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
+        ttk.Button(toolbar, text="Apri verbale", command=self._open_cd_verbale_from_overview).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Esporta verbale...", command=self._export_cd_verbale_from_overview).pack(side=tk.LEFT, padx=2)
+
+        paned = ttk.PanedWindow(parent, orient=tk.VERTICAL)
+        paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        top = ttk.Frame(paned)
+        bottom = ttk.Frame(paned)
+        paned.add(top, weight=3)
+        paned.add(bottom, weight=2)
+        frame = ttk.Frame(top)
+        frame.pack(fill=tk.BOTH, expand=True)
 
         scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
         scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
 
-        self.tv_cd_delibere = ttk.Treeview(
+        self.tv_cd_riunioni = ttk.Treeview(
             frame,
+            columns=("data", "titolo_riunione", "numero", "titolo_verbale", "mandato", "delibere"),
+            show="headings",
+            xscrollcommand=scrollbar_h.set,
+            yscrollcommand=scrollbar_v.set,
+        )
+        scrollbar_h.config(command=self.tv_cd_riunioni.xview)
+        scrollbar_v.config(command=self.tv_cd_riunioni.yview)
+
+        self.tv_cd_riunioni.column("data", width=110)
+        self.tv_cd_riunioni.column("titolo_riunione", width=320)
+        self.tv_cd_riunioni.column("numero", width=110)
+        self.tv_cd_riunioni.column("titolo_verbale", width=420)
+        self.tv_cd_riunioni.column("mandato", width=120)
+        self.tv_cd_riunioni.column("delibere", width=220)
+
+        self.tv_cd_riunioni.heading("data", text="Data")
+        self.tv_cd_riunioni.heading("titolo_riunione", text="Titolo riunione")
+        self.tv_cd_riunioni.heading("numero", text="Numero CD")
+        self.tv_cd_riunioni.heading("titolo_verbale", text="Titolo verbale")
+        self.tv_cd_riunioni.heading("mandato", text="Mandato")
+        self.tv_cd_riunioni.heading("delibere", text="Delibere")
+
+        self.tv_cd_riunioni.grid(row=0, column=0, sticky="nsew")
+        scrollbar_h.grid(row=1, column=0, sticky="ew")
+        scrollbar_v.grid(row=0, column=1, sticky="ns")
+
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        try:
+            self._make_treeview_sortable(
+                self.tv_cd_riunioni,
+                ["data", "titolo_riunione", "numero", "titolo_verbale", "mandato", "delibere"],
+            )
+        except Exception:
+            pass
+
+        try:
+            self.tv_cd_riunioni.bind("<Double-1>", lambda _e: self._edit_cd_meeting_from_tab())
+        except Exception:
+            pass
+
+        try:
+            self.tv_cd_riunioni.bind("<<TreeviewSelect>>", lambda _e: self._refresh_cd_delibere_overview())
+        except Exception:
+            pass
+
+        # Bottom: delibere list filtered by selected meeting
+        bottom_toolbar = ttk.Frame(bottom)
+        bottom_toolbar.pack(fill=tk.X, padx=0, pady=(0, 4))
+        self._lbl_cd_delibere_badge = ttk.Label(bottom_toolbar, text="Delibere: (seleziona una riunione)")
+        self._lbl_cd_delibere_badge.pack(side=tk.LEFT)
+
+        dframe = ttk.Frame(bottom)
+        dframe.pack(fill=tk.BOTH, expand=True)
+
+        dscroll_h = ttk.Scrollbar(dframe, orient="horizontal")
+        dscroll_v = ttk.Scrollbar(dframe, orient="vertical")
+
+        self.tv_cd_delibere_overview = ttk.Treeview(
+            dframe,
             columns=("id", "numero", "oggetto", "esito", "data"),
             show="headings",
-            xscrollcommand=scrollbar_h.set,
-            yscrollcommand=scrollbar_v.set,
+            xscrollcommand=dscroll_h.set,
+            yscrollcommand=dscroll_v.set,
         )
-        scrollbar_h.config(command=self.tv_cd_delibere.xview)
-        scrollbar_v.config(command=self.tv_cd_delibere.yview)
+        dscroll_h.config(command=self.tv_cd_delibere_overview.xview)
+        dscroll_v.config(command=self.tv_cd_delibere_overview.yview)
 
-        self.tv_cd_delibere.column("id", width=50)
-        self.tv_cd_delibere.column("numero", width=80)
-        self.tv_cd_delibere.column("oggetto", width=500)
-        self.tv_cd_delibere.column("esito", width=120)
-        self.tv_cd_delibere.column("data", width=110)
+        self.tv_cd_delibere_overview.column("id", width=50)
+        self.tv_cd_delibere_overview.column("numero", width=90)
+        self.tv_cd_delibere_overview.column("oggetto", width=520)
+        self.tv_cd_delibere_overview.column("esito", width=120)
+        self.tv_cd_delibere_overview.column("data", width=110)
 
-        self.tv_cd_delibere.heading("id", text="ID")
-        self.tv_cd_delibere.heading("numero", text="Numero")
-        self.tv_cd_delibere.heading("oggetto", text="Oggetto")
-        self.tv_cd_delibere.heading("esito", text="Esito")
-        self.tv_cd_delibere.heading("data", text="Data votazione")
+        self.tv_cd_delibere_overview.heading("id", text="ID")
+        self.tv_cd_delibere_overview.heading("numero", text="Numero")
+        self.tv_cd_delibere_overview.heading("oggetto", text="Oggetto")
+        self.tv_cd_delibere_overview.heading("esito", text="Esito")
+        self.tv_cd_delibere_overview.heading("data", text="Data votazione")
 
-        # Soft color cues by outcome.
         try:
-            self.tv_cd_delibere.tag_configure("esito_ok", background="#e9f7ef")
-            self.tv_cd_delibere.tag_configure("esito_ko", background="#f8d7da")
-            self.tv_cd_delibere.tag_configure("esito_pending", background="#fff3cd", foreground="#856404")
+            self.tv_cd_delibere_overview.tag_configure("esito_ok", background="#e9f7ef")
+            self.tv_cd_delibere_overview.tag_configure("esito_ko", background="#f8d7da")
+            self.tv_cd_delibere_overview.tag_configure("esito_pending", background="#fff3cd", foreground="#856404")
         except Exception:
             pass
 
-        self.tv_cd_delibere.grid(row=0, column=0, sticky="nsew")
-        scrollbar_h.grid(row=1, column=0, sticky="ew")
-        scrollbar_v.grid(row=0, column=1, sticky="ns")
+        self.tv_cd_delibere_overview.grid(row=0, column=0, sticky="nsew")
+        dscroll_h.grid(row=1, column=0, sticky="ew")
+        dscroll_v.grid(row=0, column=1, sticky="ns")
 
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
+        dframe.columnconfigure(0, weight=1)
+        dframe.rowconfigure(0, weight=1)
 
         try:
-            self._make_treeview_sortable(self.tv_cd_delibere, ["id", "numero", "oggetto", "esito", "data"])
+            self._make_treeview_sortable(self.tv_cd_delibere_overview, ["id", "numero", "oggetto", "esito", "data"])
         except Exception:
             pass
 
-        self._refresh_cd_delibere()
+        self._refresh_cd_riunioni()
 
-    def _build_cd_verbali_docs_view(self, parent: ttk.Frame):
-        """Build the verbali list sourced from section documents (documentale integration)."""
-        toolbar = ttk.Frame(parent)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text="Aggiorna", command=self._refresh_cd_verbali_docs).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Apri", command=self._open_cd_verbale_doc).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Mandato CD...", command=self._open_cd_mandato_wizard).pack(side=tk.LEFT, padx=8)
+    def _refresh_cd_riunioni(self):
+        tv = getattr(self, "tv_cd_riunioni", None)
+        if tv is None:
+            return
 
-        self._lbl_cd_mandato = ttk.Label(toolbar, text="")
-        self._lbl_cd_mandato.pack(side=tk.LEFT, padx=8)
+        try:
+            from cd_meetings import get_all_meetings
 
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            meetings = get_all_meetings() or []
+        except Exception:
+            meetings = []
 
-        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
-        scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
+        # Linked verbali by meeting (canonical link)
+        verbali_by_meeting: dict[int, dict] = {}
+        verbale_path_map: dict[str, str] = {}
+        try:
+            from section_documents import list_cd_verbali_linked_documents
 
-        self.tv_cd_verbali_docs = ttk.Treeview(
-            frame,
-            columns=("data", "numero", "protocollo", "descrizione", "file"),
-            show="headings",
-            xscrollcommand=scrollbar_h.set,
-            yscrollcommand=scrollbar_v.set,
+            linked = list_cd_verbali_linked_documents(start_date=None, end_date=None, include_missing=True) or []
+            for doc in linked:
+                try:
+                    mid_raw = doc.get("meeting_id")
+                    if mid_raw is None:
+                        continue
+                    mid = int(str(mid_raw))
+                except Exception:
+                    continue
+                if mid not in verbali_by_meeting:
+                    verbali_by_meeting[mid] = doc
+        except Exception:
+            pass
+
+        # Mandati lookup (for mandate label column)
+        mandati: list[dict] = []
+        try:
+            from database import fetch_all
+
+            rows = fetch_all(
+                """
+                SELECT id, label, start_date, end_date, is_active
+                FROM cd_mandati
+                WHERE start_date IS NOT NULL AND TRIM(start_date) <> ''
+                  AND end_date IS NOT NULL AND TRIM(end_date) <> ''
+                ORDER BY start_date DESC, id DESC
+                """
+            )
+            mandati = [dict(r) for r in rows]
+        except Exception:
+            mandati = []
+
+        def _mandato_label_for_date(iso_date: str | None) -> str:
+            dv = (iso_date or "").strip()
+            if not dv:
+                return ""
+            for m in mandati:
+                s = str(m.get("start_date") or "").strip()
+                e = str(m.get("end_date") or "").strip()
+                if not s or not e:
+                    continue
+                if s <= dv <= e:
+                    lbl = str(m.get("label") or "").strip()
+                    if lbl:
+                        return lbl
+                    return f"Mandato {s[:4]}-{e[:4]}"
+            return ""
+
+        def _mandato_label_for_id(mandato_id: object) -> str:
+            try:
+                mid = int(str(mandato_id))
+            except Exception:
+                return ""
+            for m in mandati:
+                raw_id_s = str(m.get("id") or "").strip()
+                if not raw_id_s:
+                    continue
+                try:
+                    if int(raw_id_s) != mid:
+                        continue
+                except Exception:
+                    continue
+                lbl = str(m.get("label") or "").strip()
+                if lbl:
+                    return lbl
+                s = str(m.get("start_date") or "").strip()
+                e = str(m.get("end_date") or "").strip()
+                if s and e:
+                    return f"Mandato {s[:4]}-{e[:4]}"
+                return f"Mandato ID {mid}"
+            return ""
+
+        # Delibere summary by meeting
+        delibere_nums_by_meeting: dict[int, list[str]] = {}
+        try:
+            from cd_delibere import get_all_delibere
+
+            all_delibere = get_all_delibere() or []
+            for d in all_delibere:
+                try:
+                    mid_raw = d.get("cd_id")
+                    if mid_raw is None:
+                        continue
+                    mid = int(str(mid_raw))
+                except Exception:
+                    continue
+                num = str(d.get("numero") or "").strip()
+                if not num:
+                    continue
+                delibere_nums_by_meeting.setdefault(mid, []).append(num)
+        except Exception:
+            delibere_nums_by_meeting = {}
+
+        def _delibere_summary(mid: int) -> str:
+            nums = delibere_nums_by_meeting.get(mid) or []
+            if not nums:
+                return ""
+            # Keep stable ordering (numbers are usually like "01/2026")
+            try:
+                uniq = sorted(set(nums), reverse=False)
+            except Exception:
+                uniq = list(dict.fromkeys(nums))
+            return ", ".join(uniq)
+
+        def _verbale_title(doc: dict | None) -> str:
+            if not doc:
+                return ""
+            return str(doc.get("descrizione") or doc.get("original_name") or doc.get("nome_file") or "").strip()
+
+        def _verbale_abs_path(doc: dict | None) -> str:
+            if not doc:
+                return ""
+            return str(doc.get("absolute_path") or doc.get("percorso") or "").strip()
+
+        # Display formatting
+        try:
+            from utils import iso_to_ddmmyyyy as _iso_to_ddmmyyyy
+
+            def iso_to_ddmmyyyy(iso_str: str | None) -> str:
+                return _iso_to_ddmmyyyy(iso_str)
+        except Exception:
+            def iso_to_ddmmyyyy(iso_str: str | None) -> str:
+                return str(iso_str or "")
+
+        for item in tv.get_children():
+            tv.delete(item)
+
+        self._cd_overview_verbale_path_map = {}
+
+        for m in meetings:
+            mid = m.get("id")
+            if mid is None:
+                continue
+            iid = str(mid)
+
+            meeting_date_iso = str(m.get("data") or "").strip()
+            meeting_date = iso_to_ddmmyyyy(meeting_date_iso)
+            titolo_riunione = str(m.get("titolo") or "")
+            numero_cd = str(m.get("numero_cd") or "")
+
+            vdoc = verbali_by_meeting.get(int(mid))
+            verbale_title = _verbale_title(vdoc)
+            mandato_lbl = ""
+            try:
+                mandato_lbl = _mandato_label_for_id(m.get("mandato_id"))
+            except Exception:
+                mandato_lbl = ""
+            if not mandato_lbl:
+                mandato_lbl = _mandato_label_for_date(meeting_date_iso)
+            delibere_summary = _delibere_summary(int(mid))
+
+            tv.insert(
+                "",
+                tk.END,
+                iid=iid,
+                values=(
+                    meeting_date,
+                    titolo_riunione,
+                    numero_cd,
+                    verbale_title,
+                    mandato_lbl,
+                    delibere_summary,
+                ),
+            )
+
+            abs_path = _verbale_abs_path(vdoc)
+            if abs_path:
+                self._cd_overview_verbale_path_map[iid] = abs_path
+
+        # Refresh delibere list for current selection
+        try:
+            self._refresh_cd_delibere_overview()
+        except Exception:
+            pass
+
+    def _selected_cd_meeting_id_from_overview(self) -> int | None:
+        tv = getattr(self, "tv_cd_riunioni", None)
+        if tv is None:
+            return None
+        sel = tv.selection()
+        if not sel:
+            return None
+        try:
+            return int(str(sel[0]))
+        except Exception:
+            return None
+
+    def _refresh_cd_delibere_overview(self):
+        tv = getattr(self, "tv_cd_delibere_overview", None)
+        if tv is None:
+            return
+
+        meeting_id = self._selected_cd_meeting_id_from_overview()
+        for item in tv.get_children():
+            tv.delete(item)
+
+        lbl = getattr(self, "_lbl_cd_delibere_badge", None)
+        if meeting_id is None:
+            if lbl is not None:
+                lbl.config(text="Delibere: (seleziona una riunione)")
+            return
+
+        from cd_delibere import get_all_delibere
+
+        delibere = get_all_delibere(meeting_id=meeting_id) or []
+
+        def _esito_tag(esito_value: object) -> tuple[str, ...]:
+            s = str(esito_value or "").strip().lower()
+            if not s:
+                return ("esito_pending",)
+            ok_words = ("approv", "favorev", "ok", "si", "sì")
+            ko_words = ("resp", "boc", "no", "contr")
+            if any(w in s for w in ok_words):
+                return ("esito_ok",)
+            if any(w in s for w in ko_words):
+                return ("esito_ko",)
+            if "rinv" in s or "sosp" in s or "att" in s:
+                return ("esito_pending",)
+            return ()
+
+        for d in delibere:
+            esito = d.get("esito", "")
+            tv.insert(
+                "",
+                tk.END,
+                iid=str(d.get("id")),
+                values=(
+                    d.get("id", ""),
+                    d.get("numero", ""),
+                    d.get("oggetto", ""),
+                    esito,
+                    d.get("data_votazione", ""),
+                ),
+                tags=_esito_tag(esito),
+            )
+
+        if lbl is not None:
+            lbl.config(text=f"Delibere: {len(delibere)}")
+
+    def _new_cd_delibera_from_overview(self):
+        from tkinter import messagebox
+
+        meeting_id = self._selected_cd_meeting_id_from_overview()
+        if meeting_id is None:
+            messagebox.showwarning("Delibere", "Selezionare prima una riunione")
+            return
+        from cd_delibere_dialog import DeliberaDialog
+
+        DeliberaDialog(self.root, meeting_id=meeting_id)
+        try:
+            self._refresh_cd_delibere_overview()
+        except Exception:
+            pass
+        try:
+            self._refresh_cd_riunioni()
+        except Exception:
+            pass
+
+    def _edit_cd_delibera_from_overview(self):
+        from tkinter import messagebox
+
+        tv = getattr(self, "tv_cd_delibere_overview", None)
+        if tv is None:
+            return
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Delibere", "Selezionare una delibera da modificare")
+            return
+
+        delibera_id = None
+        meeting_id = None
+        try:
+            meeting_id = self._selected_cd_meeting_id_from_overview()
+        except Exception:
+            meeting_id = None
+        try:
+            item = tv.item(sel[0])
+            values = item.get("values") or []
+            logger.info(
+                "CD delibere edit: selection=%r iid=%r values=%r meeting_id=%r",
+                sel,
+                sel[0] if sel else None,
+                values,
+                meeting_id,
+            )
+            if values:
+                delibera_id = int(str(values[0]))
+        except Exception:
+            delibera_id = None
+        if delibera_id is None:
+            try:
+                delibera_id = int(str(sel[0]))
+            except Exception:
+                messagebox.showerror("Delibere", "Delibera non valida")
+                return
+        from cd_delibere_dialog import DeliberaDialog
+
+        logger.info("CD delibere edit: resolved delibera_id=%r meeting_id=%r", delibera_id, meeting_id)
+        DeliberaDialog(self.root, delibera_id=delibera_id, meeting_id=meeting_id)
+        try:
+            self._refresh_cd_delibere_overview()
+        except Exception:
+            pass
+        try:
+            self._refresh_cd_riunioni()
+        except Exception:
+            pass
+
+    def _delete_cd_delibera_from_overview(self):
+        from tkinter import messagebox
+
+        tv = getattr(self, "tv_cd_delibere_overview", None)
+        if tv is None:
+            return
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Delibere", "Selezionare una delibera da eliminare")
+            return
+
+        delibera_id = None
+        meeting_id = None
+        try:
+            meeting_id = self._selected_cd_meeting_id_from_overview()
+        except Exception:
+            meeting_id = None
+        try:
+            item = tv.item(sel[0])
+            values = item.get("values") or []
+            logger.info(
+                "CD delibere delete: selection=%r iid=%r values=%r meeting_id=%r",
+                sel,
+                sel[0] if sel else None,
+                values,
+                meeting_id,
+            )
+            if values:
+                delibera_id = int(str(values[0]))
+        except Exception:
+            delibera_id = None
+        if delibera_id is None:
+            try:
+                delibera_id = int(str(sel[0]))
+            except Exception:
+                messagebox.showerror("Delibere", "Delibera non valida")
+                return
+
+        logger.info("CD delibere delete: resolved delibera_id=%r meeting_id=%r", delibera_id, meeting_id)
+
+        if not messagebox.askyesno("Conferma", "Eliminare la delibera selezionata?"):
+            return
+        from cd_delibere import delete_delibera
+
+        if delete_delibera(delibera_id):
+            try:
+                self._refresh_cd_delibere_overview()
+            except Exception:
+                pass
+            try:
+                self._refresh_cd_riunioni()
+            except Exception:
+                pass
+        else:
+            messagebox.showerror("Errore", "Impossibile eliminare la delibera")
+
+    def _open_cd_verbale_from_overview(self):
+        from tkinter import messagebox
+
+        meeting_id = self._selected_cd_meeting_id_from_overview()
+        if meeting_id is None:
+            messagebox.showwarning("Verbali", "Selezionare una riunione")
+            return
+        path = str(getattr(self, "_cd_overview_verbale_path_map", {}).get(str(meeting_id)) or "").strip()
+        if not path:
+            messagebox.showwarning("Verbali", "Nessun verbale collegato alla riunione selezionata")
+            return
+        from utils import open_path
+
+        def _on_err(msg: str) -> None:
+            messagebox.showerror("Verbali", msg)
+
+        ok = open_path(path, on_error=_on_err)
+        if not ok:
+            try:
+                self._refresh_cd_riunioni()
+            except Exception:
+                pass
+
+    def _export_cd_verbale_from_overview(self):
+        from tkinter import filedialog, messagebox
+
+        meeting_id = self._selected_cd_meeting_id_from_overview()
+        if meeting_id is None:
+            messagebox.showwarning("Verbali", "Selezionare una riunione")
+            return
+
+        iid = str(meeting_id)
+        abs_path = str(getattr(self, "_cd_overview_verbale_path_map", {}).get(iid) or "").strip()
+        if not abs_path:
+            messagebox.showwarning("Verbali", "Nessun verbale collegato alla riunione selezionata")
+            return
+
+        try:
+            import os
+            from pathlib import Path
+            import shutil
+
+            if not os.path.exists(abs_path):
+                messagebox.showerror("Verbali", "File non trovato sul disco.")
+                return
+
+            tv = getattr(self, "tv_cd_riunioni", None)
+            values = (tv.item(iid, "values") or ()) if tv is not None else ()
+            data = str(values[0]) if len(values) > 0 else ""
+            numero = str(values[2]) if len(values) > 2 else ""
+
+            def _safe(s: str) -> str:
+                s2 = (s or "").strip()
+                for ch in '<>:\\"/|?*':
+                    s2 = s2.replace(ch, "_")
+                return s2
+
+            numero_safe = _safe(numero) or "NA"
+            data_safe = _safe(data) or "DATA"
+
+            src = Path(abs_path)
+            ext = (src.suffix or "").lower()
+            if ext not in (".pdf", ".docx", ".doc"):
+                ext = src.suffix or ""
+            initial_name = f"Verbale_{numero_safe}_{data_safe}{ext}"
+
+            if ext == ".pdf":
+                filetypes = [("PDF", "*.pdf"), ("Tutti i file", "*.*")]
+                defext = ".pdf"
+            elif ext in (".docx", ".doc"):
+                filetypes = [("Word", "*.docx *.doc"), ("Tutti i file", "*.*")]
+                defext = ".docx" if ext == ".docx" else ".doc"
+            else:
+                filetypes = [("Tutti i file", "*.*")]
+                defext = ext
+
+            dest = filedialog.asksaveasfilename(
+                title="Esporta verbale",
+                initialfile=initial_name,
+                defaultextension=defext,
+                filetypes=filetypes,
+            )
+            if not dest:
+                return
+
+            shutil.copy2(abs_path, dest)
+            messagebox.showinfo("Verbali", "Verbale esportato correttamente.")
+        except Exception as exc:
+            messagebox.showerror("Verbali", f"Errore durante l'esportazione:\n{exc}")
+
+    def _new_cd_meeting_from_tab(self):
+        from cd_meetings_dialog import MeetingDialog
+
+        MeetingDialog(self.root)
+        try:
+            self._refresh_cd_riunioni()
+        except Exception:
+            pass
+        try:
+            self._refresh_cd_delibere_overview()
+        except Exception:
+            pass
+
+    def _edit_cd_meeting_from_tab(self):
+        from tkinter import messagebox
+
+        tv = getattr(self, "tv_cd_riunioni", None)
+        if tv is None:
+            return
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Riunioni CD", "Selezionare una riunione da modificare")
+            return
+
+        try:
+            meeting_id = int(str(sel[0]))
+        except Exception:
+            messagebox.showwarning("Riunioni CD", "Riunione non valida")
+            return
+
+        from cd_meetings_dialog import MeetingDialog
+
+        MeetingDialog(self.root, meeting_id=meeting_id)
+        try:
+            self._refresh_cd_riunioni()
+        except Exception:
+            pass
+        try:
+            self._refresh_cd_delibere_overview()
+        except Exception:
+            pass
+
+    def _delete_cd_meeting_from_tab(self):
+        from tkinter import messagebox
+
+        tv = getattr(self, "tv_cd_riunioni", None)
+        if tv is None:
+            return
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Riunioni CD", "Selezionare una riunione da eliminare")
+            return
+
+        try:
+            meeting_id = int(str(sel[0]))
+        except Exception:
+            messagebox.showwarning("Riunioni CD", "Riunione non valida")
+            return
+
+        if not messagebox.askyesno("Conferma", "Eliminare la riunione selezionata?"):
+            return
+
+        delete_verbale = False
+        try:
+            from cd_meetings import get_meeting_by_id
+
+            meeting = get_meeting_by_id(meeting_id)
+            has_verbale = False
+            if isinstance(meeting, dict):
+                has_verbale = bool(
+                    meeting.get("verbale_section_doc_id")
+                    or str(meeting.get("verbale_path") or "").strip()
+                )
+            if not has_verbale:
+                path = str(getattr(self, "_cd_overview_verbale_path_map", {}).get(str(meeting_id)) or "").strip()
+                has_verbale = bool(path)
+
+            if has_verbale:
+                delete_verbale = bool(
+                    messagebox.askyesno(
+                        "Verbale",
+                        "Vuoi eliminare anche il verbale collegato?\n\n"
+                        "Se scegli Sì, verrà eliminato anche il documento collegato (e il file associato, se presente).",
+                    )
+                )
+        except Exception:
+            delete_verbale = False
+
+        try:
+            from cd_meetings import delete_meeting
+
+            ok = bool(delete_meeting(meeting_id, delete_verbale=delete_verbale))
+        except Exception as exc:
+            logger.error("Errore eliminando riunione CD %s: %s", meeting_id, exc)
+            ok = False
+
+        if not ok:
+            messagebox.showerror("Riunioni CD", "Impossibile eliminare la riunione.")
+            return
+
+        try:
+            self._refresh_cd_riunioni()
+        except Exception:
+            pass
+        try:
+            self._refresh_cd_delibere_overview()
+        except Exception:
+            pass
+
+        try:
+            messagebox.showinfo("Riunioni CD", "Riunione eliminata.")
+        except Exception:
+            pass
+
+    def _open_cd_verbale_meeting(self):
+        tv = getattr(self, "tv_cd_verbali_docs", None)
+        if tv is None:
+            return
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Verbali", "Selezionare un verbale/riunione")
+            return
+        try:
+            meeting_id = int(str(sel[0]))
+        except Exception:
+            messagebox.showerror("Verbali", "Riunione non valida")
+            return
+        try:
+            from cd_meetings_dialog import MeetingDialog
+
+            MeetingDialog(self.root, meeting_id=meeting_id)
+            self._refresh_cd_verbali_docs()
+        except Exception as exc:
+            messagebox.showerror("Verbali", f"Impossibile aprire la riunione:\n{exc}")
+
+    def _pick_cd_meeting_id(self) -> int | None:
+        """Pick a CD meeting (past or future) and return its ID."""
+
+        try:
+            from cd_meetings import get_all_meetings
+        except Exception as exc:
+            messagebox.showerror("Riunioni CD", f"Impossibile caricare le riunioni.\n\nDettagli: {exc}")
+            return None
+
+        try:
+            meetings = get_all_meetings() or []
+        except Exception as exc:
+            messagebox.showerror("Riunioni CD", f"Errore caricamento riunioni.\n\nDettagli: {exc}")
+            return None
+
+        if not meetings:
+            messagebox.showinfo("Riunioni CD", "Nessuna riunione disponibile.")
+            return None
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Seleziona riunione CD")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.geometry("860x420")
+
+        container = ttk.Frame(dlg, padding=8)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Seleziona una riunione (doppio click per scegliere):").pack(anchor="w")
+
+        tree_frame = ttk.Frame(container)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 8))
+
+        columns = ("data", "numero", "titolo")
+        tv = ttk.Treeview(tree_frame, columns=columns, show="headings", height=12)
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=vsb.set)
+
+        tv.heading("data", text="Data")
+        tv.heading("numero", text="N. CD")
+        tv.heading("titolo", text="Titolo")
+
+        tv.column("data", width=110, anchor="center")
+        tv.column("numero", width=80, anchor="center")
+        tv.column("titolo", width=610, anchor="w")
+
+        tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        category_tags = CategoryTagStyler(
+            tv,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="cdverb::",
         )
-        scrollbar_h.config(command=self.tv_cd_verbali_docs.xview)
-        scrollbar_v.config(command=self.tv_cd_verbali_docs.yview)
 
-        self.tv_cd_verbali_docs.column("data", width=120)
-        self.tv_cd_verbali_docs.column("numero", width=110)
-        self.tv_cd_verbali_docs.column("protocollo", width=140)
-        self.tv_cd_verbali_docs.column("descrizione", width=420)
-        self.tv_cd_verbali_docs.column("file", width=240)
+        for m in meetings:
+            mid = m.get("id")
+            if mid is None:
+                continue
+            iid = str(mid)
+            tv.insert(
+                "",
+                tk.END,
+                iid=iid,
+                values=(
+                    str(m.get("data") or ""),
+                    str(m.get("numero_cd") or ""),
+                    str(m.get("titolo") or ""),
+                ),
+            )
 
-        self.tv_cd_verbali_docs.heading("data", text="Data")
-        self.tv_cd_verbali_docs.heading("numero", text="Numero CD")
-        self.tv_cd_verbali_docs.heading("protocollo", text="Protocollo")
-        self.tv_cd_verbali_docs.heading("descrizione", text="Descrizione")
-        self.tv_cd_verbali_docs.heading("file", text="File")
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X)
+
+        result: dict[str, int | None] = {"id": None}
+
+        def _choose_selected() -> None:
+            sel = tv.selection()
+            if not sel:
+                messagebox.showwarning("Riunioni CD", "Seleziona una riunione.", parent=dlg)
+                return
+            try:
+                result["id"] = int(str(sel[0]))
+            except Exception:
+                messagebox.showwarning("Riunioni CD", "Riunione non valida.", parent=dlg)
+                return
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+
+        tv.bind("<Double-1>", lambda _e: _choose_selected())
+
+        ttk.Button(actions, text="Annulla", command=dlg.destroy).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="Seleziona", command=_choose_selected).pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.root.wait_window(dlg)
+        return result.get("id")
+
+    def _link_cd_verbale_flow(self):
+        """Single-entry flow: pick meeting (past/future) then choose source (file vs section-doc library)."""
+
+        meeting_id = self._pick_cd_meeting_id()
+        if not meeting_id:
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Collega verbale")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+
+        container = ttk.Frame(dlg, padding=10)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Scegli la sorgente del verbale:").pack(anchor="w", pady=(0, 8))
+
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X)
+
+        def _from_file() -> None:
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+            self._link_cd_verbale_to_meeting_from_file(meeting_id=meeting_id)
+
+        def _from_library() -> None:
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+            self._link_cd_verbale_to_meeting_from_docs(meeting_id=meeting_id)
+
+        ttk.Button(actions, text="Da file...", command=_from_file, width=26).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(actions, text="Da libreria (section docs)...", command=_from_library, width=28).pack(side=tk.LEFT)
+
+        ttk.Button(container, text="Annulla", command=dlg.destroy).pack(anchor="e", pady=(10, 0))
+
+        self.root.wait_window(dlg)
+
+    def _link_cd_verbale_to_meeting_from_file(self, *, meeting_id: int | None = None):
+        """Attach a verbale to a meeting importing it from a file."""
+
+        if not meeting_id:
+            meeting_id = self._pick_cd_meeting_id()
+        if not meeting_id:
+            return
+
+        file_path = filedialog.askopenfilename(
+            title="Seleziona documento verbale",
+            filetypes=[
+                ("Documenti", "*.pdf *.doc *.docx"),
+                ("PDF", "*.pdf"),
+                ("Word", "*.doc *.docx"),
+                ("Tutti i file", "*.*"),
+            ],
+        )
+        if not file_path:
+            return
 
         try:
-            self.tv_cd_verbali_docs.tag_configure("missing", foreground="#b00020")
-        except Exception:
-            pass
+            from section_documents import add_section_document
+            from database import get_section_document_by_relative_path
+            from cd_meetings import update_meeting
 
-        self.tv_cd_verbali_docs.grid(row=0, column=0, sticky="nsew")
-        scrollbar_h.grid(row=1, column=0, sticky="ew")
-        scrollbar_v.grid(row=0, column=1, sticky="ns")
+            dest_abs = add_section_document(file_path, "Verbali CD")
+            row = get_section_document_by_relative_path(dest_abs)
+            if not row or row.get("id") is None:
+                messagebox.showerror("Verbali", "Impossibile registrare il documento nei documenti di sezione.")
+                return
+            ok = update_meeting(int(meeting_id), verbale_section_doc_id=int(row["id"]))
+            if not ok:
+                messagebox.showerror("Verbali", "Impossibile collegare il verbale alla riunione.")
+                return
+            self._refresh_cd_verbali_docs()
+        except Exception as exc:
+            messagebox.showerror("Verbali", f"Errore collegamento verbale:\n{exc}")
 
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
+    def _link_cd_verbale_to_meeting_from_docs(self, *, meeting_id: int | None = None):
+        """Attach a verbale to a meeting from existing section documents."""
 
-        self._cd_verbali_doc_path_map: dict[str, str] = {}
+        if not meeting_id:
+            meeting_id = self._pick_cd_meeting_id()
+        if not meeting_id:
+            return
+
+        import os
+
         try:
-            self._make_treeview_sortable(self.tv_cd_verbali_docs, ["data", "numero", "protocollo", "descrizione", "file"])
+            from section_documents import list_cd_verbali_documents
+        except Exception as exc:
+            messagebox.showerror(
+                "Verbali",
+                f"Impossibile caricare l'elenco dei documenti importati.\n\nDettagli: {exc}",
+            )
+            return
+
+        try:
+            all_docs = list_cd_verbali_documents(include_missing=False)
+        except Exception as exc:
+            messagebox.showerror(
+                "Verbali",
+                f"Errore nel caricamento dei documenti importati.\n\nDettagli: {exc}",
+            )
+            return
+
+        docs: list[dict] = []
+        for d in all_docs or []:
+            abs_path = str(d.get("absolute_path") or "").strip()
+            if not abs_path:
+                continue
+            try:
+                if not os.path.exists(abs_path):
+                    continue
+            except Exception:
+                continue
+            docs.append(d)
+
+        if not docs:
+            messagebox.showinfo("Verbali", "Nessun documento importato disponibile tra i Verbali CD.")
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Seleziona verbale (documenti importati)")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.geometry("840x420")
+
+        container = ttk.Frame(dlg, padding=8)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(container, text="Seleziona un documento (doppio click per scegliere):").pack(anchor="w")
+
+        tree_frame = ttk.Frame(container)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(8, 8))
+
+        columns = ("data", "numero", "nome", "categoria")
+        tv = ttk.Treeview(tree_frame, columns=columns, show="headings", height=12)
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tv.yview)
+        tv.configure(yscrollcommand=vsb.set)
+
+        tv.heading("data", text="Data")
+        tv.heading("numero", text="N.")
+        tv.heading("nome", text="Nome file")
+        tv.heading("categoria", text="Categoria")
+
+        tv.column("data", width=100, anchor="w")
+        tv.column("numero", width=90, anchor="w")
+        tv.column("nome", width=430, anchor="w")
+        tv.column("categoria", width=160, anchor="w")
+
+        tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        category_tags = CategoryTagStyler(
+            tv,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="cdverb::",
+        )
+
+        picked_by_iid: dict[str, int] = {}
+        for idx, d in enumerate(docs):
+            iid = str(idx)
+            uploaded_at = str(d.get("uploaded_at") or "").strip()
+            date_display = uploaded_at[:10] if len(uploaded_at) >= 10 else uploaded_at
+            verbale_numero = str(d.get("verbale_numero") or "").strip()
+            nome = str(d.get("nome_file") or "").strip()
+            categoria = str(d.get("categoria") or "").strip()
+            tv.insert(
+                "",
+                tk.END,
+                iid=iid,
+                values=(date_display, verbale_numero, nome, categoria),
+                tags=(category_tags.tag_for(categoria),),
+            )
+            raw_id = d.get("id")
+            try:
+                doc_id = int(str(raw_id)) if raw_id is not None else 0
+            except Exception:
+                doc_id = 0
+            picked_by_iid[iid] = doc_id
+
+        actions = ttk.Frame(container)
+        actions.pack(fill=tk.X)
+
+        result: dict[str, int | None] = {"id": None}
+
+        def _choose_selected() -> None:
+            sel = tv.selection()
+            if not sel:
+                messagebox.showwarning("Verbali", "Seleziona un documento.", parent=dlg)
+                return
+            picked_id = picked_by_iid.get(str(sel[0]))
+            if not picked_id:
+                messagebox.showwarning("Verbali", "Documento non valido.", parent=dlg)
+                return
+            result["id"] = int(picked_id)
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+
+        tv.bind("<Double-1>", lambda _e: _choose_selected())
+
+        ttk.Button(actions, text="Annulla", command=dlg.destroy).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="Seleziona", command=_choose_selected).pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.root.wait_window(dlg)
+        picked_id = result.get("id")
+        if not picked_id:
+            return
+
+        try:
+            from cd_meetings import update_meeting
+
+            ok = update_meeting(int(meeting_id), verbale_section_doc_id=int(picked_id))
+            if not ok:
+                messagebox.showerror("Verbali", "Impossibile collegare il verbale alla riunione.")
+                return
+            self._refresh_cd_verbali_docs()
+        except Exception as exc:
+            messagebox.showerror("Verbali", f"Errore collegamento verbale:\n{exc}")
+
+    def _import_cd_verbali_from_folder(self):
+        """Bulk-import verbali into section docs (Verbali CD)."""
+
+        try:
+            from document_types_catalog import SECTION_DOCUMENT_CATEGORIES
+            from v4_ui.bulk_import_dialog import BulkImportDialog
+            from section_documents import bulk_import_section_documents
+            from v4_ui.import_report import build_import_summary
+        except Exception as exc:
+            messagebox.showerror("Import", f"Impossibile avviare l'import.\n\nDettagli: {exc}")
+            return
+
+        dlg = BulkImportDialog(
+            self.root,
+            title="Importa verbali CD da cartella",
+            categories=list(SECTION_DOCUMENT_CATEGORIES),
+            initial_category="Verbali CD",
+        )
+        self.root.wait_window(dlg)
+        if not dlg.result:
+            return
+
+        folder, categoria, move = dlg.result
+        try:
+            imported, failed, details = bulk_import_section_documents(folder, categoria, move=move)
+            messagebox.showinfo("Import", build_import_summary(imported, failed, details))
+        except Exception as exc:
+            messagebox.showerror("Import", f"Errore durante l'import:\n{exc}")
+            return
+
+        # Refresh lists: linked view + section docs panel (if present)
+        try:
+            self._refresh_cd_verbali_docs()
         except Exception:
             pass
-
-        self._refresh_cd_verbali_docs()
+        try:
+            panel = getattr(self, "cd_section_docs_panel", None)
+            if panel is not None:
+                panel.refresh()
+        except Exception:
+            pass
 
     def _refresh_cd_verbali_docs(self):
-        """Refresh the verbali list using section documents (categoria contains 'verbale' or with verbale_numero)."""
+        """Refresh the verbali list showing only verbali linked to CD meetings (past and future)."""
         tv = getattr(self, "tv_cd_verbali_docs", None)
         if tv is None:
             return
 
-        from section_documents import list_cd_verbali_documents
+        from section_documents import list_cd_verbali_linked_documents
 
         start_date = None
         end_date = None
         label = ""
+        mandato_id = None
         try:
             from cd_mandati import get_active_cd_mandato
 
             mandato = get_active_cd_mandato()
             if mandato:
+                mandato_id = mandato.get("id")
                 start_date = mandato.get("start_date")
                 end_date = mandato.get("end_date")
                 label = str(mandato.get("label") or "").strip()
@@ -965,9 +2195,31 @@ class App:
             if lbl is not None:
                 if start_date and end_date:
                     shown = label or f"{str(start_date)[:4]}-{str(end_date)[:4]}"
-                    lbl.config(text=f"Mandato: {shown} ({start_date} → {end_date})")
+                    lbl.config(text=f"Mandato attivo: {shown}")
                 else:
-                    lbl.config(text="Mandato: (non impostato)")
+                    lbl.config(text="Mandato attivo: (non impostato)")
+        except Exception:
+            pass
+
+        # If the active mandate has ended, prompt a one-time end-of-mandate verification.
+        try:
+            from utils import today_iso
+
+            today = today_iso()
+            expired = bool(end_date and str(end_date) < str(today))
+            already_prompted = getattr(self, "_cd_closure_prompted_mandato_id", None)
+            if expired and mandato_id and already_prompted != mandato_id:
+                self._cd_closure_prompted_mandato_id = mandato_id
+                if messagebox.askyesno(
+                    "Mandato CD terminato",
+                    "Il mandato CD risulta terminato.\n\nVuoi verificare che verbali e libro delibere siano a posto?",
+                ):
+                    from cd_closure_checks import format_cd_mandato_closure_report, run_cd_mandato_closure_checks
+
+                    report = run_cd_mandato_closure_checks(start_date=start_date, end_date=end_date)
+                    text = format_cd_mandato_closure_report(report)
+                    title = "Verifica fine mandato: OK" if report.get("ok") else "Verifica fine mandato: ATTENZIONE"
+                    messagebox.showinfo(title, text)
         except Exception:
             pass
 
@@ -976,7 +2228,108 @@ class App:
 
         self._cd_verbali_doc_path_map = {}
 
-        verbali = list_cd_verbali_documents(start_date=start_date, end_date=end_date)
+        # Show all verbali linked to meetings, regardless of the currently active mandate.
+        # The mandate is still shown for context in the UI column.
+        verbali = list_cd_verbali_linked_documents(start_date=None, end_date=None, include_missing=True)
+
+        def _extract_iso_date_from_text(text: str | None) -> str | None:
+            s = str(text or "")
+            if not s:
+                return None
+
+            # Normalize separators to '-'
+            norm = []
+            for ch in s:
+                if ch in "_./\\":
+                    norm.append("-")
+                else:
+                    norm.append(ch)
+            s2 = "".join(norm)
+
+            def _is_valid_ymd(y: int, m: int, d: int) -> bool:
+                if y < 1900 or y > 2200:
+                    return False
+                if m < 1 or m > 12:
+                    return False
+                if d < 1 or d > 31:
+                    return False
+                return True
+
+            # Scan for YYYY-MM-DD
+            for i in range(0, max(0, len(s2) - 9)):
+                chunk = s2[i : i + 10]
+                if len(chunk) != 10:
+                    continue
+                if chunk[4] != "-" or chunk[7] != "-":
+                    continue
+                y_str, m_str, d_str = chunk[0:4], chunk[5:7], chunk[8:10]
+                if not (y_str.isdigit() and m_str.isdigit() and d_str.isdigit()):
+                    continue
+                y, m, d = int(y_str), int(m_str), int(d_str)
+                if _is_valid_ymd(y, m, d):
+                    return f"{y:04d}-{m:02d}-{d:02d}"
+
+            # Scan for DD-MM-YYYY
+            for i in range(0, max(0, len(s2) - 9)):
+                chunk = s2[i : i + 10]
+                if len(chunk) != 10:
+                    continue
+                if chunk[2] != "-" or chunk[5] != "-":
+                    continue
+                d_str, m_str, y_str = chunk[0:2], chunk[3:5], chunk[6:10]
+                if not (y_str.isdigit() and m_str.isdigit() and d_str.isdigit()):
+                    continue
+                y, m, d = int(y_str), int(m_str), int(d_str)
+                if _is_valid_ymd(y, m, d):
+                    return f"{y:04d}-{m:02d}-{d:02d}"
+
+            return None
+
+        def _load_all_cd_mandati() -> list[dict]:
+            try:
+                from database import fetch_all
+
+                rows = fetch_all(
+                    """
+                    SELECT id, label, start_date, end_date, is_active
+                    FROM cd_mandati
+                    WHERE start_date IS NOT NULL AND TRIM(start_date) <> ''
+                      AND end_date IS NOT NULL AND TRIM(end_date) <> ''
+                    ORDER BY start_date DESC, id DESC
+                    """
+                )
+                return [dict(r) for r in rows]
+            except Exception:
+                return []
+
+        mandati = _load_all_cd_mandati()
+
+        def _mandato_label_for_date(iso_date: str | None) -> str:
+            dv = (iso_date or "").strip()
+            if not dv:
+                return ""
+            for m in mandati:
+                s = str(m.get("start_date") or "").strip()
+                e = str(m.get("end_date") or "").strip()
+                if not s or not e:
+                    continue
+                if s <= dv <= e:
+                    lbl = str(m.get("label") or "").strip()
+                    if lbl:
+                        return lbl
+                    return f"Mandato {s[:4]}-{e[:4]}"
+            return ""
+
+        def _verbale_ref_date(doc: dict) -> str:
+            # Prefer extracting the verbale date from filename/description.
+            extracted = (
+                _extract_iso_date_from_text(doc.get("original_name"))
+                or _extract_iso_date_from_text(doc.get("nome_file"))
+                or _extract_iso_date_from_text(doc.get("descrizione"))
+            )
+            if extracted:
+                return extracted
+            return _date_value(doc)
 
         def _date_value(d: dict) -> str:
             raw = str(d.get("uploaded_at") or "").strip()
@@ -988,13 +2341,15 @@ class App:
             os = None
 
         for idx, doc in enumerate(verbali, start=1):
-            iid = str(doc.get("id") or f"v{idx}")
-            data = _date_value(doc)
-            numero = str(doc.get("verbale_numero") or "")
-            protocollo = str(doc.get("protocollo") or "")
+            # One row per meeting (canonical link)
+            iid = str(doc.get("meeting_id") or doc.get("id") or f"v{idx}")
+            meeting_date = str(doc.get("meeting_date") or "").strip()
+            data = meeting_date or _date_value(doc)
+            mandato_lbl = _mandato_label_for_date(meeting_date or _verbale_ref_date(doc))
+            numero = str(doc.get("meeting_numero_cd") or doc.get("verbale_numero") or "")
             descrizione = str(doc.get("descrizione") or "")
             filename = str(doc.get("nome_file") or "")
-            abs_path = str(doc.get("absolute_path") or "")
+            abs_path = str(doc.get("absolute_path") or doc.get("percorso") or "")
 
             tags: tuple[str, ...] = ()
             try:
@@ -1003,9 +2358,80 @@ class App:
             except Exception:
                 pass
 
-            tv.insert("", tk.END, iid=iid, values=(data, numero, protocollo, descrizione, filename), tags=tags)
+            tv.insert("", tk.END, iid=iid, values=(data, numero, mandato_lbl, descrizione, filename), tags=tags)
             if abs_path:
                 self._cd_verbali_doc_path_map[iid] = abs_path
+
+    def _export_cd_verbale_doc(self):
+        tv = getattr(self, "tv_cd_verbali_docs", None)
+        if tv is None:
+            return
+
+        sel = tv.selection()
+        if not sel:
+            messagebox.showwarning("Verbali", "Selezionare un verbale")
+            return
+
+        iid = str(sel[0])
+        abs_path = str(getattr(self, "_cd_verbali_doc_path_map", {}).get(iid) or "").strip()
+        if not abs_path:
+            messagebox.showerror("Verbali", "Percorso file non disponibile per l'elemento selezionato.")
+            return
+
+        try:
+            import os
+            from pathlib import Path
+            import shutil
+
+            if not os.path.exists(abs_path):
+                messagebox.showerror("Verbali", "File non trovato sul disco.")
+                return
+
+            values = tv.item(iid, "values") or ()
+            data = str(values[0]) if len(values) > 0 else ""
+            numero = str(values[1]) if len(values) > 1 else ""
+
+            # Build a safe filename: Verbale_{numero_cd}_{data}
+            def _safe(s: str) -> str:
+                s2 = (s or "").strip()
+                for ch in '<>:\\"/|?*':
+                    s2 = s2.replace(ch, "_")
+                return s2
+
+            numero_safe = _safe(numero) or "NA"
+            data_safe = _safe(data) or "DATA"
+
+            src = Path(abs_path)
+            ext = (src.suffix or "").lower()
+            if ext not in (".pdf", ".docx", ".doc"):
+                # Fallback: preserve whatever extension the source has.
+                ext = src.suffix or ""
+
+            initial_name = f"Verbale_{numero_safe}_{data_safe}{ext}"
+
+            if ext == ".pdf":
+                filetypes = [("PDF", "*.pdf"), ("Tutti i file", "*.*")]
+                defext = ".pdf"
+            elif ext in (".docx", ".doc"):
+                filetypes = [("Word", "*.docx *.doc"), ("Tutti i file", "*.*")]
+                defext = ".docx" if ext == ".docx" else ".doc"
+            else:
+                filetypes = [("Tutti i file", "*.*")]
+                defext = ext
+
+            dest = filedialog.asksaveasfilename(
+                title="Esporta verbale",
+                initialfile=initial_name,
+                defaultextension=defext,
+                filetypes=filetypes,
+            )
+            if not dest:
+                return
+
+            shutil.copy2(abs_path, dest)
+            messagebox.showinfo("Verbali", "Verbale esportato correttamente.")
+        except Exception as exc:
+            messagebox.showerror("Verbali", f"Errore durante l'esportazione:\n{exc}")
 
     def _open_cd_mandato_wizard(self):
         try:
@@ -1030,7 +2456,10 @@ class App:
             return
         from utils import open_path
 
-        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Verbali", msg))
+        def _on_open_verbali_error(msg: str) -> None:
+            messagebox.showerror("Verbali", msg)
+
+        ok = open_path(path, on_error=_on_open_verbali_error)
         if not ok:
             self._refresh_cd_verbali_docs()
 
@@ -1097,10 +2526,14 @@ class App:
     def _refresh_cd_delibere(self):
         """Refresh the CD delibere list"""
         from cd_delibere import get_all_delibere
+
+        tv = getattr(self, "tv_cd_delibere", None) or getattr(self, "tv_cd_delibere_overview", None)
+        if tv is None:
+            return
         
         # Clear existing items
-        for item in self.tv_cd_delibere.get_children():
-            self.tv_cd_delibere.delete(item)
+        for item in tv.get_children():
+            tv.delete(item)
         
         def _esito_tag(esito_value: object) -> tuple[str, ...]:
             s = str(esito_value or "").strip().lower()
@@ -1120,7 +2553,7 @@ class App:
         delibere = get_all_delibere()
         for delibera in delibere:
             esito = delibera.get('esito', '')
-            self.tv_cd_delibere.insert(
+            tv.insert(
                 "",
                 tk.END,
                 iid=delibera['id'],
@@ -1142,7 +2575,12 @@ class App:
     
     def _edit_cd_delibera(self):
         """Open dialog to edit selected delibera"""
-        selection = self.tv_cd_delibere.selection()
+        tv = getattr(self, "tv_cd_delibere", None) or getattr(self, "tv_cd_delibere_overview", None)
+        if tv is None:
+            messagebox.showwarning("Selezione", "Lista delibere non disponibile")
+            return
+
+        selection = tv.selection()
         if not selection:
             messagebox.showwarning("Selezione", "Selezionare una delibera da modificare")
             return
@@ -1154,7 +2592,12 @@ class App:
     
     def _delete_cd_delibera(self):
         """Delete selected delibera"""
-        selection = self.tv_cd_delibere.selection()
+        tv = getattr(self, "tv_cd_delibere", None) or getattr(self, "tv_cd_delibere_overview", None)
+        if tv is None:
+            messagebox.showwarning("Selezione", "Lista delibere non disponibile")
+            return
+
+        selection = tv.selection()
         if not selection:
             messagebox.showwarning("Selezione", "Selezionare una delibera da eliminare")
             return
@@ -1170,7 +2613,7 @@ class App:
     def _create_calendar_tab(self):
         """Create the Calendario tab with event list and actions."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Calendario")
+        self.notebook.add(tab, text="📅 Calendario")
 
         toolbar = ttk.Frame(tab)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
@@ -1239,6 +2682,18 @@ class App:
         self.calendar_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.calendar_tree.bind("<<TreeviewSelect>>", self._on_calendar_select)
+
+        # Row coloring by event type.
+        self._calendar_type_tags = CategoryTagStyler(
+            self.calendar_tree,
+            default_label="Altro",
+            palette=SECTION_CATEGORY_PALETTE,
+            tag_prefix="cal::",
+        )
+        try:
+            self._calendar_type_tags.prime(self.calendar_type_labels.values())
+        except Exception:
+            pass
 
         details = ttk.LabelFrame(tab, text="Dettagli evento")
         details.pack(fill=tk.BOTH, expand=False, padx=5, pady=(0, 5))
@@ -1317,7 +2772,10 @@ class App:
                 ev.get("luogo", "") or "",
                 reminder_display,
             )
-            tree.insert("", tk.END, iid=str(ev.get("id")), values=values)
+            type_label = values[2]
+            tag_manager = getattr(self, "_calendar_type_tags", None)
+            tags = (tag_manager.tag_for(type_label),) if tag_manager is not None else ()
+            tree.insert("", tk.END, iid=str(ev.get("id")), values=values, tags=tags)
 
         if upcoming:
             suffix = "evento" if upcoming == 1 else "eventi"
@@ -1477,7 +2935,7 @@ class App:
     def _create_section_tab(self):
         """Create the Section Info tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Sezione")
+        self.notebook.add(tab, text="🏠 Sezione")
         
         # Content frame
         content_frame = ttk.Frame(tab)
@@ -1500,7 +2958,7 @@ class App:
     def _create_statistics_tab(self):
         """Create the Statistics tab."""
         tab = ttk.Frame(self.notebook)
-        self.notebook.add(tab, text="Statistiche")
+        self.notebook.add(tab, text="📊 Statistiche")
         
         from v4_ui.stats_panel import StatsPanel
         self.stats_panel = StatsPanel(tab)
@@ -1578,6 +3036,20 @@ class App:
 
         for doc in docs_sorted:
             info_text = format_file_info(doc.get('percorso') or '')
+            row_tags: list[str] = []
+            try:
+                if not os.path.exists(doc.get('percorso') or ''):
+                    row_tags.append("missing")
+            except Exception:
+                pass
+
+            tag_manager = getattr(self, "_docs_preview_category_tags", None)
+            if tag_manager is not None:
+                try:
+                    row_tags.append(tag_manager.tag_for(doc.get('categoria') or ''))
+                except Exception:
+                    pass
+
             tree.insert(
                 "",
                 tk.END,
@@ -1590,6 +3062,7 @@ class App:
                     (doc.get('data_caricamento') or '')[:10],
                     info_text,
                 ),
+                tags=tuple(row_tags) if row_tags else (),
             )
 
         count = len(docs_sorted)
@@ -1673,7 +3146,7 @@ Generale:
         dialog.grab_set()
         
         # Text widget with shortcuts
-        text = tk.Text(dialog, wrap=tk.WORD, font=("Courier", 10), padx=20, pady=20)
+        text = tk.Text(dialog, wrap=tk.WORD, font="AppMono", padx=20, pady=20)
         text.pack(fill=tk.BOTH, expand=True)
         text.insert("1.0", shortcuts_text.strip())
         text.config(state=tk.DISABLED)
@@ -1887,7 +3360,7 @@ Generale:
         toolbar = ttk.Frame(trash_win)
         toolbar.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(toolbar, text="Soci eliminati (soft delete)", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(toolbar, text="Soci eliminati (soft delete)", font="AppBold").pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="Svuota cestino", command=lambda: self._empty_trash(trash_tree)).pack(side=tk.RIGHT, padx=2)
         ttk.Button(toolbar, text="Ripristina", command=lambda: self._restore_member(trash_tree, trash_win)).pack(side=tk.RIGHT, padx=2)
         ttk.Button(toolbar, text="Elimina definitivamente", command=lambda: self._hard_delete_member(trash_tree)).pack(side=tk.RIGHT, padx=2)
@@ -2637,9 +4110,10 @@ Generale:
                     return int(member_id)
         except Exception:
             pass
-        if getattr(self, "current_member_id", None):
+        current_member_id = getattr(self, "current_member_id", None)
+        if current_member_id is not None:
             try:
-                return int(self.current_member_id)
+                return int(current_member_id)
             except Exception:
                 return None
         return None

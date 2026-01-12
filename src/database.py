@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS cd_riunioni (
     meta_json TEXT,
     odg_json TEXT,
     presenze_json TEXT,
+    verbale_section_doc_id INTEGER,
     verbale_path TEXT,
     created_at TEXT NOT NULL
 )
@@ -384,6 +385,7 @@ CREATE TABLE IF NOT EXISTS section_documents (
     -- Campi aggiuntivi (documenti ufficiali / verbali)
     protocollo TEXT,
     verbale_numero TEXT,
+    original_name TEXT,
     -- Campi legacy / compatibilita'
     stored_name TEXT,
     relative_path TEXT NOT NULL,
@@ -400,6 +402,18 @@ CREATE TABLE IF NOT EXISTS magazzino_items (
     modello TEXT,
     descrizione TEXT,
     note TEXT,
+    quantita TEXT,
+    ubicazione TEXT,
+    matricola TEXT,
+    doc_fisc_prov TEXT,
+    valore_acq_eur TEXT,
+    scheda_tecnica TEXT,
+    provenienza TEXT,
+    altre_notizie TEXT,
+    is_dismesso INTEGER NOT NULL DEFAULT 0,
+    dismesso_at TEXT,
+    dismesso_reason TEXT,
+    dismesso_destination TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -429,6 +443,7 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cd_delibere_cd ON cd_delibere(cd_id)",
     "CREATE INDEX IF NOT EXISTS idx_cd_verbali_cd ON cd_verbali(cd_id)",
     "CREATE INDEX IF NOT EXISTS idx_cd_riunioni_data ON cd_riunioni(data)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_riunioni_verbale_section_doc ON cd_riunioni(verbale_section_doc_id)",
     "CREATE INDEX IF NOT EXISTS idx_cd_mandati_active ON cd_mandati(is_active)",
     "CREATE INDEX IF NOT EXISTS idx_cd_mandati_periodo ON cd_mandati(start_date, end_date)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_stato ON ponti(stato_corrente)",
@@ -442,6 +457,34 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_item ON magazzino_loans(item_id)",
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_active ON magazzino_loans(item_id, data_reso)"
 ]
+
+
+def get_section_document_by_id(record_id: int) -> dict | None:
+    row = fetch_one(
+        """
+        SELECT
+            id,
+            hash_id,
+            nome_file,
+            percorso,
+            tipo,
+            categoria,
+            descrizione,
+            data_caricamento,
+            protocollo,
+            verbale_numero,
+            original_name,
+            stored_name,
+            relative_path,
+            uploaded_at,
+            deleted_at
+        FROM section_documents
+        WHERE id = ? AND deleted_at IS NULL
+        LIMIT 1
+        """,
+        (int(record_id),),
+    )
+    return dict(row) if row else None
 
 # --------------------------
 # Database initialization
@@ -481,6 +524,10 @@ def init_db():
         _ensure_column(conn, "cd_riunioni", "meta_json", "TEXT")
         _ensure_column(conn, "cd_riunioni", "odg_json", "TEXT")
         _ensure_column(conn, "cd_riunioni", "presenze_json", "TEXT")
+        # Verbale linkage (canonical): points to section_documents.id
+        _ensure_column(conn, "cd_riunioni", "verbale_section_doc_id", "INTEGER")
+        # Optional explicit mandate linkage (overrides date-based inference in UI)
+        _ensure_column(conn, "cd_riunioni", "mandato_id", "INTEGER")
         conn.execute(CREATE_CD_DELIBERE)
         # Best-effort migration for older DBs created before some CD columns existed
         _ensure_column(conn, "cd_delibere", "data_votazione", "TEXT")
@@ -513,11 +560,36 @@ def init_db():
         _ensure_column(conn, "cd_mandati", "is_active", "INTEGER DEFAULT 1")
         _ensure_column(conn, "cd_mandati", "created_at", "TEXT")
         _ensure_column(conn, "cd_mandati", "updated_at", "TEXT")
+
+        # Normalize mandate labels (best-effort):
+        # - if empty, set to "Mandato AAAA-BBBB" derived from dates
+        # - if label is plain "AAAA-BBBB", prefix with "Mandato "
+        try:
+            conn.execute(
+                """
+                UPDATE cd_mandati
+                SET label = 'Mandato ' || SUBSTR(start_date, 1, 4) || '-' || SUBSTR(end_date, 1, 4)
+                WHERE (label IS NULL OR TRIM(label) = '')
+                  AND start_date IS NOT NULL AND TRIM(start_date) <> ''
+                  AND end_date IS NOT NULL AND TRIM(end_date) <> ''
+                """
+            )
+            conn.execute(
+                """
+                UPDATE cd_mandati
+                SET label = 'Mandato ' || label
+                WHERE label GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'
+                  AND label NOT LIKE 'Mandato %'
+                """
+            )
+        except sqlite3.OperationalError as exc:
+            logger.warning("Impossibile normalizzare label cd_mandati: %s", exc)
         conn.execute(CREATE_CALENDAR_EVENTS)
         conn.execute(CREATE_PONTI)
         conn.execute(CREATE_PONTI_STATUS_HISTORY)
         conn.execute(CREATE_PONTI_AUTHORIZATIONS)
         _ensure_column(conn, "ponti_authorizations", "calendar_event_id", "INTEGER")
+
         conn.execute(CREATE_PONTI_INTERVENTI)
         conn.execute(CREATE_PONTI_DOCUMENTS)
         conn.execute(CREATE_SECTION_DOCUMENTS)
@@ -531,6 +603,7 @@ def init_db():
         _ensure_column(conn, "section_documents", "data_caricamento", "TEXT")
         _ensure_column(conn, "section_documents", "protocollo", "TEXT")
         _ensure_column(conn, "section_documents", "verbale_numero", "TEXT")
+        _ensure_column(conn, "section_documents", "original_name", "TEXT")
 
         # Backfill campi uniformati (solo se vuoti)
         try:
@@ -553,6 +626,18 @@ def init_db():
                 UPDATE section_documents
                 SET nome_file = COALESCE(nome_file, NULLIF(TRIM(stored_name), ''))
                 WHERE nome_file IS NULL OR TRIM(nome_file) = ''
+                """
+            )
+
+            conn.execute(
+                """
+                UPDATE section_documents
+                SET original_name = COALESCE(
+                    NULLIF(TRIM(original_name), ''),
+                    NULLIF(TRIM(nome_file), ''),
+                    NULLIF(TRIM(stored_name), '')
+                )
+                WHERE original_name IS NULL OR TRIM(original_name) = ''
                 """
             )
             conn.execute(
@@ -578,7 +663,22 @@ def init_db():
             )
         except sqlite3.OperationalError as exc:
             logger.warning("Impossibile eseguire backfill section_documents: %s", exc)
+
         conn.execute(CREATE_MAGAZZINO_ITEMS)
+        # Magazzino: extended inventory columns (best-effort migrations)
+        _ensure_column(conn, "magazzino_items", "quantita", "TEXT")
+        _ensure_column(conn, "magazzino_items", "ubicazione", "TEXT")
+        _ensure_column(conn, "magazzino_items", "matricola", "TEXT")
+        _ensure_column(conn, "magazzino_items", "doc_fisc_prov", "TEXT")
+        _ensure_column(conn, "magazzino_items", "valore_acq_eur", "TEXT")
+        _ensure_column(conn, "magazzino_items", "scheda_tecnica", "TEXT")
+        _ensure_column(conn, "magazzino_items", "provenienza", "TEXT")
+        _ensure_column(conn, "magazzino_items", "altre_notizie", "TEXT")
+        # Magazzino: dismissione (soft-delete)
+        _ensure_column(conn, "magazzino_items", "is_dismesso", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "magazzino_items", "dismesso_at", "TEXT")
+        _ensure_column(conn, "magazzino_items", "dismesso_reason", "TEXT")
+        _ensure_column(conn, "magazzino_items", "dismesso_destination", "TEXT")
         conn.execute(CREATE_MAGAZZINO_LOANS)
         conn.execute(CREATE_SOCI_ROLES)
         for idx in CREATE_INDEXES:
@@ -598,14 +698,15 @@ def init_db():
             )
         except sqlite3.OperationalError as exc:
             logger.warning("Impossibile eseguire la migrazione ruoli: %s", exc)
-        
+
         # Initialize templates table
         try:
             from templates_manager import init_templates_table
+
             init_templates_table(conn)
         except Exception as e:
             logger.warning("Templates table initialization failed: %s", e)
-        
+
         # Calendar indexes
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_ts)")
@@ -613,8 +714,124 @@ def init_db():
         except sqlite3.OperationalError as e:
             logger.warning("Impossibile creare indici calendario: %s", e)
 
-        logger.info("Database initialized successfully")
+        # Migrate legacy cd_riunioni.verbale_path into section_documents linkage (best effort).
+        try:
+            _migrate_cd_riunioni_verbali(conn)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Impossibile migrare verbali riunioni CD: %s", exc)
 
+
+def _migrate_cd_riunioni_verbali(conn: sqlite3.Connection) -> tuple[int, int, int]:
+    """Migrate cd_riunioni.verbale_path into cd_riunioni.verbale_section_doc_id.
+
+    Strategy (idempotent by design):
+    - Only rows with verbale_section_doc_id IS NULL and non-empty verbale_path are considered.
+    - If verbale_path already points to a tracked section document, link it.
+    - Otherwise, import/copy the file into section docs (categoria: "Verbali CD"), link it,
+      then clear verbale_path.
+
+    Returns:
+        (processed, migrated, skipped)
+    """
+
+    import os
+    from pathlib import Path
+
+    processed = 0
+    migrated = 0
+    skipped = 0
+
+    try:
+        from config import BASE_DIR, DOCS_BASE, SEC_DOCS
+    except Exception:
+        BASE_DIR = os.getcwd()
+        DOCS_BASE = os.path.join(BASE_DIR, "data", "documents")
+        SEC_DOCS = os.path.join(BASE_DIR, "data", "section_docs")
+
+    rows = [
+        dict(r)
+        for r in conn.execute(
+            """
+            SELECT id, verbale_path
+            FROM cd_riunioni
+            WHERE verbale_section_doc_id IS NULL
+              AND verbale_path IS NOT NULL
+              AND TRIM(verbale_path) <> ''
+            ORDER BY id ASC
+            """
+        )
+    ]
+
+    # Local helper (no dependency on section_documents internals)
+    def _is_under(child: str, parent: str) -> bool:
+        try:
+            c = Path(child).resolve()
+            p = Path(parent).resolve()
+            c.relative_to(p)
+            return True
+        except Exception:
+            return False
+
+    for row in rows:
+        processed += 1
+        meeting_raw_id = row.get("id")
+        if meeting_raw_id is None:
+            skipped += 1
+            continue
+        meeting_id = int(meeting_raw_id)
+        raw_path = str(row.get("verbale_path") or "").strip()
+        if not raw_path:
+            skipped += 1
+            continue
+
+        # If path is already a section doc tracked in DB, link directly.
+        try:
+            existing = get_section_document_by_relative_path(raw_path)
+        except Exception:
+            existing = None
+        if existing and existing.get("id") is not None:
+            conn.execute(
+                "UPDATE cd_riunioni SET verbale_section_doc_id = ?, verbale_path = NULL WHERE id = ?",
+                (int(existing["id"]), meeting_id),
+            )
+            migrated += 1
+            continue
+
+        # Otherwise, attempt to import into section docs.
+        try:
+            if not os.path.exists(raw_path):
+                skipped += 1
+                continue
+        except Exception:
+            skipped += 1
+            continue
+
+        try:
+            from section_documents import add_section_document
+
+            dest_abs = add_section_document(raw_path, "Verbali CD")
+            imported = get_section_document_by_relative_path(dest_abs)
+            if not imported or imported.get("id") is None:
+                skipped += 1
+                continue
+
+            conn.execute(
+                "UPDATE cd_riunioni SET verbale_section_doc_id = ?, verbale_path = NULL WHERE id = ?",
+                (int(imported["id"]), meeting_id),
+            )
+            migrated += 1
+
+            # Optional cleanup: if the old file was inside the app managed docs area, remove it.
+            try:
+                if _is_under(raw_path, DOCS_BASE) and not _is_under(raw_path, SEC_DOCS):
+                    Path(raw_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        except Exception:
+            skipped += 1
+            continue
+
+    return processed, migrated, skipped
 
 # --------------------------
 # Section documents (filesystem + DB registry)
@@ -865,6 +1082,7 @@ def add_documento(
     tipo: str = "documento",
     categoria: str | None = None,
     descrizione: str | None = None,
+    data_caricamento: str | None = None,
 ) -> int | None:
     """
     Add a document for a member.
@@ -884,9 +1102,10 @@ def add_documento(
     VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     try:
+        ts = (data_caricamento or "").strip() or now_iso()
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(sql, (socio_id, nome_file, percorso, tipo, categoria, descrizione, now_iso()))
+            cursor.execute(sql, (socio_id, nome_file, percorso, tipo, categoria, descrizione, ts))
             return cursor.lastrowid
     except sqlite3.Error as e:
         raise map_sqlite_exception(e)
@@ -1043,6 +1262,13 @@ def update_documento_descrizione(doc_id: int, descrizione: str) -> bool:
     """Update the description stored for a document."""
     sql = "UPDATE documenti SET descrizione = ? WHERE id = ?"
     exec_query(sql, (descrizione, doc_id))
+    return True
+
+
+def update_documento_data_caricamento(doc_id: int, data_caricamento: str) -> bool:
+    """Update the stored document date (data_caricamento) for a member document."""
+    sql = "UPDATE documenti SET data_caricamento = ? WHERE id = ?"
+    exec_query(sql, (data_caricamento, doc_id))
     return True
 
 # --------------------------

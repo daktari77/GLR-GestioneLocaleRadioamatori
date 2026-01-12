@@ -68,6 +68,38 @@ class TestConsiglioDirettivoVerbaliIntegration(unittest.TestCase):
                 section_documents.SECTION_DOCUMENT_ROOT = old_root
                 section_documents.SECTION_METADATA_FILE = old_meta
 
+    def test_list_cd_verbali_documents_filter_accepts_date_in_filename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            sec_root = tmp_path / "section_docs"
+            src_dir = tmp_path / "src"
+            src_dir.mkdir(parents=True, exist_ok=True)
+
+            # Import happens "today" but file name encodes an old date
+            f1 = src_dir / "Verbale_CD_2025-11-20.pdf"
+            f1.write_bytes(b"V1")
+
+            import section_documents
+
+            old_root = section_documents.SECTION_DOCUMENT_ROOT
+            old_meta = section_documents.SECTION_METADATA_FILE
+            section_documents.SECTION_DOCUMENT_ROOT = sec_root
+            section_documents.SECTION_METADATA_FILE = sec_root / "metadata.json"
+            try:
+                section_documents.add_section_document(str(f1), "Verbali CD", "Verbale CD")
+
+                # Should include the doc when filtering for 2025 mandate,
+                # even if uploaded_at is outside range.
+                verbali = section_documents.list_cd_verbali_documents(
+                    start_date="2025-01-01",
+                    end_date="2025-12-31",
+                )
+                self.assertEqual(len(verbali), 1)
+                self.assertTrue(str(verbali[0].get("nome_file") or "").endswith("2025-11-20.pdf"))
+            finally:
+                section_documents.SECTION_DOCUMENT_ROOT = old_root
+                section_documents.SECTION_METADATA_FILE = old_meta
+
 
 if __name__ == "__main__":
     unittest.main()

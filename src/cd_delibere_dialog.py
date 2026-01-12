@@ -160,7 +160,41 @@ class DeliberaDialog:
         """Load existing delibera data for editing"""
         from cd_delibere import get_delibera_by_id
         delibera = get_delibera_by_id(self.delibera_id)
-        
+
+        if not delibera:
+            try:
+                from database import get_db_path
+                db_path = get_db_path()
+            except Exception:
+                db_path = None
+
+            try:
+                logger.warning(
+                    "DeliberaDialog: delibera not found (delibera_id=%r meeting_id=%r db=%r)",
+                    self.delibera_id,
+                    self.meeting_id,
+                    db_path,
+                )
+            except Exception:
+                pass
+            messagebox.showerror(
+                "Delibere",
+                f"Impossibile caricare la delibera selezionata (ID: {self.delibera_id}).\n"
+                "Potrebbe essere stata eliminata oppure c\u2019\u00e8 un errore di accesso al database."
+            )
+            try:
+                self.dialog.destroy()
+            except Exception:
+                pass
+            return
+
+        try:
+            loaded_meeting_id = delibera.get('cd_id')
+            if loaded_meeting_id and (self.meeting_id is None or int(self.meeting_id) != int(loaded_meeting_id)):
+                self.meeting_id = int(loaded_meeting_id)
+        except Exception:
+            pass
+
         if delibera:
             self.entry_numero.delete(0, tk.END)
             self.entry_numero.insert(0, delibera.get('numero', ''))

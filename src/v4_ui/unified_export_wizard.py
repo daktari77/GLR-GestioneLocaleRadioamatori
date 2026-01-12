@@ -21,20 +21,27 @@ class UnifiedExportWizard:
         self.win.transient(parent)
         self.win.grab_set()
 
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.win.winfo_toplevel())
+        except Exception:
+            pass
+
         self._build_ui()
 
     def _build_ui(self) -> None:
         frame = ttk.Frame(self.win, padding=16)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(frame, text="Scegli il tipo di esportazione", font=("Segoe UI", 12, "bold")).pack(
+        ttk.Label(frame, text="Scegli il tipo di esportazione", font="AppTitle").pack(
             anchor="w"
         )
         ttk.Label(
             frame,
             text=(
-                "Entrambe le modalità generano un file CSV. Per i soci potrai scegliere i campi "
-                "da includere, mentre per il magazzino sono disponibili filtri basati sullo stato "
+                "Per i soci l'esportazione genera un file CSV con selezione dei campi. "
+                "Per il magazzino puoi esportare in CSV o Excel (.xlsx) e applicare filtri basati sullo stato "
                 "(disponibile/in prestito)."
             ),
             wraplength=480,
@@ -70,7 +77,7 @@ class UnifiedExportWizard:
         ttk.Label(steps, text="2. Configura i campi/filtro nella finestra dedicata", anchor="w").pack(
             fill=tk.X, padx=8
         )
-        ttk.Label(steps, text="3. Salva il file CSV risultante", anchor="w").pack(fill=tk.X, padx=8, pady=(0, 6))
+        ttk.Label(steps, text="3. Salva il file CSV/Excel risultante", anchor="w").pack(fill=tk.X, padx=8, pady=(0, 6))
 
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill=tk.X, pady=(16, 0))
@@ -85,9 +92,9 @@ class UnifiedExportWizard:
         ttk.Radiobutton(row, variable=self.choice_var, value=value).pack(side=tk.LEFT)
         text_block = ttk.Frame(row)
         text_block.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
-        ttk.Label(text_block, text=title, font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(text_block, text=title, font="AppBold").pack(anchor="w")
         for detail in details:
-            ttk.Label(text_block, text=f"• {detail}", foreground="#555").pack(anchor="w")
+            ttk.Label(text_block, text=f"• {detail}", foreground="gray40").pack(anchor="w")
 
     def _cancel(self) -> None:
         self.win.destroy()

@@ -10,6 +10,10 @@ Usage (PowerShell):
   cd <repo-root>\src
   ..\scripts\build_exe.ps1
 
+    # If your repo .venv uses an unsupported Python for PyInstaller (e.g. 3.14),
+    # you can override the interpreter, e.g. a dedicated build venv:
+    ..\scripts\build_exe.ps1 -PythonExeOverride "..\.venv313\Scripts\python.exe"
+
 Notes:
 - This script tries to use an existing PyInstaller installation. If not found
   it will prompt to install it into the active Python environment (requires
@@ -26,6 +30,7 @@ param(
     [switch]$Windowed,
     [string]$SeedDataDir = "data_seed_portable",
     [string]$DistFolderName = "",
+    [string]$PythonExeOverride = "",
     [string]$IconPath = "",
     [switch]$PruneOldTestBuilds,
     [int]$KeepTestBuilds = 3
@@ -35,19 +40,58 @@ function Write-Info($m) { Write-Host "[INFO] $m" -ForegroundColor Cyan }
 function Write-Warn($m) { Write-Host "[WARN] $m" -ForegroundColor Yellow }
 function Write-Err($m) { Write-Host "[ERROR] $m" -ForegroundColor Red }
 
-function Resolve-PythonExe([string]$repoRootPath) {
+function Assert-ReadableFile([string]$path, [string]$label) {
+    if (-not (Test-Path -LiteralPath $path)) {
+        Write-Err "Missing ${label}: $path"
+        Pop-Location
+        exit 1
+    }
+    try {
+        $item = Get-Item -LiteralPath $path -ErrorAction Stop
+        $expected = [int64]$item.Length
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $actual = [int64]$bytes.Length
+        if ($expected -gt 0 -and $actual -eq 0) {
+            Write-Err "$label appears to be a cloud placeholder (0 bytes readable). Make the file available offline and retry: $path"
+            Pop-Location
+            exit 1
+        }
+        if ($expected -ne $actual) {
+            Write-Warn "$label read size mismatch (expected $expected, read $actual). If you use Google Drive/OneDrive, try marking the repo folder as 'Available offline': $path"
+        }
+    } catch {
+        Write-Err "Cannot read ${label}: $path ($($_.Exception.Message))"
+        Pop-Location
+        exit 1
+    }
+}
+
+function Resolve-PythonCommand([string]$repoRootPath, [string]$override) {
+    # Returns a hashtable:
+    #  - Cmd: executable (e.g. 'py' or full path to python.exe)
+    #  - Args: fixed args to prepend (e.g. '-3.13')
+    #  - Display: friendly string
+
+    if (-not [string]::IsNullOrWhiteSpace($override)) {
+        $trim = $override.Trim()
+        if ($trim -match '^py\s+(-\S+)$') {
+            return @{ Cmd = 'py'; Args = @($Matches[1]); Display = $trim }
+        }
+        return @{ Cmd = $trim; Args = @(); Display = $trim }
+    }
+
     $venv = Join-Path $repoRootPath '.venv\Scripts\python.exe'
-    if (Test-Path $venv) { return $venv }
+    if (Test-Path $venv) { return @{ Cmd = $venv; Args = @(); Display = $venv } }
 
     $cmd = Get-Command python -ErrorAction SilentlyContinue
     if ($cmd -and $cmd.Source) {
         # Avoid the WindowsApps stub that redirects to the Microsoft Store
         if ($cmd.Source -like '*\\WindowsApps\\python.exe') { }
-        else { return $cmd.Source }
+        else { return @{ Cmd = $cmd.Source; Args = @(); Display = $cmd.Source } }
     }
 
     $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($py) { return 'py -3' }
+    if ($py) { return @{ Cmd = 'py'; Args = @('-3'); Display = 'py -3' } }
 
     return $null
 }
@@ -58,13 +102,13 @@ $src = Join-Path $repoRoot 'src'
 Push-Location -ErrorAction Stop $src
 Write-Info "Building from: $src"
 
-$pythonExe = Resolve-PythonExe -repoRootPath $repoRoot
-if (-not $pythonExe) {
+$python = Resolve-PythonCommand -repoRootPath $repoRoot -override $PythonExeOverride
+if (-not $python) {
     Write-Err "Python not found in PATH and no repo .venv detected. Create/activate a venv under $repoRoot\.venv or add Python to PATH."
     Pop-Location
     exit 1
 }
-Write-Info "Python executable: $pythonExe"
+Write-Info "Python executable: $($python.Display)"
 
 if (-not (Test-Path $EntryScript)) {
     Write-Err "Entry script '$EntryScript' not found in $src. Aborting."
@@ -72,27 +116,24 @@ if (-not (Test-Path $EntryScript)) {
     exit 1
 }
 
+# Guard against cloud placeholder files (Google Drive/OneDrive) that report a size
+# but return 0 bytes when read, leading to broken imports in the packaged EXE.
+Assert-ReadableFile -path (Join-Path $src $EntryScript) -label "Entry script"
+Assert-ReadableFile -path (Join-Path $src 'v4_ui\main_window.py') -label "UI main_window.py"
+Assert-ReadableFile -path (Join-Path $src 'cd_delibere.py') -label "cd_delibere.py"
+Assert-ReadableFile -path (Join-Path $src 'documents_manager.py') -label "documents_manager.py"
+
 # Check PyInstaller availability in the selected Python environment
 $pyinstallerVersion = $null
 try {
-    if ($pythonExe -eq 'py -3') {
-        $pyinstallerVersion = & py -3 -m PyInstaller --version 2>$null
-    } else {
-        $pyinstallerVersion = & $pythonExe -m PyInstaller --version 2>$null
-    }
+    $pyinstallerVersion = & $python.Cmd @($python.Args + @('-m','PyInstaller','--version')) 2>$null
     if ($LASTEXITCODE -ne 0) { throw "notfound" }
     Write-Info "PyInstaller found (module): $pyinstallerVersion"
 } catch {
     Write-Warn "PyInstaller not available in the selected Python environment. Attempting to install it (requires Internet)."
-    if ($pythonExe -eq 'py -3') {
-        & py -3 -m pip install --upgrade pip setuptools wheel
-        & py -3 -m pip install pyinstaller
-        $pyinstallerVersion = & py -3 -m PyInstaller --version 2>$null
-    } else {
-        & $pythonExe -m pip install --upgrade pip setuptools wheel
-        & $pythonExe -m pip install pyinstaller
-        $pyinstallerVersion = & $pythonExe -m PyInstaller --version 2>$null
-    }
+    & $python.Cmd @($python.Args + @('-m','pip','install','--upgrade','pip','setuptools','wheel'))
+    & $python.Cmd @($python.Args + @('-m','pip','install','pyinstaller'))
+    $pyinstallerVersion = & $python.Cmd @($python.Args + @('-m','PyInstaller','--version')) 2>$null
 
     if ($LASTEXITCODE -ne 0) {
         Write-Err "Failed to install PyInstaller. Install it manually and re-run this script."
@@ -111,7 +152,7 @@ $distBase = if ([string]::IsNullOrWhiteSpace($DistFolderName)) {
 } else {
     Join-Path $distRoot $DistFolderName
 }
-New-Item -ItemType Directory -Path $distBase -Force | Out-Null
+# Let PyInstaller create the dist folder; this avoids leaving empty folders around when the build fails early.
 
 # Build arguments
 # Keep PyInstaller output less verbose (it often logs to stderr and can be noisy in PowerShell hosts)
@@ -119,11 +160,7 @@ $buildArgs = @('--noconfirm','--onefile','--name', $ExeName, '--log-level=WARN')
 if ($Windowed) { $buildArgs += '--windowed' }
 
 function Invoke-PythonArgs([string[]]$pyArgs) {
-    if ($pythonExe -eq 'py -3') {
-        & py -3 @pyArgs
-    } else {
-        & $pythonExe @pyArgs
-    }
+    & $python.Cmd @($python.Args + $pyArgs)
     return $LASTEXITCODE
 }
 
@@ -201,11 +238,8 @@ Write-Info "Running PyInstaller... this may take a while"
 $oldEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    if ($pythonExe -eq 'py -3') {
-        & py -3 -m PyInstaller @buildArgs --distpath $distBase --workpath $workpath $EntryScript 2>&1
-    } else {
-        & $pythonExe -m PyInstaller @buildArgs --distpath $distBase --workpath $workpath $EntryScript 2>&1
-    }
+    # PyInstaller often logs INFO to stderr; stringify to avoid misleading NativeCommandError records.
+    & $python.Cmd @($python.Args + @('-m','PyInstaller') + $buildArgs + @('--distpath',$distBase,'--workpath',$workpath,$EntryScript)) 2>&1 | ForEach-Object { $_.ToString() }
     $exit = $LASTEXITCODE
 } finally {
     $ErrorActionPreference = $oldEap
@@ -213,11 +247,39 @@ try {
 
 if ($exit -ne 0) {
     Write-Err "PyInstaller failed (exit code $exit). Check the log above."
+    if (Test-Path $distBase) {
+        try { Remove-Item -Recurse -Force $distBase -ErrorAction SilentlyContinue } catch { }
+    }
+    Pop-Location
+    exit 1
+}
+
+$exePath = Join-Path $distBase ("$ExeName.exe")
+if (-not (Test-Path $exePath)) {
+    Write-Err "Build did not produce expected EXE: $exePath"
+    if (Test-Path $distBase) {
+        try { Remove-Item -Recurse -Force $distBase -ErrorAction SilentlyContinue } catch { }
+    }
     Pop-Location
     exit 1
 }
 
 Copy-SeedData $SeedDataDir $distBase
+
+# Copy betatest guide into the portable folder (used by the first-run intro in 0.4.5*)
+try {
+    $guideSrc = Join-Path $repoRoot 'docs\BETATEST_GUIDE.md'
+    if (Test-Path $guideSrc) {
+        $docsDestDir = Join-Path $distBase 'docs'
+        New-Item -ItemType Directory -Path $docsDestDir -Force | Out-Null
+        Copy-Item -Path $guideSrc -Destination (Join-Path $docsDestDir 'BETATEST_GUIDE.md') -Force
+        Write-Info "Betatest guide copied to: $docsDestDir"
+    } else {
+        Write-Warn "Betatest guide not found at: $guideSrc (skipping copy)"
+    }
+} catch {
+    Write-Warn "Failed to copy betatest guide: $($_.Exception.Message)"
+}
 
 Write-Info "Build complete. Dist directory: $distBase"
 Write-Info "Portable folder contains EXE + seeded 'data' (no soci.db) for a clean first-run test."

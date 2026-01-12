@@ -11,3 +11,12 @@ Per compatibilità con automazioni pregresse restano in `src/` alcuni moduli "or
 - `v4_ui/__init__.py` e `v4_ui/styles.py`: mantenuti per chi sviluppa plugin/packaging personalizzati e desidera richiamare `configure_styles()` direttamente senza passare da `main.py`.
 
 Se non servono in produzione possono essere ignorati: sono documentati qui per evitare rimozioni accidentali.
+
+## Branching (betatest vs sviluppo)
+
+- `betatest/0.4.5a`: baseline stabile per i betatester (solo bugfix mirati).
+- `dev`: sviluppo continuo (versione `*-dev`).
+
+Regola pratica:
+- La portable per i betatester si builda dal branch `betatest/*`.
+- Le build di sviluppo si buildano dal branch `dev`.

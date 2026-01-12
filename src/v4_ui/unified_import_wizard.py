@@ -30,13 +30,20 @@ class UnifiedImportWizard:
         self.win.transient(parent)
         self.win.grab_set()
 
+        try:
+            from .styles import ensure_app_named_fonts
+
+            ensure_app_named_fonts(self.win.winfo_toplevel())
+        except Exception:
+            pass
+
         self._build_ui()
 
     def _build_ui(self) -> None:
         container = ttk.Frame(self.win, padding=16)
         container.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(container, text="Importa dati da file CSV", font=("Segoe UI", 12, "bold")).pack(
+        ttk.Label(container, text="Importa dati da file CSV", font="AppTitle").pack(
             anchor="w"
         )
         ttk.Label(
@@ -93,9 +100,9 @@ class UnifiedImportWizard:
         ttk.Radiobutton(row, value=value, variable=self.choice_var).pack(side=tk.LEFT)
         text_block = ttk.Frame(row)
         text_block.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
-        ttk.Label(text_block, text=title, font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(text_block, text=title, font="AppBold").pack(anchor="w")
         for detail in details:
-            ttk.Label(text_block, text=f"• {detail}", foreground="#555").pack(anchor="w")
+            ttk.Label(text_block, text=f"• {detail}", foreground="gray40").pack(anchor="w")
 
     def _cancel(self) -> None:
         self.win.destroy()

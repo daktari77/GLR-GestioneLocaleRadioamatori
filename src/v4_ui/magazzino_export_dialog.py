@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dialog for exporting inventory (magazzino) data to CSV."""
+"""Dialog for exporting inventory (magazzino) data to CSV or Excel (.xlsx)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from utils import iso_to_ddmmyyyy
 
 STATUS_AVAILABLE = "Disponibile"
 STATUS_LOANED = "In prestito"
+STATUS_DISMISSED = "Dismesso"
 
 EXPORT_FIELDS = [
     ("numero_inventario", "Numero inventario"),
@@ -20,6 +21,9 @@ EXPORT_FIELDS = [
     ("descrizione", "Descrizione"),
     ("note", "Note"),
     ("stato", "Stato"),
+    ("dismesso_at", "Dismesso il"),
+    ("dismesso_reason", "Motivo dismissione"),
+    ("dismesso_destination", "Destinazione"),
     ("assegnato_a", "Assegnato a"),
     ("assegnato_matricola", "Matricola assegnatario"),
     ("data_prestito", "Data prestito attivo"),
@@ -38,17 +42,18 @@ DEFAULT_FIELDS = [
 
 
 class MagazzinoExportDialog(tk.Toplevel):
-    """Simple dialog that lets the user export the magazzino list to CSV."""
+    """Dialog that exports the magazzino list to CSV or Excel."""
 
     def __init__(self, parent: tk.Misc):
         super().__init__(parent)
-        self.title("Esporta magazzino in CSV")
-        self.geometry("540x520")
+        self.title("Esporta magazzino")
+        self.geometry("540x560")
         self.transient(parent)
         self.grab_set()
 
         self.field_vars: dict[str, tk.BooleanVar] = {}
         self.status_filter = tk.StringVar(value="tutti")
+        self.format_var = tk.StringVar(value="csv")
 
         self._build_ui()
 
@@ -66,14 +71,27 @@ class MagazzinoExportDialog(tk.Toplevel):
             justify=tk.LEFT,
         ).pack(fill=tk.X, pady=(0, 10))
 
-        # Field presets
+        format_frame = ttk.LabelFrame(container, text="Formato")
+        format_frame.pack(fill=tk.X, pady=(0, 8))
+        ttk.Radiobutton(
+            format_frame,
+            text="CSV (separatore ;)",
+            value="csv",
+            variable=self.format_var,
+        ).pack(side=tk.LEFT, padx=6, pady=4)
+        ttk.Radiobutton(
+            format_frame,
+            text="Excel (.xlsx)",
+            value="xlsx",
+            variable=self.format_var,
+        ).pack(side=tk.LEFT, padx=6, pady=4)
+
         preset_frame = ttk.Frame(container)
         preset_frame.pack(fill=tk.X, pady=(0, 6))
         ttk.Button(preset_frame, text="Tutti", command=self._select_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(preset_frame, text="Nessuno", command=self._deselect_all).pack(side=tk.LEFT, padx=2)
         ttk.Button(preset_frame, text="Essenziali", command=self._select_default).pack(side=tk.LEFT, padx=2)
 
-        # Scrollable field list
         list_frame = ttk.Frame(container)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=6)
         canvas = tk.Canvas(list_frame)
@@ -93,15 +111,33 @@ class MagazzinoExportDialog(tk.Toplevel):
 
         filter_frame = ttk.LabelFrame(container, text="Filtro stato")
         filter_frame.pack(fill=tk.X, pady=6)
-        ttk.Radiobutton(filter_frame, text="Tutti", value="tutti", variable=self.status_filter).pack(
+        ttk.Radiobutton(filter_frame, text="Tutti (esclude dismessi)", value="tutti", variable=self.status_filter).pack(
             side=tk.LEFT, padx=4, pady=4
         )
-        ttk.Radiobutton(filter_frame, text="Solo disponibili", value="disponibili", variable=self.status_filter).pack(
-            side=tk.LEFT, padx=4, pady=4
-        )
-        ttk.Radiobutton(filter_frame, text="Solo in prestito", value="prestito", variable=self.status_filter).pack(
-            side=tk.LEFT, padx=4, pady=4
-        )
+        ttk.Radiobutton(
+            filter_frame,
+            text="Solo disponibili",
+            value="disponibili",
+            variable=self.status_filter,
+        ).pack(side=tk.LEFT, padx=4, pady=4)
+        ttk.Radiobutton(
+            filter_frame,
+            text="Solo in prestito",
+            value="prestito",
+            variable=self.status_filter,
+        ).pack(side=tk.LEFT, padx=4, pady=4)
+        ttk.Radiobutton(
+            filter_frame,
+            text="Solo dismessi",
+            value="dismessi",
+            variable=self.status_filter,
+        ).pack(side=tk.LEFT, padx=4, pady=4)
+        ttk.Radiobutton(
+            filter_frame,
+            text="Tutti (inclusi dismessi)",
+            value="tutti_inclusi_dismessi",
+            variable=self.status_filter,
+        ).pack(side=tk.LEFT, padx=4, pady=4)
 
         button_frame = ttk.Frame(container)
         button_frame.pack(fill=tk.X, pady=(12, 0))
@@ -120,21 +156,29 @@ class MagazzinoExportDialog(tk.Toplevel):
         for key, var in self.field_vars.items():
             var.set(key in DEFAULT_FIELDS)
 
-    # ------------------------------------------------------------------
-    # Export logic
-    # ------------------------------------------------------------------
     def _export(self) -> None:
         fields = [key for key, var in self.field_vars.items() if var.get()]
         if not fields:
-            messagebox.showwarning("Export", "Seleziona almeno un campo." , parent=self)
+            messagebox.showwarning("Export", "Seleziona almeno un campo.", parent=self)
             return
+
+        fmt = (self.format_var.get() or "csv").strip().lower()
+        if fmt == "xlsx":
+            default_ext = ".xlsx"
+            filetypes = [("Excel (.xlsx)", "*.xlsx"), ("Tutti i file", "*.*")]
+            initialfile = "magazzino.xlsx"
+        else:
+            fmt = "csv"
+            default_ext = ".csv"
+            filetypes = [("CSV", "*.csv"), ("Tutti i file", "*.*")]
+            initialfile = "magazzino.csv"
 
         path = filedialog.asksaveasfilename(
             parent=self,
             title="Esporta magazzino",
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv"), ("Tutti i file", "*.*")],
-            initialfile="magazzino.csv",
+            defaultextension=default_ext,
+            filetypes=filetypes,
+            initialfile=initialfile,
         )
         if not path:
             return
@@ -151,11 +195,10 @@ class MagazzinoExportDialog(tk.Toplevel):
             return
 
         try:
-            with open(path, "w", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=fields, delimiter=";")
-                writer.writeheader()
-                for item in filtered:
-                    writer.writerow({key: self._extract_field(key, item) for key in fields})
+            if fmt == "xlsx":
+                self._export_xlsx(path, fields, filtered)
+            else:
+                self._export_csv(path, fields, filtered)
         except Exception as exc:
             messagebox.showerror("Export", f"Errore durante il salvataggio:\n{exc}", parent=self)
             return
@@ -163,9 +206,70 @@ class MagazzinoExportDialog(tk.Toplevel):
         messagebox.showinfo("Export", f"File generato:\n{path}", parent=self)
         self.destroy()
 
+    def _export_csv(self, path: str, fields: list[str], rows: list[dict]) -> None:
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields, delimiter=";")
+            writer.writeheader()
+            for item in rows:
+                writer.writerow({key: self._extract_field(key, item) for key in fields})
+
+    def _export_xlsx(self, path: str, fields: list[str], rows: list[dict]) -> None:
+        try:
+            import openpyxl
+            from openpyxl.styles import Alignment, Font
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(f"openpyxl non disponibile: {exc}")
+
+        headers_by_key = {k: label for k, label in EXPORT_FIELDS}
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Magazzino"
+
+        header_font = Font(bold=True)
+        for col_idx, key in enumerate(fields, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=headers_by_key.get(key, key))
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        for row_idx, item in enumerate(rows, start=2):
+            for col_idx, key in enumerate(fields, start=1):
+                ws.cell(row=row_idx, column=col_idx, value=self._extract_field(key, item))
+
+        ws.freeze_panes = "A2"
+
+        try:
+            ws.auto_filter.ref = ws.dimensions
+        except Exception:
+            pass
+
+        try:
+            for col_idx, key in enumerate(fields, start=1):
+                header = headers_by_key.get(key, key)
+                max_len = len(str(header))
+                for item in rows[:3000]:
+                    v = self._extract_field(key, item)
+                    if v is None:
+                        continue
+                    max_len = max(max_len, len(str(v)))
+                ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(max(10, max_len + 2), 60)
+        except Exception:
+            pass
+
+        wb.save(path)
+
     def _matches_filter(self, item: dict) -> bool:
         status = self.status_filter.get()
+        is_dismissed = bool(item.get("is_dismesso"))
         is_loaned = bool(item.get("active_loan_id"))
+        if status == "tutti" and is_dismissed:
+            return False
+        if status == "dismessi" and not is_dismissed:
+            return False
+        if status == "tutti_inclusi_dismessi":
+            return True
+        if is_dismissed:
+            return False
         if status == "disponibili" and is_loaned:
             return False
         if status == "prestito" and not is_loaned:
@@ -174,12 +278,17 @@ class MagazzinoExportDialog(tk.Toplevel):
 
     def _extract_field(self, key: str, item: dict) -> str:
         if key == "stato":
+            if item.get("is_dismesso"):
+                return STATUS_DISMISSED
             return STATUS_LOANED if item.get("active_loan_id") else STATUS_AVAILABLE
+        if key == "dismesso_at":
+            if not item.get("is_dismesso"):
+                return ""
+            return iso_to_ddmmyyyy(str(item.get("dismesso_at") or "")[:10]) or ""
         if key == "assegnato_a":
             nome = (item.get("active_socio_nome") or "").strip()
             cognome = (item.get("active_socio_cognome") or "").strip()
-            full = f"{cognome} {nome}".strip()
-            return full
+            return f"{cognome} {nome}".strip()
         if key == "assegnato_matricola":
             return item.get("active_socio_matricola") or ""
         if key == "data_prestito":

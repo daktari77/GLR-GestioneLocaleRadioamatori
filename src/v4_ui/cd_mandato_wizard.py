@@ -31,12 +31,17 @@ class CdMandatoWizard(tk.Toplevel):
         self.on_saved = on_saved
         self.result = None
 
+        self._selected_mandato_id: int | None = None
+        self._mandato_display_to_id: dict[str, int | None] = {}
+
         self.var_label = tk.StringVar()
         self.var_start = tk.StringVar()
         self.var_end = tk.StringVar()
         self.var_note = tk.StringVar()
+        self.var_is_active = tk.BooleanVar(value=True)
 
         self._build_ui()
+        self._reload_mandati_list()
         self._load_current()
 
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
@@ -49,17 +54,26 @@ class CdMandatoWizard(tk.Toplevel):
         frm = ttk.LabelFrame(container, text="Periodo mandato")
         frm.pack(fill=tk.X, padx=0, pady=(0, 10))
 
-        ttk.Label(frm, text="Etichetta (es. 2023-2025)").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-        ttk.Entry(frm, textvariable=self.var_label, width=30).grid(row=0, column=1, sticky="ew", padx=6, pady=4)
+        ttk.Label(frm, text="Mandato").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        self.var_pick = tk.StringVar()
+        self.combo_pick = ttk.Combobox(frm, textvariable=self.var_pick, state="readonly", width=35, values=())
+        self.combo_pick.grid(row=0, column=1, sticky="w", padx=6, pady=4)
+        self.combo_pick.bind("<<ComboboxSelected>>", lambda _e: self._on_pick_mandato())
 
-        ttk.Label(frm, text="Inizio").grid(row=1, column=0, sticky="w", padx=6, pady=4)
-        ttk.Entry(frm, textvariable=self.var_start, width=20).grid(row=1, column=1, sticky="w", padx=6, pady=4)
+        ttk.Button(frm, text="Nuovo", command=self._new_mandato).grid(row=0, column=2, sticky="w", padx=6, pady=4)
+        ttk.Checkbutton(frm, text="Attivo", variable=self.var_is_active).grid(row=0, column=3, sticky="w", padx=6, pady=4)
 
-        ttk.Label(frm, text="Fine").grid(row=2, column=0, sticky="w", padx=6, pady=4)
-        ttk.Entry(frm, textvariable=self.var_end, width=20).grid(row=2, column=1, sticky="w", padx=6, pady=4)
+        ttk.Label(frm, text="Etichetta (es. Mandato 2023-2025)").grid(row=1, column=0, sticky="w", padx=6, pady=4)
+        ttk.Entry(frm, textvariable=self.var_label, width=30).grid(row=1, column=1, columnspan=3, sticky="ew", padx=6, pady=4)
 
-        ttk.Label(frm, text="Note").grid(row=3, column=0, sticky="w", padx=6, pady=4)
-        ttk.Entry(frm, textvariable=self.var_note).grid(row=3, column=1, sticky="ew", padx=6, pady=4)
+        ttk.Label(frm, text="Inizio").grid(row=2, column=0, sticky="w", padx=6, pady=4)
+        ttk.Entry(frm, textvariable=self.var_start, width=20).grid(row=2, column=1, sticky="w", padx=6, pady=4)
+
+        ttk.Label(frm, text="Fine").grid(row=3, column=0, sticky="w", padx=6, pady=4)
+        ttk.Entry(frm, textvariable=self.var_end, width=20).grid(row=3, column=1, sticky="w", padx=6, pady=4)
+
+        ttk.Label(frm, text="Note").grid(row=4, column=0, sticky="w", padx=6, pady=4)
+        ttk.Entry(frm, textvariable=self.var_note).grid(row=4, column=1, columnspan=3, sticky="ew", padx=6, pady=4)
 
         frm.columnconfigure(1, weight=1)
 
@@ -112,10 +126,15 @@ class CdMandatoWizard(tk.Toplevel):
             cur = None
 
         if cur:
+            try:
+                self._selected_mandato_id = int(cur.get("id")) if cur.get("id") is not None else None
+            except Exception:
+                self._selected_mandato_id = None
             self.var_label.set(str(cur.get("label") or ""))
             self.var_start.set(str(cur.get("start_date") or ""))
             self.var_end.set(str(cur.get("end_date") or ""))
             self.var_note.set(str(cur.get("note") or ""))
+            self.var_is_active.set(True)
             for row in self.tv.get_children():
                 self.tv.delete(row)
             for idx, m in enumerate(cur.get("composizione") or [], start=1):
@@ -138,6 +157,108 @@ class CdMandatoWizard(tk.Toplevel):
                 self.var_start.set("2023-01-01")
             if not self.var_end.get().strip():
                 self.var_end.set("2025-12-31")
+
+        # Select the active mandate in the dropdown if available
+        try:
+            if self._selected_mandato_id is not None:
+                for display, mid in self._mandato_display_to_id.items():
+                    if mid == self._selected_mandato_id:
+                        self.var_pick.set(display)
+                        break
+        except Exception:
+            pass
+
+    def _reload_mandati_list(self):
+        try:
+            from cd_mandati import get_all_cd_mandati
+
+            all_rows = get_all_cd_mandati()
+        except Exception:
+            all_rows = []
+
+        self._mandato_display_to_id = {"(nuovo)": None}
+        values = ["(nuovo)"]
+
+        for m in all_rows:
+            mid = m.get("id")
+            try:
+                mid_i = int(mid)
+            except Exception:
+                continue
+
+            lbl = str(m.get("label") or "").strip()
+            s = str(m.get("start_date") or "").strip()
+            e = str(m.get("end_date") or "").strip()
+            span = f"{s[:4]}-{e[:4]}" if s and e else ""
+            base = lbl or (f"Mandato {span}" if span else f"Mandato ID {mid_i}")
+            if span and span not in base:
+                base = f"{base} ({span})"
+            if int(m.get("is_active") or 0) == 1:
+                base = f"{base} [attivo]"
+
+            display = base
+            if display in self._mandato_display_to_id and self._mandato_display_to_id.get(display) != mid_i:
+                display = f"{display} #{mid_i}"
+
+            self._mandato_display_to_id[display] = mid_i
+            values.append(display)
+
+        try:
+            self.combo_pick.configure(values=values)
+            if not self.var_pick.get().strip():
+                self.var_pick.set(values[0] if values else "(nuovo)")
+        except Exception:
+            pass
+
+    def _new_mandato(self):
+        self._selected_mandato_id = None
+        self.var_pick.set("(nuovo)")
+        self.var_label.set("")
+        self.var_start.set("")
+        self.var_end.set("")
+        self.var_note.set("")
+        self.var_is_active.set(False)
+        for row in self.tv.get_children():
+            self.tv.delete(row)
+
+    def _on_pick_mandato(self):
+        choice = (self.var_pick.get() or "").strip()
+        mid = self._mandato_display_to_id.get(choice)
+        if mid is None:
+            self._new_mandato()
+            return
+
+        try:
+            from cd_mandati import get_cd_mandato_by_id
+
+            m = get_cd_mandato_by_id(int(mid))
+        except Exception:
+            m = None
+
+        if not m:
+            return
+
+        self._selected_mandato_id = int(mid)
+        self.var_label.set(str(m.get("label") or ""))
+        self.var_start.set(str(m.get("start_date") or ""))
+        self.var_end.set(str(m.get("end_date") or ""))
+        self.var_note.set(str(m.get("note") or ""))
+        self.var_is_active.set(int(m.get("is_active") or 0) == 1)
+
+        for row in self.tv.get_children():
+            self.tv.delete(row)
+        for idx, r in enumerate(m.get("composizione") or [], start=1):
+            iid = f"m{idx}"
+            self.tv.insert(
+                "",
+                tk.END,
+                iid=iid,
+                values=(
+                    str(r.get("carica") or ""),
+                    str(r.get("nome") or ""),
+                    str(r.get("note") or ""),
+                ),
+            )
 
     def _ask_member_data(self, *, initial=None):
         initial = initial or {}
@@ -220,11 +341,13 @@ class CdMandatoWizard(tk.Toplevel):
             from cd_mandati import save_cd_mandato
 
             mandato_id = save_cd_mandato(
+                mandato_id=self._selected_mandato_id,
                 label=label,
                 start_date=start_iso,
                 end_date=end_iso,
                 composizione=composizione,
                 note=note,
+                is_active=bool(self.var_is_active.get()),
             )
         except Exception as exc:
             messagebox.showerror("Mandato CD", f"Errore salvataggio: {exc}")
@@ -240,6 +363,12 @@ class CdMandatoWizard(tk.Toplevel):
                 self.on_saved(self.result)
             except Exception:
                 pass
+
+        # Refresh list so the newly created mandate is selectable
+        try:
+            self._reload_mandati_list()
+        except Exception:
+            pass
 
         self.destroy()
 

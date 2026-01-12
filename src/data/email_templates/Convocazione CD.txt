@@ -1,0 +1,10 @@
+Gentili Consiglieri,
+
+siete convocati per la riunione del Consiglio Direttivo n. {num} che si terrà in data {data} alle ore {ora} presso {luogo}.
+
+Ordine del giorno:
+{odg}
+
+Cordiali saluti,
+Il Presidente
+{presidente}

@@ -1,0 +1,451 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.2.9 Chrome/140.0.7339.249 Electron/38.7.2 Safari/537.36" version="29.2.9" pages="4">
+  <diagram id="startup" name="Startup">
+    <mxGraphModel dx="1426" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="s_lane_ui" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="UI" vertex="1">
+          <mxGeometry height="580" width="220" as="geometry" />
+        </mxCell>
+        <mxCell id="s0" parent="s_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Run src/main.py\n(__main__)" vertex="1">
+          <mxGeometry height="60" width="180" x="30" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" parent="s_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="LoadingWindow.show()\n+ set_status(&#39;Verifica ambiente...&#39;)" vertex="1">
+          <mxGeometry height="70" width="180" x="30" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="se05" edge="1" parent="s_lane_ui" source="s0" style="endArrow=block;html=1;" target="s5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" parent="s_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="LoadingWindow.close()" vertex="1">
+          <mxGeometry height="50" width="180" x="30" y="265" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" parent="s_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="App(startup_issues=...)" vertex="1">
+          <mxGeometry height="50" width="180" x="30" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="se78" edge="1" parent="s_lane_ui" source="s7" style="endArrow=block;html=1;" target="s8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s9" parent="s_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Tkinter event loop\n(inside App)" vertex="1">
+          <mxGeometry height="60" width="180" x="30" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="se89" edge="1" parent="s_lane_ui" source="s8" style="endArrow=block;html=1;" target="s9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_lane_logic" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="Logic" vertex="1">
+          <mxGeometry height="580" width="360" x="230" as="geometry">
+            <mxRectangle height="60" width="40" x="220" as="alternateBounds" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s6" parent="s_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="collect_startup_issues()" vertex="1">
+          <mxGeometry height="50" width="220" x="80" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" parent="s_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="backup_on_startup(DB_NAME, get_backup_dir())" vertex="1">
+          <mxGeometry height="60" width="300" x="40" y="375" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" parent="s_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="init_db()" vertex="1">
+          <mxGeometry height="50" width="140" x="120" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="se34" edge="1" parent="s_lane_logic" source="s3" style="endArrow=block;html=1;" target="s4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" parent="s_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="os.chdir(BASE_DIR)\n(stabilize working dir)" vertex="1">
+          <mxGeometry height="60" width="300" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" parent="s_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="Configure modules\nset_db_path(DB_NAME)\nset_causali_path(CAUSALI_JSON)\nset_config_paths(CONFIG_JSON, SEC_DOCS, DEFAULT_CONFIG, SEC_CATEGORIES)\nset_docs_base(DOCS_BASE)" vertex="1">
+          <mxGeometry height="140" width="300" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="se12" edge="1" parent="s_lane_logic" source="s1" style="endArrow=block;html=1;" target="s2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se23" edge="1" parent="s_lane_logic" source="s2" style="endArrow=block;html=1;" target="s3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_lane_db" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="DB (SQLite)" vertex="1">
+          <mxGeometry height="580" width="220" x="580" as="geometry" />
+        </mxCell>
+        <mxCell id="sdb" parent="s_lane_db" style="rounded=1;whiteSpace=wrap;html=1;" value="SQLite file\nDB_NAME" vertex="1">
+          <mxGeometry height="60" width="170" x="40" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="s_lane_fs" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="FS" vertex="1">
+          <mxGeometry height="580" width="300" x="800" as="geometry" />
+        </mxCell>
+        <mxCell id="sfs1" parent="s_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="BASE_DIR\nDATA_DIR\nDOCS_BASE" vertex="1">
+          <mxGeometry height="80" width="240" x="40" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sfs2" parent="s_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="Backup folder\nget_backup_dir()" vertex="1">
+          <mxGeometry height="60" width="240" x="40" y="375" as="geometry" />
+        </mxCell>
+        <mxCell id="se01" edge="1" parent="1" source="s0" style="endArrow=block;html=1;" target="s1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se3db" edge="1" parent="1" source="s3" style="endArrow=block;html=1;" target="sdb">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se4fs" edge="1" parent="1" source="s4" style="endArrow=block;html=1;" target="sfs2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se56" edge="1" parent="1" source="s5" style="endArrow=block;html=1;" target="s6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="se67" edge="1" parent="1" source="s6" style="endArrow=block;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;edgeStyle=orthogonalEdgeStyle;" target="s7">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="485" />
+              <mxPoint x="240" y="325" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="se1fs" edge="1" parent="1" source="s1" style="endArrow=block;html=1;" target="sfs1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="section_docs" name="Documenti Sezione">
+    <mxGraphModel dx="1426" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="sd_lane_ui" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="UI" vertex="1">
+          <mxGeometry height="820" width="220" as="geometry" />
+        </mxCell>
+        <mxCell id="sd5" parent="sd_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Admin action: Reindex / Fix paths" vertex="1">
+          <mxGeometry height="60" width="180" x="30" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="sd4" parent="sd_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="User action: Delete" vertex="1">
+          <mxGeometry height="50" width="180" x="30" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="sd3" parent="sd_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="User action: Edit metadata\n(categoria/descrizione/...)" vertex="1">
+          <mxGeometry height="70" width="180" x="30" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="sd2" parent="sd_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="User action: Upload document" vertex="1">
+          <mxGeometry height="50" width="180" x="30" y="315" as="geometry" />
+        </mxCell>
+        <mxCell id="sd1" parent="sd_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="User action: Refresh / Filter" vertex="1">
+          <mxGeometry height="50" width="180" x="30" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="sd0" parent="sd_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="SectionDocumentPanel\n(e.g. CD tab &gt; Documenti)" vertex="1">
+          <mxGeometry height="70" width="180" x="30" y="65" as="geometry" />
+        </mxCell>
+        <mxCell id="sd_lane_logic" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="Logic (src/section_documents.py)" vertex="1">
+          <mxGeometry height="820" width="380" x="220" as="geometry" />
+        </mxCell>
+        <mxCell id="sdL5" parent="sd_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="reindex_section_documents(...)\n- reconcile DB vs disk\n- fix percorso/relative_path/stored_name\n- infer categoria from folder\n- optional import_orphans / prune_missing" vertex="1">
+          <mxGeometry height="110" width="320" x="40" y="695" as="geometry" />
+        </mxCell>
+        <mxCell id="sdL4" parent="sd_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="delete_section_document(path)\n- soft_delete_section_document_record (best effort)\n- unlink() file\n- remove metadata.json entry" vertex="1">
+          <mxGeometry height="110" width="320" x="40" y="570" as="geometry" />
+        </mxCell>
+        <mxCell id="sdL3" parent="sd_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="update_section_document_metadata(path, ...)\n- may move file across category folders\n- update DB record or insert if missing\n- update metadata.json (best effort)" vertex="1">
+          <mxGeometry height="120" width="320" x="40" y="425" as="geometry" />
+        </mxCell>
+        <mxCell id="sdL2" parent="sd_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="add_section_document(source_path, categoria, ...)\n- copy2() into SEC_DOCS/&lt;slug&gt;/&lt;hash&gt;.&lt;ext&gt;\n- add_section_document_record(...) (primary)\n- metadata.json update (legacy, best effort)" vertex="1">
+          <mxGeometry height="130" width="320" x="40" y="275" as="geometry" />
+        </mxCell>
+        <mxCell id="sdL1" parent="sd_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="list_section_documents()\n- DB-first\n- _db_backfill_registry() (best effort)\n- hide missing by default" vertex="1">
+          <mxGeometry height="100" width="320" x="40" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="sdL0" parent="sd_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="ensure_section_structure()\n+ per-category folders" vertex="1">
+          <mxGeometry height="60" width="320" x="40" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sd_lane_db" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="DB (section_documents table)" vertex="1">
+          <mxGeometry height="820" width="250" x="600" as="geometry" />
+        </mxCell>
+        <mxCell id="sdDB" parent="sd_lane_db" style="rounded=1;whiteSpace=wrap;html=1;" value="SQLite table: section_documents\nOps: list/get/add/update/soft_delete" vertex="1">
+          <mxGeometry height="100" width="200" x="40" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="sd_lane_fs" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="FS (SEC_DOCS tree)" vertex="1">
+          <mxGeometry height="820" width="340" x="870" as="geometry" />
+        </mxCell>
+        <mxCell id="sdFS1" parent="sd_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="SEC_DOCS/metadata.json\n(legacy index; best effort)" vertex="1">
+          <mxGeometry height="70" width="210" x="80" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="sdFS0" parent="sd_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="SEC_DOCS/\n&lt;categoria_slug&gt;/\n  &lt;hash&gt;.&lt;ext&gt;\n  elenco_documenti.txt" vertex="1">
+          <mxGeometry height="120" width="210" x="80" y="155" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE0" edge="1" parent="1" source="sd0" style="endArrow=block;html=1;" target="sdL0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE1" edge="1" parent="1" source="sd1" style="endArrow=block;html=1;" target="sdL1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE2" edge="1" parent="1" source="sd2" style="endArrow=block;html=1;" target="sdL2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE3" edge="1" parent="1" source="sd3" style="endArrow=block;html=1;" target="sdL3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE4" edge="1" parent="1" source="sd4" style="endArrow=block;html=1;" target="sdL4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE5" edge="1" parent="1" source="sd5" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdL5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="110" y="750" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="sdE1db" edge="1" parent="1" source="sdL1" style="endArrow=block;html=1;" target="sdDB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE2db" edge="1" parent="1" source="sdL2" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdDB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE3db" edge="1" parent="1" source="sdL3" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdDB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE4db" edge="1" parent="1" source="sdL4" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdDB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE5db" edge="1" parent="1" source="sdL5" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdDB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE0fs" edge="1" parent="1" source="sdL0" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdFS0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE2fs" edge="1" parent="1" source="sdL2" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdFS0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE3fs" edge="1" parent="1" source="sdL3" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdFS0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdE4fs" edge="1" parent="1" source="sdL4" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdFS0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdEmeta" edge="1" parent="1" source="sdL2" style="endArrow=block;html=1;" target="sdFS1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sdEmeta2" edge="1" parent="1" source="sdL3" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="sdFS1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="cd_reports" name="Report CD">
+    <mxGraphModel dx="1426" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="cdr_lane_ui" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="UI (src/v4_ui/main_window.py)" vertex="1">
+          <mxGeometry height="820" width="260" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr0" parent="cdr_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Button: Esporta libro verbali" vertex="1">
+          <mxGeometry height="50" width="220" x="30" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr1" parent="cdr_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="asksaveasfilename(.xlsx)" vertex="1">
+          <mxGeometry height="50" width="220" x="30" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrE01" edge="1" parent="cdr_lane_ui" source="cdr0" style="endArrow=block;html=1;" target="cdr1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr2" parent="cdr_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Button: Esporta libro delibere" vertex="1">
+          <mxGeometry height="50" width="220" x="30" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr3" parent="cdr_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="asksaveasfilename(.docx/.xlsx)\n(if .xlsx -&gt; Excel export)" vertex="1">
+          <mxGeometry height="70" width="220" x="30" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrE23" edge="1" parent="cdr_lane_ui" source="cdr2" style="endArrow=block;html=1;" target="cdr3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr_lane_logic" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="Logic (src/cd_reports.py)" vertex="1">
+          <mxGeometry height="820" width="360" x="260" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrL2" parent="cdr_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="export_libro_delibere_xlsx(output_path)\n- _iter_libro_delibere_rows()\n- write workbook (openpyxl)" vertex="1">
+          <mxGeometry height="80" width="310" x="40" y="415" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrL4" parent="cdr_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="_iter_libro_delibere_rows()\n- PRAGMA table_info(cd_delibere) to choose date expr\n- JOIN cd_delibere d + cd_riunioni r\n- filter: r.tipo_riunione != futura, r.data &lt;= today" vertex="1">
+          <mxGeometry height="120" width="310" x="40" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL2L4" edge="1" parent="cdr_lane_logic" source="cdrL2" style="endArrow=block;html=1;" target="cdrL4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrL3" parent="cdr_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="export_libro_delibere_docx(output_path, template_path?)\n- Document(template) if exists\n- _clear_docx_body()\n- write paragraphs per delibera" vertex="1">
+          <mxGeometry height="110" width="310" x="40" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL3L4" edge="1" parent="cdr_lane_logic" source="cdrL3" style="endArrow=block;html=1;" target="cdrL4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrL1" parent="cdr_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="_iter_libro_verbali_rows()\nSQL filter:\n- data non-empty\n- tipo_riunione != &#39;futura&#39; (default &#39;passata&#39;)\n- data &lt;= today_iso()" vertex="1">
+          <mxGeometry height="110" width="310" x="40" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrL0" parent="cdr_lane_logic" style="rounded=1;whiteSpace=wrap;html=1;" value="export_libro_verbali_xlsx(output_path)\n- _iter_libro_verbali_rows()\n- write workbook (openpyxl)" vertex="1">
+          <mxGeometry height="90" width="310" x="40" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL0L1" edge="1" parent="cdr_lane_logic" source="cdrL0" style="endArrow=block;html=1;" target="cdrL1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr_lane_db" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="DB" vertex="1">
+          <mxGeometry height="820" width="240" x="620" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrDB0" parent="cdr_lane_db" style="rounded=1;whiteSpace=wrap;html=1;" value="cd_riunioni" vertex="1">
+          <mxGeometry height="50" width="180" x="40" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrDB1" parent="cdr_lane_db" style="rounded=1;whiteSpace=wrap;html=1;" value="cd_delibere" vertex="1">
+          <mxGeometry height="50" width="180" x="40" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="cdr_lane_fs" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="FS / Files" vertex="1">
+          <mxGeometry height="820" width="240" x="870" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrFS2" parent="cdr_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="Template (optional)\n(currently hardcoded path in UI)" vertex="1">
+          <mxGeometry height="70" width="200" x="30" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrFS1" parent="cdr_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="Output: Libro_delibere.xlsx/.docx\n(user-chosen path)" vertex="1">
+          <mxGeometry height="70" width="200" x="30" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrFS0" parent="cdr_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="Output: Libro_verbali.xlsx\n(user-chosen path)" vertex="1">
+          <mxGeometry height="60" width="200" x="30" y="135" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrE1L0" edge="1" parent="1" source="cdr1" style="endArrow=block;html=1;" target="cdrL0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL0fs" edge="1" parent="1" source="cdrL0" style="endArrow=block;html=1;" target="cdrFS0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL1db" edge="1" parent="1" source="cdrL1" style="endArrow=block;html=1;" target="cdrDB0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrE3L2" edge="1" parent="1" source="cdr3" style="endArrow=block;html=1;" target="cdrL2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrE3L3" edge="1" parent="1" source="cdr3" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="cdrL3" value="if .docx">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="140" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="cdrEL2fs" edge="1" parent="1" source="cdrL2" style="endArrow=block;html=1;" target="cdrFS1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL3fs" edge="1" parent="1" source="cdrL3" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="cdrFS1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL3tpl" edge="1" parent="1" source="cdrL3" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="cdrFS2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL4db1" edge="1" parent="1" source="cdrL4" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="cdrDB1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="cdrEL4db0" edge="1" parent="1" source="cdrL4" style="endArrow=block;html=1;edgeStyle=orthogonalEdgeStyle;" target="cdrDB0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="email_wizard" name="Email Wizard">
+    <mxGraphModel dx="1426" dy="849" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ew_lane_ui" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="UI (src/email_wizard.py)" vertex="1">
+          <mxGeometry height="820" width="260" as="geometry" />
+        </mxCell>
+        <mxCell id="ew7" parent="ew_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Gestisci bozze (.eml)\n(open/list/open/delete)" vertex="1">
+          <mxGeometry height="70" width="220" x="30" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="ew6" parent="ew_lane_ui" style="rounded=1;whiteSpace=wrap;html=1;" value="Invia con Thunderbird" vertex="1">
+          <mxGeometry height="50" width="220" x="30" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_lane_logic" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="Logic" vertex="1">
+          <mxGeometry height="820" width="380" x="260" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_lane_db" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="DB" vertex="1">
+          <mxGeometry height="820" width="220" x="640" as="geometry" />
+        </mxCell>
+        <mxCell id="ew_lane_fs" parent="1" style="swimlane;horizontal=0;startSize=26;html=1;whiteSpace=wrap;" value="FS" vertex="1">
+          <mxGeometry height="820" width="240" x="860" as="geometry" />
+        </mxCell>
+        <mxCell id="ewFS1" parent="ew_lane_fs" style="rounded=1;whiteSpace=wrap;html=1;" value="SEC_DOCS/email_eml\n*.eml" vertex="1">
+          <mxGeometry height="70" width="200" x="30" y="740" as="geometry" />
+        </mxCell>
+        <mxCell id="ew0" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Open EmailWizard\n(ensure_default_email_templates)" vertex="1">
+          <mxGeometry height="70" width="220" x="20" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ew1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Select template\n(or &#39;Nessuno&#39;)" vertex="1">
+          <mxGeometry height="60" width="220" x="20" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="ew2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Select recipients\n(attivi / cd / cd+cp)\n+ optional extra emails" vertex="1">
+          <mxGeometry height="90" width="220" x="20" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="ew3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Preview" vertex="1">
+          <mxGeometry height="50" width="220" x="20" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="ew4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="✓ Crea Email\n(mailto)" vertex="1">
+          <mxGeometry height="50" width="220" x="20" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="ew5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Salva .eml" vertex="1">
+          <mxGeometry height="50" width="220" x="20" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL0" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Templates on disk\nget_email_templates_dir()\nDATA_DIR/email_templates" vertex="1">
+          <mxGeometry height="70" width="330" x="290" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="get_email_template_content(template_key|name)\n+ placeholders apply" vertex="1">
+          <mxGeometry height="60" width="330" x="290" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="Recipients from DB\n_get_base_recipients()\n- soci attivi\n- CD / CD+CP by roles or legacy filter" vertex="1">
+          <mxGeometry height="90" width="330" x="290" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="_collect_email_parts()\nvalidate: subject + body + recipients" vertex="1">
+          <mxGeometry height="70" width="330" x="290" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="_create_email()\nmailto:?subject=...&amp;bcc=...&amp;body=...\n- if URL too long: clipboard fallback\n- else: webbrowser.open(mailto)" vertex="1">
+          <mxGeometry height="110" width="330" x="290" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="_save_eml()\nEmailMessage()\nasksaveasfilename(default SEC_DOCS/email_eml)\nwrite msg.as_bytes()" vertex="1">
+          <mxGeometry height="90" width="330" x="290" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="ewL6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="_send_with_thunderbird()\n- resolve THUNDERBIRD_EXE\n- subprocess.Popen([exe, &#39;-compose&#39;, ...])" vertex="1">
+          <mxGeometry height="80" width="330" x="290" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="ewDB0" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="soci\n(attivo=1, email non-empty)" vertex="1">
+          <mxGeometry height="60" width="170" x="665" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="ewFS0" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="DATA_DIR/email_templates\n*.txt" vertex="1">
+          <mxGeometry height="70" width="200" x="880" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ewEXT0" parent="1" style="rounded=1;whiteSpace=wrap;html=1;" value="External apps\n- Default mail client (mailto)\n- Thunderbird" vertex="1">
+          <mxGeometry height="110" width="200" x="880" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE0" edge="1" parent="1" source="ew0" style="endArrow=block;html=1;" target="ewL0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE1" edge="1" parent="1" source="ew1" style="endArrow=block;html=1;" target="ewL1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE2" edge="1" parent="1" source="ew2" style="endArrow=block;html=1;" target="ewL2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE2db" edge="1" parent="1" source="ewL2" style="endArrow=block;html=1;" target="ewDB0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE0fs" edge="1" parent="1" source="ewL0" style="endArrow=block;html=1;" target="ewFS0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE3" edge="1" parent="1" source="ew3" style="endArrow=block;html=1;" target="ewL3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE4" edge="1" parent="1" source="ew4" style="endArrow=block;html=1;" target="ewL4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE5" edge="1" parent="1" source="ew5" style="endArrow=block;html=1;" target="ewL5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE6" edge="1" parent="1" source="ew6" style="endArrow=block;html=1;" target="ewL6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE4ext" edge="1" parent="1" source="ewL4" style="endArrow=block;html=1;" target="ewEXT0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE6ext" edge="1" parent="1" source="ewL6" style="endArrow=block;html=1;" target="ewEXT0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE5fs" edge="1" parent="1" source="ewL5" style="endArrow=block;html=1;" target="ewFS1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ewE7fs" edge="1" parent="1" source="ew7" style="endArrow=block;html=1;" target="ewFS1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

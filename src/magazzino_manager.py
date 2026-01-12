@@ -12,6 +12,8 @@ __all__ = [
     "create_item",
     "update_item",
     "delete_item",
+    "dismiss_item",
+    "restore_item",
     "list_items",
     "get_item",
     "get_item_by_inventory_number",
@@ -53,8 +55,22 @@ def _ensure_item(item_id: int) -> dict:
     return dict(row)
 
 
-def create_item(*, marca: str, modello: str | None = None, descrizione: str | None = None,
-                numero_inventario: str, note: str | None = None) -> int:
+def create_item(
+    *,
+    marca: str,
+    numero_inventario: str,
+    modello: str | None = None,
+    descrizione: str | None = None,
+    note: str | None = None,
+    quantita: str | None = None,
+    ubicazione: str | None = None,
+    matricola: str | None = None,
+    doc_fisc_prov: str | None = None,
+    valore_acq_eur: str | None = None,
+    scheda_tecnica: str | None = None,
+    provenienza: str | None = None,
+    altre_notizie: str | None = None,
+) -> int:
     """Create a new inventory item and return its ID."""
     timestamp = now_iso()
     payload = (
@@ -63,12 +79,23 @@ def create_item(*, marca: str, modello: str | None = None, descrizione: str | No
         _normalize_text(modello),
         _normalize_text(descrizione),
         _normalize_text(note),
+        _normalize_text(quantita),
+        _normalize_text(ubicazione),
+        _normalize_text(matricola),
+        _normalize_text(doc_fisc_prov),
+        _normalize_text(valore_acq_eur),
+        _normalize_text(scheda_tecnica),
+        _normalize_text(provenienza),
+        _normalize_text(altre_notizie),
         timestamp,
         timestamp,
     )
     sql = (
-        "INSERT INTO magazzino_items (numero_inventario, marca, modello, descrizione, note, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO magazzino_items ("
+        "numero_inventario, marca, modello, descrizione, note, "
+        "quantita, ubicazione, matricola, doc_fisc_prov, valore_acq_eur, scheda_tecnica, provenienza, altre_notizie, "
+        "created_at, updated_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     with get_connection() as conn:
         cur = conn.cursor()
@@ -79,9 +106,23 @@ def create_item(*, marca: str, modello: str | None = None, descrizione: str | No
     return int(new_id)
 
 
-def update_item(item_id: int, *, marca: str | None = None, modello: str | None = None,
-                descrizione: str | None = None, numero_inventario: str | None = None,
-                note: str | None = None) -> bool:
+def update_item(
+    item_id: int,
+    *,
+    marca: str | None = None,
+    modello: str | None = None,
+    descrizione: str | None = None,
+    numero_inventario: str | None = None,
+    note: str | None = None,
+    quantita: str | None = None,
+    ubicazione: str | None = None,
+    matricola: str | None = None,
+    doc_fisc_prov: str | None = None,
+    valore_acq_eur: str | None = None,
+    scheda_tecnica: str | None = None,
+    provenienza: str | None = None,
+    altre_notizie: str | None = None,
+) -> bool:
     """Update an inventory item."""
     fields: list[str] = []
     params: list[Any] = []
@@ -100,6 +141,30 @@ def update_item(item_id: int, *, marca: str | None = None, modello: str | None =
     if note is not None:
         fields.append("note = ?")
         params.append(_normalize_text(note))
+    if quantita is not None:
+        fields.append("quantita = ?")
+        params.append(_normalize_text(quantita))
+    if ubicazione is not None:
+        fields.append("ubicazione = ?")
+        params.append(_normalize_text(ubicazione))
+    if matricola is not None:
+        fields.append("matricola = ?")
+        params.append(_normalize_text(matricola))
+    if doc_fisc_prov is not None:
+        fields.append("doc_fisc_prov = ?")
+        params.append(_normalize_text(doc_fisc_prov))
+    if valore_acq_eur is not None:
+        fields.append("valore_acq_eur = ?")
+        params.append(_normalize_text(valore_acq_eur))
+    if scheda_tecnica is not None:
+        fields.append("scheda_tecnica = ?")
+        params.append(_normalize_text(scheda_tecnica))
+    if provenienza is not None:
+        fields.append("provenienza = ?")
+        params.append(_normalize_text(provenienza))
+    if altre_notizie is not None:
+        fields.append("altre_notizie = ?")
+        params.append(_normalize_text(altre_notizie))
     if not fields:
         return False
     fields.append("updated_at = ?")
@@ -116,6 +181,61 @@ def delete_item(item_id: int) -> bool:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM magazzino_items WHERE id = ?", (item_id,))
+        return cur.rowcount > 0
+
+
+def dismiss_item(
+    item_id: int,
+    *,
+    reason: str | None = None,
+    destination: str | None = None,
+    dismesso_at: str | None = None,
+) -> bool:
+    """Mark an item as dismissed (soft-delete).
+
+    Dismissed items are not loanable and should be hidden by default in UI.
+    """
+    item = _ensure_item(item_id)
+    if item.get("is_dismesso"):
+        return False
+    if get_active_loan(item_id):
+        raise ValueError("Impossibile dismettere: l'oggetto risulta 'In prestito'. Registra prima il reso.")
+
+    ts = dismesso_at or now_iso()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE magazzino_items
+               SET is_dismesso = 1,
+                   dismesso_at = ?,
+                   dismesso_reason = ?,
+                   dismesso_destination = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (ts, _normalize_text(reason), _normalize_text(destination), now_iso(), int(item_id)),
+        )
+        return cur.rowcount > 0
+
+
+def restore_item(item_id: int) -> bool:
+    """Restore a dismissed item (undo soft-delete)."""
+    _ensure_item(item_id)
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE magazzino_items
+               SET is_dismesso = 0,
+                   dismesso_at = NULL,
+                   dismesso_reason = NULL,
+                   dismesso_destination = NULL,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (now_iso(), int(item_id)),
+        )
         return cur.rowcount > 0
 
 
@@ -198,7 +318,9 @@ def _ensure_no_active_loan(item_id: int):
 def create_loan(item_id: int, *, socio_id: int, data_prestito: str | None = None,
                 note: str | None = None) -> int:
     """Register a new loan for an item."""
-    _ensure_item(item_id)
+    item = _ensure_item(item_id)
+    if item.get("is_dismesso"):
+        raise ValueError("Impossibile prestare: l'oggetto risulta dismesso")
     if socio_id is None:
         raise ValueError("Selezionare un socio valido")
     _ensure_no_active_loan(item_id)

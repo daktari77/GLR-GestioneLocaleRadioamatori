@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 import logging
+from datetime import datetime
 
 from magazzino_importer import (
     INVENTORY_FIELDS,
@@ -21,6 +22,81 @@ from magazzino_manager import create_item, get_item_by_inventory_number, update_
 
 
 logger = logging.getLogger("librosoci")
+
+DEFAULT_MARCA = "N/D"
+ATTENZIONE_PREFIX = "ATTENZIONE"
+
+
+def _unique_header_name(existing: list[str], base: str) -> str:
+    if base not in existing:
+        return base
+    idx = 2
+    while f"{base}_{idx}" in existing:
+        idx += 1
+    return f"{base}_{idx}"
+
+
+def add_virtual_notes_column(headers: list[str], rows: list[dict]) -> tuple[list[str], list[dict], str | None]:
+    """Add a virtual column that composes a richer note from multiple fields.
+
+    This is especially useful for inventory exports where useful context is spread
+    across columns like UBICAZIONE/MATRICOLA/PROVENIENZA and notes are separate.
+    """
+
+    # Case-insensitive header lookup preserving original casing.
+    lookup = {str(h).strip().lower(): h for h in headers}
+    candidates = {
+        "ubicazione": lookup.get("ubicazione"),
+        "matricola": lookup.get("matricola"),
+        "provenienza": lookup.get("provenienza"),
+        "altre_notizie": lookup.get("altre notizie"),
+        "doc_fisc": lookup.get("doc fisc/prov."),
+        "valore_acq": lookup.get("valore acq €") or lookup.get("valore acq") or lookup.get("valore"),
+    }
+
+    # Only activate if we recognize at least one of the context columns.
+    if not any(candidates.values()):
+        return headers, rows, None
+
+    virtual_header = _unique_header_name(headers, "NOTE (auto)")
+    new_headers = list(headers) + [virtual_header]
+    new_rows: list[dict] = []
+
+    def get_value(row: dict, key: str) -> str:
+        header = candidates.get(key)
+        if not header:
+            return ""
+        value = row.get(header)
+        return str(value).strip() if value is not None else ""
+
+    for row in rows:
+        parts: list[str] = []
+        ubicazione = get_value(row, "ubicazione")
+        matricola = get_value(row, "matricola")
+        provenienza = get_value(row, "provenienza")
+        doc_fisc = get_value(row, "doc_fisc")
+        valore_acq = get_value(row, "valore_acq")
+        altre_notizie = get_value(row, "altre_notizie")
+
+        if ubicazione:
+            parts.append(f"Ubicazione: {ubicazione}")
+        if matricola:
+            parts.append(f"Matricola: {matricola}")
+        if provenienza:
+            parts.append(f"Provenienza: {provenienza}")
+        if doc_fisc:
+            parts.append(f"Doc fisc/prov.: {doc_fisc}")
+        if valore_acq:
+            parts.append(f"Valore acq: {valore_acq}")
+        if altre_notizie:
+            parts.append(altre_notizie)
+
+        composed = " — ".join(parts).strip() or None
+        new_row = dict(row)
+        new_row[virtual_header] = composed
+        new_rows.append(new_row)
+
+    return new_headers, new_rows, virtual_header
 
 class MagazzinoImportDialog:
     def __init__(self, parent, on_complete=None):
@@ -36,6 +112,10 @@ class MagazzinoImportDialog:
         self.import_stats = {"created": 0, "updated": 0, "skipped": 0}
         self.failed_rows: list[dict[str, str]] = []
         self.btn_export_errors: ttk.Button | None = None
+
+        # UI widgets that exist only on specific pages (they get destroyed on page change).
+        self.preview_tree: ttk.Treeview | None = None
+        self.summary_label: ttk.Label | None = None
 
         self.win = tk.Toplevel(parent)
         self.win.title("Importa magazzino")
@@ -60,7 +140,7 @@ class MagazzinoImportDialog:
         self.main_frame = ttk.Frame(self.win)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.title_label = ttk.Label(self.main_frame, text="", font=("Segoe UI", 12, "bold"))
+        self.title_label = ttk.Label(self.main_frame, text="", font="AppTitle")
         self.title_label.pack(fill=tk.X, pady=(0, 10))
 
         self.content_frame = ttk.Frame(self.main_frame)
@@ -77,6 +157,8 @@ class MagazzinoImportDialog:
         self.progress_label = ttk.Label(self.main_frame, text="Pagina 1 di 3")
         self.progress_label.pack(fill=tk.X, pady=(6, 0))
 
+        self.summary_text = tk.StringVar(value="Nessun file selezionato")
+
         self._show_page()
 
     # ------------------------------------------------------------------
@@ -89,7 +171,7 @@ class MagazzinoImportDialog:
         ttk.Label(frame, text="Seleziona un file CSV o Excel da analizzare").pack(anchor="w")
         ttk.Button(frame, text="Scegli file...", command=self._select_file).pack(anchor="w", pady=6)
 
-        self.file_label = ttk.Label(frame, text="Nessun file selezionato", foreground="gray")
+        self.file_label = ttk.Label(frame, text="Nessun file selezionato", foreground="gray40")
         self.file_label.pack(anchor="w")
 
         self.file_info_label = ttk.Label(frame, text="")
@@ -168,7 +250,7 @@ class MagazzinoImportDialog:
 
         summary = ttk.LabelFrame(frame, text="Riepilogo")
         summary.pack(fill=tk.X, pady=6)
-        self.summary_label = ttk.Label(summary, text="Nessun file selezionato")
+        self.summary_label = ttk.Label(summary, textvariable=self.summary_text)
         self.summary_label.pack(anchor="w", padx=6, pady=4)
 
         options = ttk.LabelFrame(frame, text="Oggetti già presenti")
@@ -226,10 +308,20 @@ class MagazzinoImportDialog:
         except InventoryImportError as exc:
             messagebox.showerror("Import", str(exc), parent=self.win)
             return
+
+        # Enrich notes for common ARI inventory exports.
+        try:
+            headers, rows, virtual_note_header = add_virtual_notes_column(headers, rows)
+        except Exception as exc:
+            logger.debug("Impossibile comporre NOTE (auto): %s", exc)
+            virtual_note_header = None
+
         self.file_path = path
         self.headers = headers
         self.rows = rows
         self.mapping = auto_detect_mapping(headers)
+        if virtual_note_header:
+            self.mapping["note"] = virtual_note_header
         self.file_label.config(text=Path(path).name)
         self.file_info_label.config(
             text=f"Intestazioni: {len(headers)} — Righe valide: {len(rows)}"
@@ -241,19 +333,52 @@ class MagazzinoImportDialog:
         self._update_error_export_button()
 
     def _populate_preview(self):
-        tree = self.preview_tree
+        # Preview only exists on the first page; after navigating away the widget is destroyed.
+        if getattr(self, "current_page", None) != 0:
+            return
+        tree = getattr(self, "preview_tree", None)
+        if tree is None:
+            return
+        try:
+            if not bool(tree.winfo_exists()):
+                return
+        except Exception:
+            return
         for item in tree.get_children():
             tree.delete(item)
+
+        # Highlight rows missing inventory number.
+        try:
+            tree.tag_configure("missing_num", background="khaki1")
+        except Exception:
+            pass
+
         columns = [f"c{i}" for i in range(len(self.headers))]
         tree["columns"] = columns
         for idx, col in enumerate(columns):
             header = self.headers[idx] if idx < len(self.headers) else f"Col {idx+1}"
             tree.heading(col, text=header)
             tree.column(col, width=120, anchor="w")
+
+        inv_header = None
+        if getattr(self, "mapping", None):
+            inv_header = self.mapping.get("numero_inventario")
+        if not inv_header:
+            lookup = {str(h).strip().lower(): h for h in self.headers}
+            inv_header = (
+                lookup.get("n. inv")
+                or lookup.get("n inv")
+                or lookup.get("numero inventario")
+                or lookup.get("inventario")
+            )
+
         preview_rows = self.rows[:20]
         for row in preview_rows:
             values = [row.get(header, "") for header in self.headers]
-            tree.insert("", tk.END, values=values)
+            inv_value = (row.get(inv_header) if inv_header else None)
+            missing_num = inv_value is None or str(inv_value).strip() == ""
+            tags = ("missing_num",) if missing_num else ()
+            tree.insert("", tk.END, values=values, tags=tags)
 
     def _refresh_mapping_widgets(self):
         headers = [""] + self.headers
@@ -266,6 +391,10 @@ class MagazzinoImportDialog:
                 var.set(self.selected_fields[key] or False)
             else:
                 self.selected_fields[key] = var.get()
+
+        # Preview lives only on page 0; do not touch it on mapping/import pages.
+        if getattr(self, "current_page", None) == 0 and getattr(self, "rows", None):
+            self._populate_preview()
 
     def _auto_map(self):
         if not self.headers:
@@ -284,13 +413,13 @@ class MagazzinoImportDialog:
 
     def _update_summary(self):
         if not self.file_path:
-            self.summary_label.config(text="Nessun file selezionato")
+            self.summary_text.set("Nessun file selezionato")
             return
         total = len(self.rows)
         mapped = sum(1 for f in INVENTORY_FIELDS if self.mapping.get(f["key"]))
         file_name = Path(self.file_path).name
-        self.summary_label.config(
-            text=f"File: {file_name}\nRighe totali: {total}\nCampi mappati: {mapped}/{len(INVENTORY_FIELDS)}"
+        self.summary_text.set(
+            f"File: {file_name}\nRighe totali: {total}\nCampi mappati: {mapped}/{len(INVENTORY_FIELDS)}"
         )
 
     def _capture_mapping(self):
@@ -327,9 +456,20 @@ class MagazzinoImportDialog:
         self.failed_rows = []
         self._update_error_export_button()
 
+        # If the source inventory number is missing, still import the row with a generated
+        # ATTENZIONE-* code to satisfy DB constraints and to make these records easy to spot.
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        for idx, row in enumerate(mapped_rows, start=1):
+            raw_num = row.get("numero_inventario")
+            if normalize_inventory_code(raw_num):
+                continue
+            generated = f"{ATTENZIONE_PREFIX}-{stamp}-{idx:04d}"
+            row["numero_inventario"] = generated
+            self._record_failure(idx, raw_num, None, f"Numero inventario mancante: assegnato '{generated}'")
+
         preflight_errors = self._preflight_rows(mapped_rows)
         if preflight_errors:
-            self.failed_rows = preflight_errors
+            self.failed_rows.extend(preflight_errors)
             self._update_error_export_button()
             preview = self._format_failure_preview(preflight_errors)
             messagebox.showerror(
@@ -354,13 +494,19 @@ class MagazzinoImportDialog:
             modello = row.get("modello")
             descrizione = row.get("descrizione")
             note = row.get("note")
+            quantita = row.get("quantita")
+            ubicazione = row.get("ubicazione")
+            matricola = row.get("matricola")
+            doc_fisc_prov = row.get("doc_fisc_prov")
+            valore_acq_eur = row.get("valore_acq_eur")
+            scheda_tecnica = row.get("scheda_tecnica")
+            provenienza = row.get("provenienza")
+            altre_notizie = row.get("altre_notizie")
 
-            if not numero_norm or not marca_clean:
+            if not numero_norm:
                 skipped += 1
-                reason = "Numero inventario mancante" if not numero_norm else "Marca mancante"
-                if not numero_norm and not marca_clean:
-                    reason = "Numero inventario e marca mancanti"
-                self._record_failure(idx, numero, marca, reason)
+                # Should not happen (we generate ATTENZIONE-* codes above), but keep safe.
+                self._record_failure(idx, numero, marca, "Numero inventario non valido")
                 continue
 
             try:
@@ -376,8 +522,16 @@ class MagazzinoImportDialog:
                             ("modello", modello),
                             ("descrizione", descrizione),
                             ("note", note),
+                            ("quantita", quantita),
+                            ("ubicazione", ubicazione),
+                            ("matricola", matricola),
+                            ("doc_fisc_prov", doc_fisc_prov),
+                            ("valore_acq_eur", valore_acq_eur),
+                            ("scheda_tecnica", scheda_tecnica),
+                            ("provenienza", provenienza),
+                            ("altre_notizie", altre_notizie),
                         ):
-                            if field_key != "marca" and not self.selected_fields.get(field_key, True):
+                            if not self.selected_fields.get(field_key, True):
                                 continue
                             if field_key == "marca" and not value:
                                 continue
@@ -395,12 +549,22 @@ class MagazzinoImportDialog:
                             skipped += 1
                             self._record_failure(idx, numero, marca, "Duplicato senza campi aggiornabili")
                 else:
+                    # 'marca' is stored as NOT NULL; when missing we import with a safe default.
+                    marca_final = marca_clean or DEFAULT_MARCA
                     payload = {
                         "numero_inventario": numero_clean,
-                        "marca": marca_clean,
+                        "marca": marca_final,
                         "modello": modello if self.selected_fields.get("modello", True) else None,
                         "descrizione": descrizione if self.selected_fields.get("descrizione", True) else None,
                         "note": note if self.selected_fields.get("note", True) else None,
+                        "quantita": quantita if self.selected_fields.get("quantita", True) else None,
+                        "ubicazione": ubicazione if self.selected_fields.get("ubicazione", True) else None,
+                        "matricola": matricola if self.selected_fields.get("matricola", True) else None,
+                        "doc_fisc_prov": doc_fisc_prov if self.selected_fields.get("doc_fisc_prov", True) else None,
+                        "valore_acq_eur": valore_acq_eur if self.selected_fields.get("valore_acq_eur", True) else None,
+                        "scheda_tecnica": scheda_tecnica if self.selected_fields.get("scheda_tecnica", True) else None,
+                        "provenienza": provenienza if self.selected_fields.get("provenienza", True) else None,
+                        "altre_notizie": altre_notizie if self.selected_fields.get("altre_notizie", True) else None,
                     }
                     create_item(**payload)
                     created += 1
@@ -439,19 +603,15 @@ class MagazzinoImportDialog:
         for idx, row in enumerate(rows, start=1):
             raw_num = row.get("numero_inventario")
             normalized = normalize_inventory_code(raw_num)
-            marca = (row.get("marca") or "").strip()
+            # Missing inventory number is a warning handled elsewhere (skip row).
             if not normalized:
-                failures.append(self._build_failure_entry(idx, raw_num, marca, "Numero inventario mancante"))
-                continue
-            if not marca:
-                failures.append(self._build_failure_entry(idx, raw_num, marca, "Marca mancante"))
                 continue
             if normalized in seen:
                 failures.append(
                     self._build_failure_entry(
                         idx,
                         raw_num,
-                        marca,
+                        "",
                         f"Numero inventario duplicato (già alla riga {seen[normalized]})",
                     )
                 )

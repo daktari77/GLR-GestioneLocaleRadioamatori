@@ -64,7 +64,7 @@ class BatchFieldEditDialog(tk.Toplevel):
         ttk.Label(
             main_frame,
             text=f"Soci selezionati: {len(self.members)}",
-            font=("Segoe UI", 10, "bold"),
+            font="AppBold",
         ).pack(anchor="w")
 
         members_frame = ttk.LabelFrame(main_frame, text="Elenco soci", padding=6)

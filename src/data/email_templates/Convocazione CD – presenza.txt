@@ -1,0 +1,13 @@
+Gentili Consiglieri,
+
+il Presidente {presidente} indice il {num}° Consiglio Direttivo, che si terrà in data {data}, alle ore {ora}, presso {luogo}, per discutere il seguente
+
+Ordine del giorno:
+
+{odg}
+
+Confidando nella vostra partecipazione, porgo cordiali saluti.
+
+Si ricorda che i soci regolarmente iscritti hanno facoltà di assistere alla riunione senza diritto di parola, salvo esplicita richiesta dei membri del Consiglio Direttivo.
+
+Il Segretario

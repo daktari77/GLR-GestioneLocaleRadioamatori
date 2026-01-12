@@ -28,7 +28,7 @@ class StatsPanel(ttk.Frame):
             pass
 
         # Title
-        title = ttk.Label(self, text="Statistiche soci", font=("Segoe UI", 11, "bold"))
+        title = ttk.Label(self, text="Statistiche soci", font="AppTitle")
         title.pack(pady=10)
         
         # Main frame with grid layout

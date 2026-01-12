@@ -1,0 +1,17 @@
+Gentili Soci,
+
+siete convocati per l'Assemblea Ordinaria/Straordinaria dei Soci che si terrà in:
+
+PRIMA CONVOCAZIONE: {data} ore {ora}
+SECONDA CONVOCAZIONE: {data2} ore {ora2}
+
+Presso: {luogo}
+
+Ordine del giorno:
+{odg}
+
+La vostra presenza è importante.
+
+Cordiali saluti,
+Il Presidente
+{presidente}
