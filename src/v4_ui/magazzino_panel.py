@@ -53,6 +53,7 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Button(toolbar, text="Nuovo oggetto", command=self._new_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Salva", command=self._save_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_item).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Esporta…", command=self._export_items).pack(side=tk.LEFT, padx=12)
         ttk.Button(toolbar, text="Aggiorna", command=self.refresh_list).pack(side=tk.LEFT, padx=12)
 
         ttk.Label(toolbar, text="Filtro stato:").pack(side=tk.LEFT, padx=(10, 2))
@@ -72,6 +73,14 @@ class MagazzinoPanel(ttk.Frame):
         search_entry.bind("<Return>", lambda _e: self.refresh_list())
         ttk.Button(toolbar, text="Applica", command=self.refresh_list).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Reset", command=self._reset_filters).pack(side=tk.LEFT, padx=2)
+
+    def _export_items(self):
+        try:
+            from .magazzino_export_dialog import MagazzinoExportDialog
+
+            MagazzinoExportDialog(self.winfo_toplevel())
+        except Exception as exc:
+            messagebox.showerror("Export", f"Impossibile aprire l'export magazzino:\n{exc}")
 
     def _build_tree(self):
         frame = ttk.Frame(self)

@@ -40,8 +40,8 @@ class UnifiedExportWizard:
         ttk.Label(
             frame,
             text=(
-                "Entrambe le modalità generano un file CSV. Per i soci potrai scegliere i campi "
-                "da includere, mentre per il magazzino sono disponibili filtri basati sullo stato "
+                "Per i soci l'esportazione genera un file CSV con selezione dei campi. "
+                "Per il magazzino puoi esportare in CSV o Excel (.xlsx) e applicare filtri basati sullo stato "
                 "(disponibile/in prestito)."
             ),
             wraplength=480,
@@ -77,7 +77,7 @@ class UnifiedExportWizard:
         ttk.Label(steps, text="2. Configura i campi/filtro nella finestra dedicata", anchor="w").pack(
             fill=tk.X, padx=8
         )
-        ttk.Label(steps, text="3. Salva il file CSV risultante", anchor="w").pack(fill=tk.X, padx=8, pady=(0, 6))
+        ttk.Label(steps, text="3. Salva il file CSV/Excel risultante", anchor="w").pack(fill=tk.X, padx=8, pady=(0, 6))
 
         button_frame = ttk.Frame(frame)
         button_frame.pack(fill=tk.X, pady=(16, 0))
