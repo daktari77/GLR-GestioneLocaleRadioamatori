@@ -12,6 +12,8 @@ __all__ = [
     "create_item",
     "update_item",
     "delete_item",
+    "dismiss_item",
+    "restore_item",
     "list_items",
     "get_item",
     "get_item_by_inventory_number",
@@ -182,6 +184,61 @@ def delete_item(item_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def dismiss_item(
+    item_id: int,
+    *,
+    reason: str | None = None,
+    destination: str | None = None,
+    dismesso_at: str | None = None,
+) -> bool:
+    """Mark an item as dismissed (soft-delete).
+
+    Dismissed items are not loanable and should be hidden by default in UI.
+    """
+    item = _ensure_item(item_id)
+    if item.get("is_dismesso"):
+        return False
+    if get_active_loan(item_id):
+        raise ValueError("Impossibile dismettere: l'oggetto risulta 'In prestito'. Registra prima il reso.")
+
+    ts = dismesso_at or now_iso()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE magazzino_items
+               SET is_dismesso = 1,
+                   dismesso_at = ?,
+                   dismesso_reason = ?,
+                   dismesso_destination = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (ts, _normalize_text(reason), _normalize_text(destination), now_iso(), int(item_id)),
+        )
+        return cur.rowcount > 0
+
+
+def restore_item(item_id: int) -> bool:
+    """Restore a dismissed item (undo soft-delete)."""
+    _ensure_item(item_id)
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE magazzino_items
+               SET is_dismesso = 0,
+                   dismesso_at = NULL,
+                   dismesso_reason = NULL,
+                   dismesso_destination = NULL,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (now_iso(), int(item_id)),
+        )
+        return cur.rowcount > 0
+
+
 def list_items() -> list[dict]:
     """List all inventory items with active loan summary."""
     sql = """
@@ -261,7 +318,9 @@ def _ensure_no_active_loan(item_id: int):
 def create_loan(item_id: int, *, socio_id: int, data_prestito: str | None = None,
                 note: str | None = None) -> int:
     """Register a new loan for an item."""
-    _ensure_item(item_id)
+    item = _ensure_item(item_id)
+    if item.get("is_dismesso"):
+        raise ValueError("Impossibile prestare: l'oggetto risulta dismesso")
     if socio_id is None:
         raise ValueError("Selezionare un socio valido")
     _ensure_no_active_loan(item_id)

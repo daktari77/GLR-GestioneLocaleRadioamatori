@@ -410,6 +410,10 @@ CREATE TABLE IF NOT EXISTS magazzino_items (
     scheda_tecnica TEXT,
     provenienza TEXT,
     altre_notizie TEXT,
+    is_dismesso INTEGER NOT NULL DEFAULT 0,
+    dismesso_at TEXT,
+    dismesso_reason TEXT,
+    dismesso_destination TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -670,6 +674,11 @@ def init_db():
         _ensure_column(conn, "magazzino_items", "scheda_tecnica", "TEXT")
         _ensure_column(conn, "magazzino_items", "provenienza", "TEXT")
         _ensure_column(conn, "magazzino_items", "altre_notizie", "TEXT")
+        # Magazzino: dismissione (soft-delete)
+        _ensure_column(conn, "magazzino_items", "is_dismesso", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "magazzino_items", "dismesso_at", "TEXT")
+        _ensure_column(conn, "magazzino_items", "dismesso_reason", "TEXT")
+        _ensure_column(conn, "magazzino_items", "dismesso_destination", "TEXT")
         conn.execute(CREATE_MAGAZZINO_LOANS)
         conn.execute(CREATE_SOCI_ROLES)
         for idx in CREATE_INDEXES:

@@ -11,8 +11,10 @@ from magazzino_manager import (
     create_item,
     create_loan,
     delete_item,
+    dismiss_item,
     get_active_loan,
     get_item,
+    restore_item,
     list_items,
     list_loans,
     register_return,
@@ -23,6 +25,7 @@ from utils import iso_to_ddmmyyyy
 
 STATUS_DISPONIBILE = "Disponibile"
 STATUS_PRESTITO = "In prestito"
+STATUS_DISMESSO = "Dismesso"
 
 
 class MagazzinoPanel(ttk.Frame):
@@ -53,7 +56,12 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Button(toolbar, text="Nuovo oggetto", command=self._new_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Salva", command=self._save_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_item).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Dismetti", command=self._dismiss_item).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Ripristina", command=self._restore_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina selezionati", command=self._delete_selected_items).pack(
+            side=tk.LEFT, padx=2
+        )
+        ttk.Button(toolbar, text="Dismetti selezionati", command=self._dismiss_selected_items).pack(
             side=tk.LEFT, padx=2
         )
         ttk.Button(toolbar, text="Esporta…", command=self._export_items).pack(side=tk.LEFT, padx=12)
@@ -62,7 +70,7 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Label(toolbar, text="Filtro stato:").pack(side=tk.LEFT, padx=(10, 2))
         filter_combo = ttk.Combobox(
             toolbar,
-            values=("tutti", STATUS_DISPONIBILE, STATUS_PRESTITO),
+            values=("tutti", STATUS_DISPONIBILE, STATUS_PRESTITO, STATUS_DISMESSO, "tutti (inclusi dismessi)"),
             textvariable=self.filter_var,
             width=14,
             state="readonly",
@@ -111,6 +119,8 @@ class MagazzinoPanel(ttk.Frame):
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.tag_configure("loaned", background="#fff4ce")
+        self.tree.tag_configure("dismissed", foreground="gray40")
+        self.tree.tag_configure("dismissed_bg", background="#f2f2f2")
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._load_selected())
         try:
             self.tree.bind("<KeyPress-Delete>", self._on_delete_key)
@@ -233,12 +243,28 @@ class MagazzinoPanel(ttk.Frame):
                     str(row.get("descrizione", "")),
                 ]
             ).lower()
-            status_label = STATUS_PRESTITO if row.get("active_loan_id") else STATUS_DISPONIBILE
+            is_dismesso = bool(row.get("is_dismesso"))
+            if is_dismesso:
+                status_label = STATUS_DISMESSO
+            else:
+                status_label = STATUS_PRESTITO if row.get("active_loan_id") else STATUS_DISPONIBILE
             row["_status_label"] = status_label
             if search and search not in testo:
                 continue
-            if filter_state != "tutti" and status_label != filter_state:
-                continue
+
+            # Default: hide dismissed items unless explicitly requested.
+            if filter_state == "tutti":
+                if is_dismesso:
+                    continue
+            elif filter_state == "tutti (inclusi dismessi)":
+                pass
+            elif filter_state == STATUS_DISMESSO:
+                if not is_dismesso:
+                    continue
+            else:
+                # Disponibile / In prestito
+                if status_label != filter_state:
+                    continue
             filtered.append(row)
 
         tree = self.tree
@@ -250,7 +276,11 @@ class MagazzinoPanel(ttk.Frame):
         for row in filtered:
             iid = str(row.get("id"))
             assigned = self._format_member(row)
-            tags = ["loaned"] if row.get("active_loan_id") else []
+            tags: list[str] = []
+            if row.get("is_dismesso"):
+                tags.extend(["dismissed", "dismissed_bg"])
+            elif row.get("active_loan_id"):
+                tags.append("loaned")
             tree.insert(
                 "",
                 tk.END,
@@ -325,14 +355,28 @@ class MagazzinoPanel(ttk.Frame):
         self.note_text.insert("1.0", data.get("note") or "")
         self.altre_notizie_text.delete("1.0", tk.END)
         self.altre_notizie_text.insert("1.0", data.get("altre_notizie") or "")
-        active = get_active_loan(item_id)
-        if active:
-            socio = self._format_loan_member(active)
-            self.status_var.set(f"Oggetto #{item_id} - {STATUS_PRESTITO}")
-            self.loan_info_var.set(f"Prestato a {socio} dal {iso_to_ddmmyyyy(active.get('data_prestito'))}")
+        if data.get("is_dismesso"):
+            self.status_var.set(f"Oggetto #{item_id} - {STATUS_DISMESSO}")
+            parts: list[str] = []
+            at = str(data.get("dismesso_at") or "").strip()
+            if at:
+                parts.append(f"Dismesso il {iso_to_ddmmyyyy(at[:10]) if len(at) >= 10 else at}")
+            reason = str(data.get("dismesso_reason") or "").strip()
+            if reason:
+                parts.append(f"Motivo: {reason}")
+            dest = str(data.get("dismesso_destination") or "").strip()
+            if dest:
+                parts.append(f"Destinazione: {dest}")
+            self.loan_info_var.set(" — ".join(parts) if parts else "Dismesso")
         else:
-            self.status_var.set(f"Oggetto #{item_id} - {STATUS_DISPONIBILE}")
-            self.loan_info_var.set("—")
+            active = get_active_loan(item_id)
+            if active:
+                socio = self._format_loan_member(active)
+                self.status_var.set(f"Oggetto #{item_id} - {STATUS_PRESTITO}")
+                self.loan_info_var.set(f"Prestato a {socio} dal {iso_to_ddmmyyyy(active.get('data_prestito'))}")
+            else:
+                self.status_var.set(f"Oggetto #{item_id} - {STATUS_DISPONIBILE}")
+                self.loan_info_var.set("—")
         self._refresh_loans()
 
     def _clear_form(self):
@@ -542,6 +586,13 @@ class MagazzinoPanel(ttk.Frame):
         if not self.current_id:
             messagebox.showinfo("Magazzino", "Seleziona un oggetto prima di registrare un prestito")
             return
+        try:
+            item = get_item(self.current_id) or {}
+            if item.get("is_dismesso"):
+                messagebox.showwarning("Magazzino", "Impossibile prestare: l'oggetto è dismesso")
+                return
+        except Exception:
+            pass
         dialog = LoanDialog(self, title="Nuovo prestito")
         if not dialog.result:
             return
@@ -574,6 +625,120 @@ class MagazzinoPanel(ttk.Frame):
             messagebox.showinfo("Magazzino", "Reso registrato")
         except Exception as exc:
             messagebox.showerror("Magazzino", f"Errore nel reso:\n{exc}")
+            return
+        self.refresh_list()
+
+    # ------------------------------------------------------------------
+    # Dismissione (soft-delete)
+    # ------------------------------------------------------------------
+    def _selected_item_ids(self) -> list[int]:
+        selection = self.tree.selection() if getattr(self, "tree", None) is not None else ()
+        ids: list[int] = []
+        for iid in selection:
+            try:
+                ids.append(int(str(iid)))
+            except Exception:
+                continue
+        return ids
+
+    def _dismiss_item(self):
+        ids = self._selected_item_ids()
+        if not ids:
+            messagebox.showinfo("Magazzino", "Seleziona un oggetto da dismettere")
+            return
+        if len(ids) > 1:
+            self._dismiss_selected_items()
+            return
+
+        item_id = ids[0]
+        try:
+            item = get_item(item_id) or {}
+            if item.get("is_dismesso"):
+                messagebox.showinfo("Magazzino", "L'oggetto è già dismesso")
+                return
+        except Exception:
+            pass
+
+        if not messagebox.askyesno("Conferma", "Dismettere l'oggetto selezionato?", icon="warning"):
+            return
+        reason = simpledialog.askstring("Dismetti", "Motivo (opzionale):", parent=self)
+        destination = simpledialog.askstring("Dismetti", "Destinazione (opzionale):", parent=self)
+        try:
+            dismiss_item(item_id, reason=reason, destination=destination)
+            messagebox.showinfo("Magazzino", "Oggetto dismesso")
+        except Exception as exc:
+            messagebox.showerror("Magazzino", f"Errore nella dismissione:\n{exc}")
+            return
+        self.refresh_list()
+
+    def _dismiss_selected_items(self):
+        ids = self._selected_item_ids()
+        if not ids:
+            messagebox.showinfo("Magazzino", "Seleziona uno o più oggetti da dismettere")
+            return
+
+        # Filter out already dismissed items (best-effort).
+        try:
+            by_id = {int(r.get("id")): r for r in (self.items or []) if r.get("id") is not None}
+            todo = [i for i in ids if not bool((by_id.get(i) or {}).get("is_dismesso"))]
+        except Exception:
+            todo = ids
+        if not todo:
+            messagebox.showinfo("Magazzino", "Tutti gli oggetti selezionati risultano già dismessi")
+            return
+
+        if not messagebox.askyesno(
+            "Conferma",
+            f"Dismettere {len(todo)} oggetti selezionati?",
+            icon="warning",
+        ):
+            return
+        reason = simpledialog.askstring("Dismetti", "Motivo (opzionale):", parent=self)
+        destination = simpledialog.askstring("Dismetti", "Destinazione (opzionale):", parent=self)
+
+        ok = 0
+        errors: list[str] = []
+        for item_id in todo:
+            try:
+                if dismiss_item(item_id, reason=reason, destination=destination):
+                    ok += 1
+            except Exception as exc:
+                errors.append(f"ID {item_id}: {exc}")
+
+        self.refresh_list()
+        if errors:
+            preview = "\n".join(errors[:10])
+            if len(errors) > 10:
+                preview += f"\n… e altri {len(errors) - 10} errori"
+            messagebox.showerror("Magazzino", f"Dismessi: {ok}/{len(todo)}\n\nErrori:\n{preview}")
+        else:
+            messagebox.showinfo("Magazzino", f"Oggetti dismessi: {ok}")
+
+    def _restore_item(self):
+        ids = self._selected_item_ids()
+        if not ids:
+            messagebox.showinfo("Magazzino", "Seleziona un oggetto da ripristinare")
+            return
+        if len(ids) > 1:
+            messagebox.showinfo("Magazzino", "Seleziona un solo oggetto da ripristinare")
+            return
+
+        item_id = ids[0]
+        try:
+            item = get_item(item_id) or {}
+            if not item.get("is_dismesso"):
+                messagebox.showinfo("Magazzino", "L'oggetto non risulta dismesso")
+                return
+        except Exception:
+            pass
+
+        if not messagebox.askyesno("Conferma", "Ripristinare l'oggetto selezionato?", icon="warning"):
+            return
+        try:
+            restore_item(item_id)
+            messagebox.showinfo("Magazzino", "Oggetto ripristinato")
+        except Exception as exc:
+            messagebox.showerror("Magazzino", f"Errore nel ripristino:\n{exc}")
             return
         self.refresh_list()
 
