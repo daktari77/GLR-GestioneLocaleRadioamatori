@@ -55,18 +55,21 @@ class MagazzinoPanel(ttk.Frame):
 
         ttk.Button(toolbar, text="Nuovo oggetto", command=self._new_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Salva", command=self._save_item).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina", command=self._delete_item).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Dismetti", command=self._dismiss_item).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Ripristina", command=self._restore_item).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina selezionati", command=self._delete_selected_items).pack(
-            side=tk.LEFT, padx=2
-        )
-        ttk.Button(toolbar, text="Dismetti selezionati", command=self._dismiss_selected_items).pack(
-            side=tk.LEFT, padx=2
-        )
-        ttk.Button(toolbar, text="Ripristina selezionati", command=self._restore_selected_items).pack(
-            side=tk.LEFT, padx=2
-        )
+
+        self.btn_delete = ttk.Button(toolbar, text="Elimina", command=self._delete_item)
+        self.btn_delete.pack(side=tk.LEFT, padx=2)
+        self.btn_dismiss = ttk.Button(toolbar, text="Dismetti", command=self._dismiss_item)
+        self.btn_dismiss.pack(side=tk.LEFT, padx=2)
+        self.btn_restore = ttk.Button(toolbar, text="Ripristina", command=self._restore_item)
+        self.btn_restore.pack(side=tk.LEFT, padx=2)
+
+        self.btn_delete_selected = ttk.Button(toolbar, text="Elimina selezionati", command=self._delete_selected_items)
+        self.btn_delete_selected.pack(side=tk.LEFT, padx=2)
+        self.btn_dismiss_selected = ttk.Button(toolbar, text="Dismetti selezionati", command=self._dismiss_selected_items)
+        self.btn_dismiss_selected.pack(side=tk.LEFT, padx=2)
+        self.btn_restore_selected = ttk.Button(toolbar, text="Ripristina selezionati", command=self._restore_selected_items)
+        self.btn_restore_selected.pack(side=tk.LEFT, padx=2)
+
         ttk.Button(toolbar, text="Esporta…", command=self._export_items).pack(side=tk.LEFT, padx=12)
         ttk.Button(toolbar, text="Aggiorna", command=self.refresh_list).pack(side=tk.LEFT, padx=12)
 
@@ -205,8 +208,10 @@ class MagazzinoPanel(ttk.Frame):
 
         btn_frame = ttk.Frame(block)
         btn_frame.pack(fill=tk.X, padx=4, pady=(4, 0))
-        ttk.Button(btn_frame, text="Nuovo prestito", command=self._new_loan).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_frame, text="Registra reso", command=self._register_return).pack(side=tk.LEFT, padx=2)
+        self.btn_new_loan = ttk.Button(btn_frame, text="Nuovo prestito", command=self._new_loan)
+        self.btn_new_loan.pack(side=tk.LEFT, padx=2)
+        self.btn_register_return = ttk.Button(btn_frame, text="Registra reso", command=self._register_return)
+        self.btn_register_return.pack(side=tk.LEFT, padx=2)
 
         columns = ("socio", "matricola", "data_out", "data_in", "note")
         self.loans_tree = ttk.Treeview(block, columns=columns, show="headings", height=5)
@@ -224,6 +229,54 @@ class MagazzinoPanel(ttk.Frame):
             anchor = "center" if col in {"matricola", "data_out", "data_in"} else "w"
             self.loans_tree.column(col, width=widths[col], anchor=anchor)
         self.loan_rows: dict[int, dict] = {}
+
+        # Apply initial state now that buttons exist.
+        self._update_action_states()
+
+    def _set_button_state(self, button: ttk.Button | None, enabled: bool) -> None:
+        if button is None:
+            return
+        try:
+            button.configure(state=("normal" if enabled else "disabled"))
+        except Exception:
+            pass
+
+    def _update_action_states(self) -> None:
+        ids = self._selected_item_ids() if getattr(self, "tree", None) is not None else []
+        has_selection = bool(ids)
+        multi = len(ids) > 1
+
+        is_dismissed = False
+        is_loaned = False
+        if len(ids) == 1:
+            item_id = ids[0]
+            try:
+                item = next((row for row in (self.items or []) if row.get("id") == item_id), None)
+                if item is None:
+                    item = get_item(item_id) or {}
+                is_dismissed = bool(item.get("is_dismesso"))
+                is_loaned = bool(item.get("active_loan_id"))
+            except Exception:
+                is_dismissed = False
+                is_loaned = False
+
+        # Single-item actions (avoid ambiguity when multi-selected)
+        self._set_button_state(getattr(self, "btn_delete", None), has_selection and not multi)
+        self._set_button_state(getattr(self, "btn_dismiss", None), has_selection and not multi and not is_dismissed)
+        self._set_button_state(getattr(self, "btn_restore", None), has_selection and not multi and is_dismissed)
+
+        # Bulk actions
+        self._set_button_state(getattr(self, "btn_delete_selected", None), has_selection)
+        self._set_button_state(getattr(self, "btn_dismiss_selected", None), has_selection)
+        self._set_button_state(getattr(self, "btn_restore_selected", None), has_selection)
+
+        # Loans: only allow starting a new loan for a single, non-dismissed, non-loaned item.
+        self._set_button_state(
+            getattr(self, "btn_new_loan", None),
+            has_selection and not multi and (not is_dismissed) and (not is_loaned),
+        )
+        # "Registra reso" depends on selecting a loan row; keep it enabled when an item is selected.
+        self._set_button_state(getattr(self, "btn_register_return", None), has_selection and not multi)
 
     # ------------------------------------------------------------------
     # Data handling
@@ -310,6 +363,7 @@ class MagazzinoPanel(ttk.Frame):
             self._clear_form()
             self._clear_loans()
             self.status_var.set("Nessun oggetto trovato")
+            self._update_action_states()
             return
         self._load_selected()
 
@@ -334,6 +388,7 @@ class MagazzinoPanel(ttk.Frame):
         if not selection:
             self._clear_form()
             self._clear_loans()
+            self._update_action_states()
             return
         item_id = int(selection[0])
         self.current_id = item_id
@@ -341,6 +396,7 @@ class MagazzinoPanel(ttk.Frame):
         if not data:
             self._clear_form()
             self._clear_loans()
+            self._update_action_states()
             return
         self.numero_var.set(data.get("numero_inventario") or "")
         self.marca_var.set(data.get("marca") or "")
@@ -381,6 +437,7 @@ class MagazzinoPanel(ttk.Frame):
                 self.status_var.set(f"Oggetto #{item_id} - {STATUS_DISPONIBILE}")
                 self.loan_info_var.set("—")
         self._refresh_loans()
+        self._update_action_states()
 
     def _clear_form(self):
         self.current_id = None
@@ -402,6 +459,7 @@ class MagazzinoPanel(ttk.Frame):
         self.altre_notizie_text.delete("1.0", tk.END)
         self.status_var.set("Nessun oggetto selezionato")
         self.loan_info_var.set("—")
+        self._update_action_states()
 
     def _refresh_loans(self):
         tree = self.loans_tree
