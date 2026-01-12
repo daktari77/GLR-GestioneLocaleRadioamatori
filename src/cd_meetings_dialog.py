@@ -15,6 +15,74 @@ logger = logging.getLogger("librosoci")
 class MeetingDialog:
     """Dialog for adding/editing CD meetings."""
 
+    def _reload_mandati_combo(self, *, keep_selection: bool = True) -> None:
+        """Reload mandates list for the Mandato combobox (includes past mandates)."""
+        if not hasattr(self, "combo_mandato"):
+            return
+
+        previous = None
+        try:
+            previous = self.mandato_display_var.get() if keep_selection and hasattr(self, "mandato_display_var") else None
+        except Exception:
+            previous = None
+
+        self._mandato_display_to_id: dict[str, int | None] = {"Auto (da data)": None}
+        mandato_values = ["Auto (da data)"]
+
+        try:
+            from cd_mandati import get_all_cd_mandati
+
+            rows = get_all_cd_mandati()
+            for r in rows or []:
+                raw_id = r.get("id")
+                raw_id_s = str(raw_id or "").strip()
+                if not raw_id_s:
+                    continue
+                try:
+                    mid = int(raw_id_s)
+                except Exception:
+                    continue
+                lbl = str(r.get("label") or "").strip()
+                s = str(r.get("start_date") or "").strip()
+                e = str(r.get("end_date") or "").strip()
+                span = f"{s[:4]}-{e[:4]}" if s and e else ""
+                span_lbl = f"Mandato {span}" if span else ""
+
+                display = lbl
+                if span_lbl and lbl:
+                    display = f"{lbl} ({span_lbl})"
+                elif span_lbl and not lbl:
+                    display = span_lbl
+                else:
+                    display = lbl or f"Mandato ID {mid}"
+
+                if display in self._mandato_display_to_id and self._mandato_display_to_id.get(display) != mid:
+                    display = f"{display} #{mid}"
+                self._mandato_display_to_id[display] = mid
+                mandato_values.append(display)
+        except Exception:
+            pass
+
+        try:
+            self.combo_mandato.configure(values=mandato_values)
+        except Exception:
+            pass
+
+        try:
+            if previous and previous in self._mandato_display_to_id:
+                self.mandato_display_var.set(previous)
+        except Exception:
+            pass
+
+    def _open_mandati_wizard(self) -> None:
+        """Open the Mandato CD wizard (to create/edit past mandates) and refresh the dropdown."""
+        try:
+            from v4_ui.cd_mandato_wizard import CdMandatoWizard
+
+            CdMandatoWizard(self.dialog, on_saved=lambda _r=None: self._reload_mandati_combo())
+        except Exception as exc:
+            messagebox.showerror("Mandato CD", f"Impossibile aprire il wizard mandato:\n{exc}", parent=self.dialog)
+
     def _set_verbale_path_in_entry(self, path: str | None) -> None:
         if not hasattr(self, "entry_verbale_path"):
             return
@@ -123,55 +191,19 @@ class MeetingDialog:
         # Mandato (optional override; otherwise inferred from date)
         row += 1
         ttk.Label(main_frame, text="Mandato:", font=("Arial", 10, "bold")).grid(row=row, column=0, sticky="w", padx=5, pady=5)
-        self._mandato_display_to_id: dict[str, int | None] = {"Auto (da data)": None}
         self.mandato_display_var = tk.StringVar(value="Auto (da data)")
-        mandato_values = ["Auto (da data)"]
-        try:
-            from database import fetch_all
-
-            rows = fetch_all(
-                """
-                SELECT id, label, start_date, end_date, is_active
-                FROM cd_mandati
-                WHERE start_date IS NOT NULL AND TRIM(start_date) <> ''
-                  AND end_date IS NOT NULL AND TRIM(end_date) <> ''
-                ORDER BY is_active DESC, start_date DESC, id DESC
-                """
-            )
-            for r in rows or []:
-                try:
-                    mid = int(r["id"])
-                except Exception:
-                    continue
-                lbl = str(r.get("label") or "").strip() if hasattr(r, "get") else ""
-                s = str(r.get("start_date") or "").strip() if hasattr(r, "get") else ""
-                e = str(r.get("end_date") or "").strip() if hasattr(r, "get") else ""
-                span = f"{s[:4]}-{e[:4]}" if s and e else ""
-                span_lbl = f"Mandato {span}" if span else ""
-                display = lbl
-                if span_lbl and lbl:
-                    # Keep custom label visible but always show years too
-                    display = f"{lbl} ({span_lbl})"
-                elif span_lbl and not lbl:
-                    display = span_lbl
-                else:
-                    display = lbl or f"Mandato ID {mid}"
-                # Ensure uniqueness in the dropdown
-                if display in self._mandato_display_to_id and self._mandato_display_to_id.get(display) != mid:
-                    display = f"{display} #{mid}"
-                self._mandato_display_to_id[display] = mid
-                mandato_values.append(display)
-        except Exception:
-            pass
-
         self.combo_mandato = ttk.Combobox(
             main_frame,
             state="readonly",
             width=28,
-            values=mandato_values,
+            values=["Auto (da data)"],
             textvariable=self.mandato_display_var,
         )
-        self.combo_mandato.grid(row=row, column=1, columnspan=3, sticky="w", padx=5, pady=5)
+        self.combo_mandato.grid(row=row, column=1, columnspan=2, sticky="w", padx=5, pady=5)
+        ttk.Button(main_frame, text="Gestisci...", command=self._open_mandati_wizard).grid(row=row, column=3, sticky="w", padx=5, pady=5)
+
+        # Populate mandates list (includes past mandates)
+        self._reload_mandati_combo(keep_selection=False)
         
         # Oggetto
         row += 1

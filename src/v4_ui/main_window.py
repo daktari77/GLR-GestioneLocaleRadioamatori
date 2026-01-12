@@ -544,9 +544,9 @@ class App:
         # Edit menu
         edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Modifica", menu=edit_menu)
-        edit_menu.add_command(label="➕ Nuovo socio", accelerator="Ctrl+N", command=self._add_member)
-        edit_menu.add_command(label="✏️ Modifica socio", command=self._edit_member)
-        edit_menu.add_command(label="🗑️ Elimina socio", accelerator="Ctrl+Del", command=self._delete_member)
+        edit_menu.add_command(label="➕  Nuovo socio", accelerator="Ctrl+N", command=self._add_member)
+        edit_menu.add_command(label="✏️  Modifica socio", command=self._edit_member)
+        edit_menu.add_command(label="🗑️  Elimina socio", accelerator="Ctrl+Del", command=self._delete_member)
         edit_menu.add_separator()
         edit_menu.add_command(label="🔎 Cerca...", accelerator="Ctrl+F", command=self._focus_search)
         edit_menu.add_command(label="🔄 Aggiorna lista", accelerator="F5", command=self._refresh_member_list)
