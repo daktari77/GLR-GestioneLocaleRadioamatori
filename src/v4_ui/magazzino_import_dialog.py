@@ -113,6 +113,10 @@ class MagazzinoImportDialog:
         self.failed_rows: list[dict[str, str]] = []
         self.btn_export_errors: ttk.Button | None = None
 
+        # UI widgets that exist only on specific pages (they get destroyed on page change).
+        self.preview_tree: ttk.Treeview | None = None
+        self.summary_label: ttk.Label | None = None
+
         self.win = tk.Toplevel(parent)
         self.win.title("Importa magazzino")
         self.win.geometry("780x620")
@@ -152,6 +156,8 @@ class MagazzinoImportDialog:
 
         self.progress_label = ttk.Label(self.main_frame, text="Pagina 1 di 3")
         self.progress_label.pack(fill=tk.X, pady=(6, 0))
+
+        self.summary_text = tk.StringVar(value="Nessun file selezionato")
 
         self._show_page()
 
@@ -244,7 +250,7 @@ class MagazzinoImportDialog:
 
         summary = ttk.LabelFrame(frame, text="Riepilogo")
         summary.pack(fill=tk.X, pady=6)
-        self.summary_label = ttk.Label(summary, text="Nessun file selezionato")
+        self.summary_label = ttk.Label(summary, textvariable=self.summary_text)
         self.summary_label.pack(anchor="w", padx=6, pady=4)
 
         options = ttk.LabelFrame(frame, text="Oggetti già presenti")
@@ -327,7 +333,17 @@ class MagazzinoImportDialog:
         self._update_error_export_button()
 
     def _populate_preview(self):
-        tree = self.preview_tree
+        # Preview only exists on the first page; after navigating away the widget is destroyed.
+        if getattr(self, "current_page", None) != 0:
+            return
+        tree = getattr(self, "preview_tree", None)
+        if tree is None:
+            return
+        try:
+            if not bool(tree.winfo_exists()):
+                return
+        except Exception:
+            return
         for item in tree.get_children():
             tree.delete(item)
 
@@ -376,8 +392,8 @@ class MagazzinoImportDialog:
             else:
                 self.selected_fields[key] = var.get()
 
-        # Refresh preview highlighting when inventory mapping changes.
-        if getattr(self, "preview_tree", None) is not None and getattr(self, "rows", None):
+        # Preview lives only on page 0; do not touch it on mapping/import pages.
+        if getattr(self, "current_page", None) == 0 and getattr(self, "rows", None):
             self._populate_preview()
 
     def _auto_map(self):
@@ -397,13 +413,13 @@ class MagazzinoImportDialog:
 
     def _update_summary(self):
         if not self.file_path:
-            self.summary_label.config(text="Nessun file selezionato")
+            self.summary_text.set("Nessun file selezionato")
             return
         total = len(self.rows)
         mapped = sum(1 for f in INVENTORY_FIELDS if self.mapping.get(f["key"]))
         file_name = Path(self.file_path).name
-        self.summary_label.config(
-            text=f"File: {file_name}\nRighe totali: {total}\nCampi mappati: {mapped}/{len(INVENTORY_FIELDS)}"
+        self.summary_text.set(
+            f"File: {file_name}\nRighe totali: {total}\nCampi mappati: {mapped}/{len(INVENTORY_FIELDS)}"
         )
 
     def _capture_mapping(self):

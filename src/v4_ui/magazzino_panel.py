@@ -53,6 +53,9 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Button(toolbar, text="Nuovo oggetto", command=self._new_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Salva", command=self._save_item).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_item).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Elimina selezionati", command=self._delete_selected_items).pack(
+            side=tk.LEFT, padx=2
+        )
         ttk.Button(toolbar, text="Esporta…", command=self._export_items).pack(side=tk.LEFT, padx=12)
         ttk.Button(toolbar, text="Aggiorna", command=self.refresh_list).pack(side=tk.LEFT, padx=12)
 
@@ -87,7 +90,7 @@ class MagazzinoPanel(ttk.Frame):
         frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
 
         columns = ("numero", "marca", "modello", "descrizione", "stato", "assegnato")
-        self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=8, selectmode="browse")
+        self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=8, selectmode="extended")
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         headings = {
@@ -109,6 +112,16 @@ class MagazzinoPanel(ttk.Frame):
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.tag_configure("loaned", background="#fff4ce")
         self.tree.bind("<<TreeviewSelect>>", lambda _e: self._load_selected())
+        try:
+            self.tree.bind("<KeyPress-Delete>", self._on_delete_key)
+            self.tree.bind("<KeyPress-KP_Delete>", self._on_delete_key)
+        except Exception:
+            pass
+
+    def _on_delete_key(self, _event=None):
+        # Windows "Canc" key maps to Delete; on some keyboards it can be KP_Delete.
+        self._delete_selected_items()
+        return "break"
 
     def _build_form(self):
         form = ttk.LabelFrame(self, text="Dettagli oggetto")
@@ -446,6 +459,10 @@ class MagazzinoPanel(ttk.Frame):
         self.refresh_list()
 
     def _delete_item(self):
+        selection = self.tree.selection() if getattr(self, "tree", None) is not None else ()
+        if selection and len(selection) > 1:
+            self._delete_selected_items()
+            return
         if not self.current_id:
             messagebox.showinfo("Magazzino", "Seleziona un oggetto da eliminare")
             return
@@ -458,6 +475,65 @@ class MagazzinoPanel(ttk.Frame):
             messagebox.showerror("Magazzino", f"Errore nell'eliminazione:\n{exc}")
             return
         self.refresh_list()
+
+    def _delete_selected_items(self):
+        selection = self.tree.selection() if getattr(self, "tree", None) is not None else ()
+        if not selection:
+            messagebox.showinfo("Magazzino", "Seleziona uno o più oggetti da eliminare")
+            return
+
+        # Best-effort: warn if some items are currently loaned.
+        selected_ids: list[int] = []
+        for iid in selection:
+            try:
+                selected_ids.append(int(str(iid)))
+            except Exception:
+                continue
+        if not selected_ids:
+            messagebox.showinfo("Magazzino", "Seleziona uno o più oggetti da eliminare")
+            return
+
+        loaned = 0
+        try:
+            by_id = {int(r.get("id")): r for r in (self.items or []) if r.get("id") is not None}
+            for item_id in selected_ids:
+                row = by_id.get(item_id)
+                if row and row.get("active_loan_id"):
+                    loaned += 1
+        except Exception:
+            loaned = 0
+
+        msg = f"Eliminare {len(selected_ids)} oggetti selezionati?\n\nQuesta operazione è IRREVERSIBILE."
+        if loaned:
+            msg += (
+                f"\n\nAttenzione: {loaned} oggetti risultano 'In prestito'. "
+                "Eliminandoli verrà eliminato anche lo storico prestiti associato."
+            )
+        if not messagebox.askyesno("Conferma", msg, icon="warning"):
+            return
+
+        ok = 0
+        errors: list[str] = []
+        for item_id in selected_ids:
+            try:
+                if delete_item(item_id):
+                    ok += 1
+                else:
+                    errors.append(f"ID {item_id}: non eliminato")
+            except Exception as exc:
+                errors.append(f"ID {item_id}: {exc}")
+
+        self.refresh_list()
+        if errors:
+            preview = "\n".join(errors[:10])
+            if len(errors) > 10:
+                preview += f"\n… e altri {len(errors) - 10} errori"
+            messagebox.showerror(
+                "Magazzino",
+                f"Eliminati: {ok}/{len(selected_ids)}\n\nErrori:\n{preview}",
+            )
+        else:
+            messagebox.showinfo("Magazzino", f"Oggetti eliminati: {ok}")
 
     # ------------------------------------------------------------------
     # Loan handling

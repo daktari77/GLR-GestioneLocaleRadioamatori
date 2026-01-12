@@ -300,6 +300,42 @@ class App:
         # Ctrl+B: Backup
         self.root.bind("<Control-b>", lambda e: self._manual_backup())
 
+        # Global Delete handling (only for Magazzino treeview)
+        # This improves reliability of the "Canc" key without affecting text fields.
+        try:
+            self.root.bind("<Delete>", self._on_global_delete_key)
+            self.root.bind("<KP_Delete>", self._on_global_delete_key)
+        except Exception:
+            pass
+
+    def _on_global_delete_key(self, event):
+        """Handle Delete key globally but only when Magazzino Treeview has focus."""
+        try:
+            panel = getattr(self, "magazzino_panel", None)
+            if panel is None:
+                return None
+
+            tree = getattr(panel, "tree", None)
+            if tree is None:
+                return None
+
+            try:
+                focused = self.root.focus_get()
+            except Exception:
+                focused = None
+
+            if focused is tree:
+                handler = getattr(panel, "_on_delete_key", None)
+                if callable(handler):
+                    try:
+                        return handler(event)
+                    except Exception:
+                        return "break"
+        except Exception:
+            return None
+
+        return None
+
     def _show_preferences_dialog(self):
         """Show the preferences dialog for customizable options."""
         try:
