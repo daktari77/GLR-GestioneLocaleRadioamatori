@@ -64,6 +64,9 @@ class MagazzinoPanel(ttk.Frame):
         ttk.Button(toolbar, text="Dismetti selezionati", command=self._dismiss_selected_items).pack(
             side=tk.LEFT, padx=2
         )
+        ttk.Button(toolbar, text="Ripristina selezionati", command=self._restore_selected_items).pack(
+            side=tk.LEFT, padx=2
+        )
         ttk.Button(toolbar, text="Esporta…", command=self._export_items).pack(side=tk.LEFT, padx=12)
         ttk.Button(toolbar, text="Aggiorna", command=self.refresh_list).pack(side=tk.LEFT, padx=12)
 
@@ -720,7 +723,7 @@ class MagazzinoPanel(ttk.Frame):
             messagebox.showinfo("Magazzino", "Seleziona un oggetto da ripristinare")
             return
         if len(ids) > 1:
-            messagebox.showinfo("Magazzino", "Seleziona un solo oggetto da ripristinare")
+            self._restore_selected_items()
             return
 
         item_id = ids[0]
@@ -741,6 +744,48 @@ class MagazzinoPanel(ttk.Frame):
             messagebox.showerror("Magazzino", f"Errore nel ripristino:\n{exc}")
             return
         self.refresh_list()
+
+    def _restore_selected_items(self):
+        ids = self._selected_item_ids()
+        if not ids:
+            messagebox.showinfo("Magazzino", "Seleziona uno o più oggetti da ripristinare")
+            return
+
+        # Filter out non-dismissed items (best-effort).
+        try:
+            by_id = {int(r.get("id")): r for r in (self.items or []) if r.get("id") is not None}
+            todo = [i for i in ids if bool((by_id.get(i) or {}).get("is_dismesso"))]
+        except Exception:
+            todo = ids
+
+        if not todo:
+            messagebox.showinfo("Magazzino", "Nessun oggetto selezionato risulta dismesso")
+            return
+
+        if not messagebox.askyesno(
+            "Conferma",
+            f"Ripristinare {len(todo)} oggetti selezionati?",
+            icon="warning",
+        ):
+            return
+
+        ok = 0
+        errors: list[str] = []
+        for item_id in todo:
+            try:
+                if restore_item(item_id):
+                    ok += 1
+            except Exception as exc:
+                errors.append(f"ID {item_id}: {exc}")
+
+        self.refresh_list()
+        if errors:
+            preview = "\n".join(errors[:10])
+            if len(errors) > 10:
+                preview += f"\n… e altri {len(errors) - 10} errori"
+            messagebox.showerror("Magazzino", f"Ripristinati: {ok}/{len(todo)}\n\nErrori:\n{preview}")
+        else:
+            messagebox.showinfo("Magazzino", f"Oggetti ripristinati: {ok}")
 
     def _selected_loan(self) -> dict | None:
         selection = self.loans_tree.selection()
