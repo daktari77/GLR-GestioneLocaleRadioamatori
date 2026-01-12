@@ -274,6 +274,95 @@ CREATE TABLE IF NOT EXISTS cd_mandati (
 )
 """
 
+# CD: cariche e assegnazioni (composizione derivata, non manuale)
+CREATE_CD_CARICHE = """
+CREATE TABLE IF NOT EXISTS cd_cariche (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codice TEXT NOT NULL UNIQUE,
+    nome TEXT NOT NULL,
+    ordine INTEGER NOT NULL DEFAULT 0,
+    is_cd_member INTEGER NOT NULL DEFAULT 1,
+    allow_multiple INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+CREATE_CD_ASSEGNAZIONI_CARICHE = """
+CREATE TABLE IF NOT EXISTS cd_assegnazioni_cariche (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mandato_id INTEGER NOT NULL,
+    carica_id INTEGER NOT NULL,
+    socio_id INTEGER,
+    nominativo TEXT,
+    note TEXT,
+    data_inizio TEXT,
+    data_fine TEXT,
+    created_at TEXT,
+    created_by TEXT,
+    updated_at TEXT,
+    updated_by TEXT,
+    FOREIGN KEY (mandato_id) REFERENCES cd_mandati(id) ON DELETE RESTRICT,
+    FOREIGN KEY (carica_id) REFERENCES cd_cariche(id) ON DELETE RESTRICT,
+    FOREIGN KEY (socio_id) REFERENCES soci(id) ON DELETE SET NULL,
+    CHECK (socio_id IS NOT NULL OR (nominativo IS NOT NULL AND TRIM(nominativo) <> '')),
+    CHECK (data_fine IS NULL OR data_inizio IS NULL OR data_fine >= data_inizio)
+)
+"""
+
+# CD: documenti + versioning (append-only)
+CREATE_CD_DOCUMENTI = """
+CREATE TABLE IF NOT EXISTS cd_documenti (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mandato_id INTEGER NOT NULL,
+    tipo TEXT NOT NULL CHECK (tipo IN ('VERBALE','DELIBERA','COMUNICAZIONE')),
+    titolo TEXT NOT NULL,
+    numero TEXT,
+    data_documento TEXT,
+    stato_corrente TEXT NOT NULL CHECK (stato_corrente IN ('BOZZA','APPROVATO','INTEGRATO')),
+    current_version_id INTEGER,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT,
+    FOREIGN KEY (mandato_id) REFERENCES cd_mandati(id) ON DELETE RESTRICT
+)
+"""
+
+CREATE_CD_DOCUMENTI_VERSIONI = """
+CREATE TABLE IF NOT EXISTS cd_documenti_versioni (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    documento_id INTEGER NOT NULL,
+    version_no INTEGER NOT NULL,
+    tipo_versione TEXT NOT NULL CHECK (tipo_versione IN ('REVISIONE','INTEGRAZIONE')),
+    parent_version_id INTEGER,
+    stato TEXT NOT NULL CHECK (stato IN ('BOZZA','APPROVATO','INTEGRATO')),
+    contenuto_path TEXT,
+    contenuto_sha256 TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    created_by TEXT,
+    approved_at TEXT,
+    approved_by TEXT,
+    FOREIGN KEY (documento_id) REFERENCES cd_documenti(id) ON DELETE RESTRICT,
+    FOREIGN KEY (parent_version_id) REFERENCES cd_documenti_versioni(id) ON DELETE RESTRICT,
+    UNIQUE(documento_id, version_no)
+)
+"""
+
+# Audit (append-only)
+CREATE_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    actor TEXT,
+    action TEXT NOT NULL CHECK (action IN ('INSERT','UPDATE','DELETE')),
+    entity TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    reason TEXT
+)
+"""
+
 CREATE_CALENDAR_EVENTS = """
 CREATE TABLE IF NOT EXISTS calendar_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -446,6 +535,16 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cd_riunioni_verbale_section_doc ON cd_riunioni(verbale_section_doc_id)",
     "CREATE INDEX IF NOT EXISTS idx_cd_mandati_active ON cd_mandati(is_active)",
     "CREATE INDEX IF NOT EXISTS idx_cd_mandati_periodo ON cd_mandati(start_date, end_date)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_cd_mandati_single_active ON cd_mandati(is_active) WHERE is_active = 1",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_cd_cariche_codice ON cd_cariche(codice)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_mandato ON cd_assegnazioni_cariche(mandato_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_carica ON cd_assegnazioni_cariche(carica_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_socio ON cd_assegnazioni_cariche(socio_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_documenti_mandato ON cd_documenti(mandato_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_documenti_tipo ON cd_documenti(tipo)",
+    "CREATE INDEX IF NOT EXISTS idx_cd_docver_doc ON cd_documenti_versioni(documento_id, version_no DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_stato ON ponti(stato_corrente)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_auth_scadenza ON ponti_authorizations(data_scadenza)",
     "CREATE INDEX IF NOT EXISTS idx_ponti_interventi_data ON ponti_interventi(data)",
@@ -457,6 +556,273 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_item ON magazzino_loans(item_id)",
     "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_active ON magazzino_loans(item_id, data_reso)"
 ]
+
+
+def _normalize_cd_carica_codice(nome: str) -> str:
+    raw = (nome or "").strip().upper()
+    out = []
+    prev_us = False
+    for ch in raw:
+        if ch.isalnum():
+            out.append(ch)
+            prev_us = False
+        else:
+            if not prev_us:
+                out.append("_")
+                prev_us = True
+    code = "".join(out).strip("_")
+    return code or "RUOLO"
+
+
+def _seed_cd_cariche(conn: sqlite3.Connection):
+    # Allineato a v4_ui/cd_mandato_wizard.py (ma persistente e normalizzato)
+    defaults = [
+        ("Presidente", 10, 1, 0),
+        ("Vicepresidente", 20, 1, 0),
+        ("Segretario", 30, 1, 0),
+        ("Tesoriere", 40, 1, 0),
+        # Ruolo tipicamente multi-assegnazione
+        ("Consigliere", 50, 1, 1),
+        # Può essere 1 o più; lasciamo multiplo per flessibilità
+        ("Sindaco/Revisore", 60, 1, 1),
+        # Ruoli extra non-CD; multiplo
+        ("Altro", 999, 0, 1),
+    ]
+    for nome, ordine, is_cd, allow_multiple in defaults:
+        codice = _normalize_cd_carica_codice(nome)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO cd_cariche(codice, nome, ordine, is_cd_member, allow_multiple)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (codice, nome, int(ordine), int(is_cd), int(allow_multiple)),
+        )
+        # Keep defaults aligned even if row already existed
+        conn.execute(
+            """
+            UPDATE cd_cariche
+            SET nome = ?, ordine = ?, is_cd_member = ?, allow_multiple = ?
+            WHERE codice = ?
+            """,
+            (nome, int(ordine), int(is_cd), int(allow_multiple), codice),
+        )
+
+
+def _best_effort_fix_multiple_active_cd_mandati(conn: sqlite3.Connection):
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, start_date
+            FROM cd_mandati
+            WHERE is_active = 1
+            ORDER BY start_date DESC, id DESC
+            """
+        ).fetchall()
+        if not rows or len(rows) <= 1:
+            return
+        keep_id = int(rows[0][0])
+        conn.execute("UPDATE cd_mandati SET is_active = 0 WHERE is_active = 1 AND id <> ?", (keep_id,))
+    except Exception as exc:
+        logger.warning("Impossibile normalizzare mandati CD attivi: %s", exc)
+
+
+def _migrate_cd_mandati_composizione_json_to_relational(conn: sqlite3.Connection):
+    # Migra solo se non esistono già assegnazioni per quel mandato.
+    try:
+        rows = conn.execute("SELECT id, start_date, end_date, composizione_json FROM cd_mandati").fetchall()
+    except Exception:
+        return
+    for row in rows or []:
+        try:
+            mandato_id = int(row[0])
+        except Exception:
+            continue
+        try:
+            existing = conn.execute(
+                "SELECT COUNT(1) FROM cd_assegnazioni_cariche WHERE mandato_id = ?",
+                (mandato_id,),
+            ).fetchone()
+            if existing and int(existing[0] or 0) > 0:
+                continue
+        except Exception:
+            continue
+
+        start_date = str(row[1] or "").strip() or None
+        end_date = str(row[2] or "").strip() or None
+        raw = row[3]
+        if not raw:
+            continue
+        try:
+            comp = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(comp, list) or not comp:
+            continue
+
+        ts = ""  # lasciamo vuoto per migrazione legacy
+        for item in comp:
+            if not isinstance(item, dict):
+                continue
+            carica_nome = str(item.get("carica") or "").strip() or "Consigliere"
+            nominativo = str(item.get("nome") or "").strip() or None
+            note = str(item.get("note") or "").strip() or None
+
+            codice = _normalize_cd_carica_codice(carica_nome)
+            allow_multiple = 1 if codice in ("CONSIGLIERE", "ALTRO", "SINDACO_REVISORE") else 0
+            conn.execute(
+                "INSERT OR IGNORE INTO cd_cariche(codice, nome, ordine, is_cd_member, allow_multiple) VALUES (?, ?, 0, 1, ?)",
+                (codice, carica_nome, int(allow_multiple)),
+            )
+            carica_row = conn.execute("SELECT id FROM cd_cariche WHERE codice = ?", (codice,)).fetchone()
+            if not carica_row:
+                continue
+            carica_id = int(carica_row[0])
+            conn.execute(
+                """
+                INSERT INTO cd_assegnazioni_cariche(
+                    mandato_id, carica_id, socio_id, nominativo, note,
+                    data_inizio, data_fine, created_at, updated_at
+                )
+                VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)
+                """,
+                (mandato_id, carica_id, nominativo, note, start_date, end_date, ts, ts),
+            )
+
+
+def _try_create_audit_triggers(conn: sqlite3.Connection):
+    # Nota: json_object richiede JSON1; se non disponibile, i trigger falliscono e li ignoriamo.
+    triggers = [
+        (
+            "audit_cd_mandati_update",
+            """
+            CREATE TRIGGER IF NOT EXISTS audit_cd_mandati_update
+            AFTER UPDATE ON cd_mandati
+            BEGIN
+              INSERT INTO audit_log(ts, actor, action, entity, entity_id, before_json, after_json)
+              VALUES (
+                strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                NULL,
+                'UPDATE',
+                'cd_mandati',
+                OLD.id,
+                json_object('id', OLD.id, 'label', OLD.label, 'start_date', OLD.start_date, 'end_date', OLD.end_date, 'note', OLD.note, 'is_active', OLD.is_active),
+                json_object('id', NEW.id, 'label', NEW.label, 'start_date', NEW.start_date, 'end_date', NEW.end_date, 'note', NEW.note, 'is_active', NEW.is_active)
+              );
+            END;
+            """,
+        ),
+        (
+            "audit_cd_assegnazioni_update",
+            """
+            CREATE TRIGGER IF NOT EXISTS audit_cd_assegnazioni_update
+            AFTER UPDATE ON cd_assegnazioni_cariche
+            BEGIN
+              INSERT INTO audit_log(ts, actor, action, entity, entity_id, before_json, after_json)
+              VALUES (
+                strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                NULL,
+                'UPDATE',
+                'cd_assegnazioni_cariche',
+                OLD.id,
+                json_object('id', OLD.id, 'mandato_id', OLD.mandato_id, 'carica_id', OLD.carica_id, 'socio_id', OLD.socio_id, 'nominativo', OLD.nominativo, 'note', OLD.note, 'data_inizio', OLD.data_inizio, 'data_fine', OLD.data_fine),
+                json_object('id', NEW.id, 'mandato_id', NEW.mandato_id, 'carica_id', NEW.carica_id, 'socio_id', NEW.socio_id, 'nominativo', NEW.nominativo, 'note', NEW.note, 'data_inizio', NEW.data_inizio, 'data_fine', NEW.data_fine)
+              );
+            END;
+            """,
+        ),
+        (
+            "audit_cd_documenti_versioni_insert",
+            """
+            CREATE TRIGGER IF NOT EXISTS audit_cd_documenti_versioni_insert
+            AFTER INSERT ON cd_documenti_versioni
+            BEGIN
+              INSERT INTO audit_log(ts, actor, action, entity, entity_id, before_json, after_json)
+              VALUES (
+                strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+                NULL,
+                'INSERT',
+                'cd_documenti_versioni',
+                NEW.id,
+                NULL,
+                json_object('id', NEW.id, 'documento_id', NEW.documento_id, 'version_no', NEW.version_no, 'tipo_versione', NEW.tipo_versione, 'parent_version_id', NEW.parent_version_id, 'stato', NEW.stato, 'contenuto_path', NEW.contenuto_path, 'contenuto_sha256', NEW.contenuto_sha256)
+              );
+            END;
+            """,
+        ),
+    ]
+    for name, ddl in triggers:
+        try:
+            conn.execute(ddl)
+        except sqlite3.OperationalError as exc:
+            logger.debug("Audit trigger non creato (%s): %s", name, exc)
+
+
+def _try_create_cd_business_triggers(conn: sqlite3.Connection):
+        # 1) Evita sovrapposizioni: stessa carica nello stesso mandato non può avere intervalli che overlap.
+        #    Nota: consente più righe se non overlap (sostituzioni intra-mandato).
+        try:
+                conn.execute(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS trg_cd_assegnazioni_no_overlap_ins
+                        BEFORE INSERT ON cd_assegnazioni_cariche
+                        BEGIN
+                            SELECT RAISE(ABORT, 'Sovrapposizione assegnazione carica nel mandato')
+                            WHERE (SELECT COALESCE(allow_multiple, 0) FROM cd_cariche WHERE id = NEW.carica_id) = 0
+                                AND EXISTS (
+                                SELECT 1
+                                FROM cd_assegnazioni_cariche a
+                                WHERE a.mandato_id = NEW.mandato_id
+                                    AND a.carica_id = NEW.carica_id
+                                    AND COALESCE(NEW.data_inizio, '0000-01-01') <= COALESCE(a.data_fine, '9999-12-31')
+                                    AND COALESCE(NEW.data_fine, '9999-12-31') >= COALESCE(a.data_inizio, '0000-01-01')
+                                LIMIT 1
+                            );
+                        END;
+                        """
+                )
+        except sqlite3.OperationalError as exc:
+                logger.debug("Trigger overlap INSERT non creato: %s", exc)
+
+        try:
+                conn.execute(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS trg_cd_assegnazioni_no_overlap_upd
+                        BEFORE UPDATE ON cd_assegnazioni_cariche
+                        BEGIN
+                            SELECT RAISE(ABORT, 'Sovrapposizione assegnazione carica nel mandato')
+                            WHERE (SELECT COALESCE(allow_multiple, 0) FROM cd_cariche WHERE id = NEW.carica_id) = 0
+                                AND EXISTS (
+                                SELECT 1
+                                FROM cd_assegnazioni_cariche a
+                                WHERE a.mandato_id = NEW.mandato_id
+                                    AND a.carica_id = NEW.carica_id
+                                    AND a.id <> OLD.id
+                                    AND COALESCE(NEW.data_inizio, '0000-01-01') <= COALESCE(a.data_fine, '9999-12-31')
+                                    AND COALESCE(NEW.data_fine, '9999-12-31') >= COALESCE(a.data_inizio, '0000-01-01')
+                                LIMIT 1
+                            );
+                        END;
+                        """
+                )
+        except sqlite3.OperationalError as exc:
+                logger.debug("Trigger overlap UPDATE non creato: %s", exc)
+
+        # 2) Versioning: blocca update distruttivi su versioni approvate (append-only)
+        try:
+                conn.execute(
+                        """
+                        CREATE TRIGGER IF NOT EXISTS trg_cd_docver_no_update_approved
+                        BEFORE UPDATE ON cd_documenti_versioni
+                        WHEN OLD.stato = 'APPROVATO'
+                        BEGIN
+                            SELECT RAISE(ABORT, 'Versione approvata non modificabile; creare una nuova versione')
+                            ;
+                        END;
+                        """
+                )
+        except sqlite3.OperationalError as exc:
+                logger.debug("Trigger no-update approved non creato: %s", exc)
+
 
 
 def get_section_document_by_id(record_id: int) -> dict | None:
@@ -552,6 +918,13 @@ def init_db():
             logger.warning("Impossibile eseguire backfill cd_delibere: %s", exc)
         conn.execute(CREATE_CD_VERBALI)
         conn.execute(CREATE_CD_MANDATI)
+        conn.execute(CREATE_CD_CARICHE)
+        _ensure_column(conn, "cd_cariche", "allow_multiple", "INTEGER NOT NULL DEFAULT 0")
+        conn.execute(CREATE_CD_ASSEGNAZIONI_CARICHE)
+        conn.execute(CREATE_CD_DOCUMENTI)
+        conn.execute(CREATE_CD_DOCUMENTI_VERSIONI)
+        conn.execute(CREATE_AUDIT_LOG)
+
         _ensure_column(conn, "cd_mandati", "label", "TEXT")
         _ensure_column(conn, "cd_mandati", "start_date", "TEXT")
         _ensure_column(conn, "cd_mandati", "end_date", "TEXT")
@@ -584,6 +957,32 @@ def init_db():
             )
         except sqlite3.OperationalError as exc:
             logger.warning("Impossibile normalizzare label cd_mandati: %s", exc)
+
+        # CD: seed cariche + migrazione legacy composizione_json -> assegnazioni
+        try:
+            _seed_cd_cariche(conn)
+        except Exception as exc:
+            logger.warning("Impossibile inizializzare cariche CD: %s", exc)
+        try:
+            _migrate_cd_mandati_composizione_json_to_relational(conn)
+        except Exception as exc:
+            logger.warning("Impossibile migrare composizione CD: %s", exc)
+
+        # Normalizza eventuali DB con più mandati attivi (prima di creare vincolo unico)
+        _best_effort_fix_multiple_active_cd_mandati(conn)
+
+        # Audit triggers (best-effort)
+        try:
+            _try_create_audit_triggers(conn)
+        except Exception:
+            pass
+
+        # Business triggers (best-effort)
+        try:
+            _try_create_cd_business_triggers(conn)
+        except Exception:
+            pass
+
         conn.execute(CREATE_CALENDAR_EVENTS)
         conn.execute(CREATE_PONTI)
         conn.execute(CREATE_PONTI_STATUS_HISTORY)

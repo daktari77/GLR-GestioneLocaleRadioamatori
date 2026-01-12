@@ -14,6 +14,44 @@ from pathlib import Path
 logger = logging.getLogger("librosoci")
 
 
+def _pick_first_role_name(composizione: list[dict], role_name: str) -> str | None:
+    target = (role_name or "").strip().lower()
+    if not target:
+        return None
+    for item in composizione or []:
+        try:
+            carica = str(item.get("carica") or "").strip().lower()
+            nome = str(item.get("nome") or "").strip()
+        except Exception:
+            continue
+        if not nome:
+            continue
+        if carica == target:
+            return nome
+    return None
+
+
+def _autofill_presidente_segretario_for_meeting(cd_id: int, *, presidente: str | None, segretario: str | None) -> tuple[str | None, str | None]:
+    # Non sovrascrive valori già impostati.
+    pres = (presidente or "").strip() or None
+    secr = (segretario or "").strip() or None
+    if pres and secr:
+        return pres, secr
+
+    try:
+        from cd_mandati import get_cd_composizione_for_meeting
+
+        comp = get_cd_composizione_for_meeting(int(cd_id))
+    except Exception:
+        comp = []
+
+    if not pres:
+        pres = _pick_first_role_name(comp, "Presidente")
+    if not secr:
+        secr = _pick_first_role_name(comp, "Segretario")
+    return pres, secr
+
+
 def _archive_cd_verbale_documento(verbale_id: int, source_path: str) -> str:
     from file_archiver import archive_file
 
@@ -127,6 +165,11 @@ def add_verbale(cd_id: int, data_redazione: str, segretario: str = None, preside
     from utils import now_iso
     
     try:
+        presidente, segretario = _autofill_presidente_segretario_for_meeting(
+            int(cd_id),
+            presidente=presidente,
+            segretario=segretario,
+        )
         original_doc = documento_path
         sql = """
             INSERT INTO cd_verbali 

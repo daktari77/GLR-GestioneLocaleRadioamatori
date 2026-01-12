@@ -4,8 +4,168 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
+from typing import cast
 
 from utils import ddmmyyyy_to_iso
+
+
+class _SocioPickerDialog(tk.Toplevel):
+    def __init__(self, parent: tk.Misc, *, initial_query: str = ""):
+        super().__init__(parent)
+        self.title("Seleziona socio")
+        self.resizable(True, True)
+        self.transient(cast(tk.Wm, parent))
+        self.grab_set()
+
+        self.result: dict | None = None
+        self._all_rows: list[dict] = []
+
+        self.var_q = tk.StringVar(value=(initial_query or "").strip())
+
+        self._build_ui()
+        self._load_rows()
+        self._apply_filter()
+
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        self.bind("<Escape>", lambda _e: self._on_cancel())
+
+    def _build_ui(self):
+        root = ttk.Frame(self)
+        root.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        top = ttk.Frame(root)
+        top.pack(fill=tk.X)
+
+        ttk.Label(top, text="Cerca:").pack(side=tk.LEFT)
+        ent = ttk.Entry(top, textvariable=self.var_q)
+        ent.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0))
+        ent.bind("<KeyRelease>", lambda _e: self._apply_filter())
+
+        mid = ttk.Frame(root)
+        mid.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+
+        sb_v = ttk.Scrollbar(mid, orient="vertical")
+        self.tv = ttk.Treeview(
+            mid,
+            columns=("id", "matricola", "nominativo"),
+            show="headings",
+            displaycolumns=("matricola", "nominativo"),
+            yscrollcommand=sb_v.set,
+        )
+        sb_v.config(command=self.tv.yview)
+
+        self.tv.heading("matricola", text="Matricola")
+        self.tv.heading("nominativo", text="Nominativo")
+
+        self.tv.column("id", width=0, stretch=False)
+        self.tv.column("matricola", width=90)
+        self.tv.column("nominativo", width=380)
+
+        self.tv.grid(row=0, column=0, sticky="nsew")
+        sb_v.grid(row=0, column=1, sticky="ns")
+        mid.columnconfigure(0, weight=1)
+        mid.rowconfigure(0, weight=1)
+
+        self.tv.bind("<Double-1>", lambda _e: self._on_ok())
+
+        bottom = ttk.Frame(root)
+        bottom.pack(fill=tk.X, pady=(10, 0))
+        ttk.Button(bottom, text="Inserisci manualmente", command=self._on_manual).pack(side=tk.LEFT)
+        ttk.Button(bottom, text="Annulla", command=self._on_cancel).pack(side=tk.RIGHT, padx=(6, 0))
+        ttk.Button(bottom, text="Seleziona", command=self._on_ok).pack(side=tk.RIGHT)
+
+    def _load_rows(self):
+        try:
+            from database import fetch_all
+
+            rows = fetch_all(
+                """
+                SELECT id, matricola, nominativo, nome, cognome
+                FROM soci
+                WHERE deleted_at IS NULL
+                ORDER BY COALESCE(cognome,''), COALESCE(nome,''), COALESCE(nominativo,'')
+                """
+            )
+            self._all_rows = [dict(r) for r in rows or []]
+        except Exception:
+            self._all_rows = []
+
+    @staticmethod
+    def _format_row(r: dict) -> str:
+        nominativo = str(r.get("nominativo") or "").strip()
+        nome = str(r.get("nome") or "").strip()
+        cognome = str(r.get("cognome") or "").strip()
+        if nominativo:
+            base = nominativo
+        else:
+            base = (f"{cognome} {nome}").strip()
+        mat = str(r.get("matricola") or "").strip()
+        if mat:
+            return f"{base} ({mat})" if base else f"Socio {mat}"
+        return base or "Socio"
+
+    def _apply_filter(self):
+        q = (self.var_q.get() or "").strip().lower()
+        for iid in self.tv.get_children():
+            self.tv.delete(iid)
+
+        def match(r: dict) -> bool:
+            if not q:
+                return True
+            hay = " ".join(
+                [
+                    str(r.get("matricola") or ""),
+                    str(r.get("nominativo") or ""),
+                    str(r.get("cognome") or ""),
+                    str(r.get("nome") or ""),
+                ]
+            ).lower()
+            return q in hay
+
+        for r in self._all_rows:
+            if not match(r):
+                continue
+            try:
+                rid = r.get("id")
+                if rid is None:
+                    continue
+                sid = int(str(rid))
+            except Exception:
+                continue
+            mat = str(r.get("matricola") or "").strip()
+            display = self._format_row(r)
+            self.tv.insert("", tk.END, iid=f"s{sid}", values=(str(sid), mat, display))
+
+    def _on_ok(self):
+        sel = self.tv.selection()
+        if not sel:
+            messagebox.showwarning("Seleziona socio", "Selezionare un socio dalla lista oppure usare inserimento manuale.")
+            return
+        vals = self.tv.item(sel[0], "values")
+        socio_id_raw = vals[0] if len(vals) > 0 else ""
+        nominativo = vals[2] if len(vals) > 2 else ""
+        try:
+            socio_id = int(str(socio_id_raw))
+        except Exception:
+            socio_id = None
+        self.result = {"mode": "socio", "socio_id": socio_id, "nome": str(nominativo or "").strip()}
+        self.destroy()
+
+    def _on_manual(self):
+        self.result = {"mode": "manual"}
+        self.destroy()
+
+    def _on_cancel(self):
+        self.result = None
+        self.destroy()
+
+
+def _ask_member_manual_name(parent: tk.Misc, *, initial_value: str = "") -> str | None:
+    nome = simpledialog.askstring("Componente CD", "Nominativo", initialvalue=str(initial_value or ""), parent=parent)
+    if nome is None:
+        return None
+    nome = nome.strip()
+    return nome or None
 
 
 class CdMandatoWizard(tk.Toplevel):
@@ -25,7 +185,7 @@ class CdMandatoWizard(tk.Toplevel):
         super().__init__(parent)
         self.title("Mandato Consiglio Direttivo")
         self.resizable(True, True)
-        self.transient(parent)
+        self.transient(cast(tk.Wm, parent))
         self.grab_set()
 
         self.on_saved = on_saved
@@ -92,8 +252,9 @@ class CdMandatoWizard(tk.Toplevel):
         sb_v = ttk.Scrollbar(frame, orient="vertical")
         self.tv = ttk.Treeview(
             frame,
-            columns=("carica", "nome", "note"),
+            columns=("socio_id", "carica", "nome", "note"),
             show="headings",
+            displaycolumns=("carica", "nome", "note"),
             yscrollcommand=sb_v.set,
         )
         sb_v.config(command=self.tv.yview)
@@ -102,6 +263,7 @@ class CdMandatoWizard(tk.Toplevel):
         self.tv.heading("nome", text="Nominativo")
         self.tv.heading("note", text="Note")
 
+        self.tv.column("socio_id", width=0, stretch=False)
         self.tv.column("carica", width=160)
         self.tv.column("nome", width=320)
         self.tv.column("note", width=260)
@@ -127,7 +289,8 @@ class CdMandatoWizard(tk.Toplevel):
 
         if cur:
             try:
-                self._selected_mandato_id = int(cur.get("id")) if cur.get("id") is not None else None
+                raw_id = cur.get("id")
+                self._selected_mandato_id = int(str(raw_id)) if raw_id is not None and str(raw_id).strip() else None
             except Exception:
                 self._selected_mandato_id = None
             self.var_label.set(str(cur.get("label") or ""))
@@ -139,11 +302,17 @@ class CdMandatoWizard(tk.Toplevel):
                 self.tv.delete(row)
             for idx, m in enumerate(cur.get("composizione") or [], start=1):
                 iid = f"m{idx}"
+                socio_id = m.get("socio_id")
+                try:
+                    socio_id_s = str(int(socio_id)) if socio_id is not None and str(socio_id).strip() else ""
+                except Exception:
+                    socio_id_s = ""
                 self.tv.insert(
                     "",
                     tk.END,
                     iid=iid,
                     values=(
+                        socio_id_s,
                         str(m.get("carica") or ""),
                         str(m.get("nome") or ""),
                         str(m.get("note") or ""),
@@ -182,8 +351,11 @@ class CdMandatoWizard(tk.Toplevel):
         for m in all_rows:
             mid = m.get("id")
             try:
-                mid_i = int(mid)
+                mid_i = int(str(mid)) if mid is not None and str(mid).strip() else None
             except Exception:
+                continue
+
+            if mid_i is None:
                 continue
 
             lbl = str(m.get("label") or "").strip()
@@ -249,11 +421,17 @@ class CdMandatoWizard(tk.Toplevel):
             self.tv.delete(row)
         for idx, r in enumerate(m.get("composizione") or [], start=1):
             iid = f"m{idx}"
+            socio_id = r.get("socio_id")
+            try:
+                socio_id_s = str(int(socio_id)) if socio_id is not None and str(socio_id).strip() else ""
+            except Exception:
+                socio_id_s = ""
             self.tv.insert(
                 "",
                 tk.END,
                 iid=iid,
                 values=(
+                    socio_id_s,
                     str(r.get("carica") or ""),
                     str(r.get("nome") or ""),
                     str(r.get("note") or ""),
@@ -262,10 +440,24 @@ class CdMandatoWizard(tk.Toplevel):
 
     def _ask_member_data(self, *, initial=None):
         initial = initial or {}
-        nome = simpledialog.askstring("Componente CD", "Nominativo", initialvalue=str(initial.get("nome") or ""), parent=self)
-        if nome is None:
+
+        # Socio selection (preferred) with manual fallback
+        socio_id: int | None = None
+        nome: str | None = None
+
+        dlg = _SocioPickerDialog(self, initial_query=str(initial.get("nome") or ""))
+        self.wait_window(dlg)
+        if dlg.result is None:
             return None
-        nome = nome.strip()
+
+        if dlg.result.get("mode") == "socio":
+            socio_id = dlg.result.get("socio_id")
+            nome = str(dlg.result.get("nome") or "").strip() or None
+        else:
+            nome = _ask_member_manual_name(self, initial_value=str(initial.get("nome") or ""))
+            if nome is None:
+                return None
+
         if not nome:
             messagebox.showwarning("Componente CD", "Inserire un nominativo.")
             return None
@@ -284,14 +476,15 @@ class CdMandatoWizard(tk.Toplevel):
         if note is None:
             note = ""
 
-        return {"nome": nome, "carica": carica, "note": note}
+        return {"nome": nome, "carica": carica, "note": note, "socio_id": socio_id}
 
     def _add_member(self):
         data = self._ask_member_data()
         if not data:
             return
         iid = f"m{len(self.tv.get_children()) + 1}"
-        self.tv.insert("", tk.END, iid=iid, values=(data["carica"], data["nome"], data["note"]))
+        socio_id_s = str(int(data["socio_id"])) if data.get("socio_id") else ""
+        self.tv.insert("", tk.END, iid=iid, values=(socio_id_s, data["carica"], data["nome"], data["note"]))
 
     def _edit_member(self):
         sel = self.tv.selection()
@@ -300,11 +493,22 @@ class CdMandatoWizard(tk.Toplevel):
             return
         iid = sel[0]
         vals = self.tv.item(iid, "values")
-        initial = {"carica": vals[0] if len(vals) > 0 else "", "nome": vals[1] if len(vals) > 1 else "", "note": vals[2] if len(vals) > 2 else ""}
+        socio_id_raw = vals[0] if len(vals) > 0 else ""
+        try:
+            socio_id = int(str(socio_id_raw)) if str(socio_id_raw).strip() else None
+        except Exception:
+            socio_id = None
+        initial = {
+            "socio_id": socio_id,
+            "carica": vals[1] if len(vals) > 1 else "",
+            "nome": vals[2] if len(vals) > 2 else "",
+            "note": vals[3] if len(vals) > 3 else "",
+        }
         data = self._ask_member_data(initial=initial)
         if not data:
             return
-        self.tv.item(iid, values=(data["carica"], data["nome"], data["note"]))
+        socio_id_s = str(int(data["socio_id"])) if data.get("socio_id") else ""
+        self.tv.item(iid, values=(socio_id_s, data["carica"], data["nome"], data["note"]))
 
     def _remove_member(self):
         sel = self.tv.selection()
@@ -334,8 +538,16 @@ class CdMandatoWizard(tk.Toplevel):
 
         composizione = []
         for iid in self.tv.get_children():
-            carica, nome, note_riga = self.tv.item(iid, "values")
-            composizione.append({"carica": str(carica), "nome": str(nome), "note": str(note_riga)})
+            vals = self.tv.item(iid, "values")
+            socio_id_raw = vals[0] if len(vals) > 0 else ""
+            carica = vals[1] if len(vals) > 1 else ""
+            nome = vals[2] if len(vals) > 2 else ""
+            note_riga = vals[3] if len(vals) > 3 else ""
+            try:
+                socio_id = int(str(socio_id_raw)) if str(socio_id_raw).strip() else None
+            except Exception:
+                socio_id = None
+            composizione.append({"carica": str(carica), "nome": str(nome), "note": str(note_riga), "socio_id": socio_id})
 
         try:
             from cd_mandati import save_cd_mandato
