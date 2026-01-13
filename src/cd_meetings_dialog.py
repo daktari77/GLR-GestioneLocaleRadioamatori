@@ -330,6 +330,14 @@ class MeetingDialog:
         ttk.Button(self.verbale_frame, text="Seleziona...", command=self._select_verbale).grid(row=verbale_row, column=2, padx=5, pady=5)
         ttk.Button(self.verbale_frame, text="Da documenti...", command=self._select_verbale_from_docs).grid(row=verbale_row, column=3, padx=5, pady=5)
         self.verbale_frame.columnconfigure(1, weight=1)
+
+        verbale_row += 1
+        self.btn_generate_verbale_docx = ttk.Button(
+            self.verbale_frame,
+            text="Rigenera da template (DOCX)...",
+            command=self._generate_verbale_docx,
+        )
+        self.btn_generate_verbale_docx.grid(row=verbale_row, column=0, columnspan=4, sticky="w", padx=5, pady=(0, 5))
         
         # Delibere section (solo per riunioni passate)
         row += 1
@@ -361,6 +369,91 @@ class MeetingDialog:
 
         # Initial state for prepare button
         self._update_prepare_email_button_state()
+
+        try:
+            if not self.meeting_id:
+                self.btn_generate_verbale_docx.configure(state="disabled")
+        except Exception:
+            pass
+
+    def _generate_verbale_docx(self):
+        if not self.meeting_id:
+            messagebox.showinfo(
+                "Verbale",
+                "Salvare prima la riunione per poter generare il verbale.",
+                parent=self.dialog,
+            )
+            return
+
+        try:
+            from templates_manager import get_templates_dir
+
+            initial_dir = get_templates_dir()
+        except Exception:
+            initial_dir = None
+
+        template_path = filedialog.askopenfilename(
+            title="Seleziona template Verbale CD (DOCX) (opzionale)",
+            initialdir=initial_dir,
+            filetypes=[
+                ("Word (.docx)", "*.docx"),
+                ("Tutti i file", "*.*"),
+            ],
+        )
+        if not template_path:
+            template_path = None
+
+        try:
+            import tempfile
+            import os
+
+            from cd_reports import export_verbale_cd_docx
+            from section_documents import add_section_document
+            from database import get_section_document_by_relative_path
+            from cd_meetings import update_meeting
+
+            fd, tmp_path = tempfile.mkstemp(prefix="verbale_cd_", suffix=".docx")
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+
+            ok, warnings = export_verbale_cd_docx(int(self.meeting_id), tmp_path, template_path=template_path)
+            if not ok:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                messagebox.showerror(
+                    "Verbale",
+                    "Errore durante la generazione del verbale.",
+                    parent=self.dialog,
+                )
+                return
+
+            dest_abs = add_section_document(tmp_path, "Verbali CD")
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+            row = get_section_document_by_relative_path(dest_abs)
+            if row and row.get("id") is not None:
+                doc_id = int(row["id"])
+                update_meeting(int(self.meeting_id), verbale_section_doc_id=doc_id)
+                self.verbale_section_doc_id = doc_id
+                self._set_verbale_path_in_entry(dest_abs)
+
+            msg = "Verbale generato e collegato correttamente."
+            if warnings:
+                msg += "\n\nAvvisi:\n- " + "\n- ".join([str(w) for w in warnings])
+            messagebox.showinfo("Verbale", msg, parent=self.dialog)
+        except Exception as exc:
+            messagebox.showerror(
+                "Verbale",
+                f"Errore durante la generazione/link del verbale:\n{exc}",
+                parent=self.dialog,
+            )
 
     def _build_email_initial_for_wizard(self, data: str, numero_cd: str, odg_text: str) -> tuple[str, str]:
         """Build (subject, body) for Email Wizard from meeting fields."""
