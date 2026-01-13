@@ -506,18 +506,19 @@ class App:
         self.notebook.pack(fill=tk.BOTH, expand=True)
         self.notebook.bind("<<NotebookTabChanged>>", self._on_notebook_tab_changed)
         
-        # Create tabs
+    # Create tabs
+    # ordine tab: soci, Consiglio Direttivo, Ponti, Magazzino, Calendario, Documenti, Statistiche (spostare sotto menu strumenti?)
         self._create_soci_tab()
-        self._add_tab_delimiter()
-        self._create_docs_tab()
-        self._add_tab_delimiter()
-        self._create_magazzino_tab()
-        self._add_tab_delimiter()
-        self._create_ponti_tab()
         self._add_tab_delimiter()
         self._create_consiglio_direttivo_tab()
         self._add_tab_delimiter()
+        self._create_ponti_tab()
+        self._add_tab_delimiter()
+        self._create_magazzino_tab()
+        self._add_tab_delimiter()
         self._create_calendar_tab()
+        self._add_tab_delimiter()
+        self._create_docs_tab()
         self._add_tab_delimiter()
         self._create_section_tab()
         self._add_tab_delimiter()
@@ -916,10 +917,10 @@ class App:
         self.docs_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.section_docs_panel = SectionDocumentPanel(self.docs_notebook)
-        self.docs_notebook.add(self.section_docs_panel, text="🏠 Documenti sezione")
+        self.docs_notebook.add(self.section_docs_panel, text="🏠 Doc sezione")
 
         self.panel_docs = DocumentPanel(self.docs_notebook, show_all_documents=True)
-        self.docs_notebook.add(self.panel_docs, text="👥 Documenti soci")
+        self.docs_notebook.add(self.panel_docs, text="👥 Doc soci")
 
     def _create_magazzino_tab(self):
         """Create the inventory (magazzino) tab."""

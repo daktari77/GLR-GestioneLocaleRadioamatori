@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import csv
+import zlib
 from collections.abc import Callable, Iterable
 
 from document_types_catalog import DEFAULT_SECTION_CATEGORY
@@ -24,17 +25,92 @@ from section_documents import (
     human_readable_mtime,
     human_readable_size,
     list_section_documents,
-    recalc_section_documents_data_caricamento,
     update_section_document_metadata,
 )
 
 logger = logging.getLogger("librosoci")
 
-from .treeview_tags import (
-    CategoryTagStyler,
-    MEMBER_CATEGORY_PALETTE,
-    SECTION_CATEGORY_PALETTE,
+_MEMBER_CATEGORY_PALETTE: tuple[str, ...] = (
+    "#FFE5E0",
+    "#FFEFD2",
+    "#FFF8C2",
+    "#E3F2FD",
+    "#E8F5E9",
+    "#F3E5F5",
+    "#E0F7FA",
+    "#FFF0F5",
+    "#EDE7F6",
+    "#F1F8E9",
 )
+
+_SECTION_CATEGORY_PALETTE: tuple[str, ...] = (
+    "#E3F2FD",
+    "#E0F7FA",
+    "#FFF4E6",
+    "#F3E5F5",
+    "#E8F5E9",
+    "#FFF8E1",
+    "#EDE7F6",
+    "#FCE4EC",
+)
+
+
+def _hex_to_rgb_components(value: str) -> tuple[int, int, int]:
+    color = value.lstrip("#")
+    if len(color) != 6:
+        return (255, 255, 255)
+    try:
+        red = int(color[0:2], 16)
+        green = int(color[2:4], 16)
+        blue = int(color[4:6], 16)
+        return (red, green, blue)
+    except ValueError:
+        return (255, 255, 255)
+
+
+def _ideal_foreground_for(bg_hex: str) -> str:
+    r, g, b = _hex_to_rgb_components(bg_hex)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "#202124" if luminance > 0.6 else "#ffffff"
+
+
+def _show_document_error(message: str) -> None:
+    messagebox.showerror("Documenti", message)
+
+
+class _CategoryTagStyler:
+    """Assign deterministic Treeview tag colors per document type."""
+
+    def __init__(self, tree: ttk.Treeview, *, default_category: str, palette: tuple[str, ...]):
+        self.tree = tree
+        self.default_category = (default_category or "Altro").strip() or "Altro"
+        self.palette = palette or ("#E8EAED",)
+        self._tag_cache: dict[str, str] = {}
+
+    def _normalized_label(self, category: str | None) -> str:
+        candidate = (category or self.default_category).strip()
+        return candidate or self.default_category
+
+    def _color_for_key(self, key: str) -> str:
+        index = zlib.crc32(key.encode("utf-8")) % len(self.palette)
+        return self.palette[index]
+
+    def tag_for(self, category: str | None) -> str:
+        label = self._normalized_label(category)
+        cache_key = label.lower()
+        if cache_key in self._tag_cache:
+            return self._tag_cache[cache_key]
+        tag_name = f"cat::{cache_key}"
+        color = self._color_for_key(cache_key)
+        self.tree.tag_configure(tag_name, background=color, foreground=_ideal_foreground_for(color))
+        self._tag_cache[cache_key] = tag_name
+        return tag_name
+
+    def prime(self, categories: Iterable[str] | None):
+        if not categories:
+            return
+        for category in categories:
+            self.tag_for(category)
 
 
 class DocumentPanel(ttk.Frame):
@@ -52,7 +128,7 @@ class DocumentPanel(ttk.Frame):
         self.member_filter_var = tk.StringVar(value="Tutti i soci")
         self.category_filter_var = tk.StringVar(value=self.category_filter_default)
         self.search_var = tk.StringVar()
-        self._category_tag_manager: CategoryTagStyler | None = None
+        self._category_tag_manager: _CategoryTagStyler | None = None
         default_message = (
             "Visualizzazione di tutti i documenti caricati."
             if self.show_all_documents
@@ -158,8 +234,6 @@ class DocumentPanel(ttk.Frame):
         self.btn_bulk_category.pack(side=tk.LEFT, padx=2)
         self.btn_export = ttk.Button(toolbar, text="Esporta CSV", command=self._export_selected_documents)
         self.btn_export.pack(side=tk.LEFT, padx=2)
-        self.btn_recalc_dates = ttk.Button(toolbar, text="Ricalcola date", command=self._recalc_dates)
-        self.btn_recalc_dates.pack(side=tk.LEFT, padx=(12, 2))
 
         info_label = ttk.Label(self, textvariable=self.info_var, foreground="gray40")
         info_label.pack(fill=tk.X, padx=5)
@@ -204,10 +278,10 @@ class DocumentPanel(ttk.Frame):
         self.tv_docs.bind("<<TreeviewSelect>>", self._on_tree_selection_changed)
         self.tv_docs.bind("<Double-1>", lambda _e: self._open_document())
 
-        self._category_tag_manager = CategoryTagStyler(
+        self._category_tag_manager = _CategoryTagStyler(
             self.tv_docs,
-            default_label=DEFAULT_DOCUMENT_CATEGORY,
-            palette=MEMBER_CATEGORY_PALETTE,
+            default_category=DEFAULT_DOCUMENT_CATEGORY,
+            palette=_MEMBER_CATEGORY_PALETTE,
         )
         self._category_tag_manager.prime(get_document_categories())
     
@@ -427,15 +501,6 @@ class DocumentPanel(ttk.Frame):
                     widget.configure(state=doc_state)
                 except tk.TclError:
                     pass
-
-        # Recalc can work on selection OR (with confirmation) on all currently shown docs.
-        can_recalc = bool(self.documents) and (self.show_all_documents or self._current_target_member_id() is not None)
-        recalc_state = "normal" if can_recalc else "disabled"
-        if getattr(self, "btn_recalc_dates", None) is not None:
-            try:
-                self.btn_recalc_dates.configure(state=recalc_state)
-            except tk.TclError:
-                pass
 
         member_available = self._current_target_member_id() is not None
         member_state = "normal" if member_available else "disabled"
@@ -681,7 +746,7 @@ class DocumentPanel(ttk.Frame):
 
         from utils import open_path
 
-        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+        ok = open_path(path, on_error=_show_document_error)
         if not ok:
             self.refresh()
 
@@ -699,7 +764,7 @@ class DocumentPanel(ttk.Frame):
         # If the file exists, prefer selecting it; otherwise open the folder.
         from utils import open_path
 
-        if open_path(path, select_target=path, on_error=lambda msg: messagebox.showerror("Documenti", msg)):
+        if open_path(path, select_target=path, on_error=_show_document_error):
             return
 
         folder = os.path.dirname(path) or os.path.dirname(os.path.abspath(path))
@@ -711,7 +776,7 @@ class DocumentPanel(ttk.Frame):
             messagebox.showerror("Documenti", "File non trovato sul disco")
             return
 
-        open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+        open_path(folder, on_error=_show_document_error)
 
     def _delete_document(self):
         doc = self._selected_doc()
@@ -817,32 +882,6 @@ class DocumentPanel(ttk.Frame):
         except Exception as exc:
             messagebox.showerror("Esporta", f"Impossibile scrivere il file:\n{exc}")
 
-    def _recalc_dates(self):
-        docs = self._selected_docs()
-        if not docs:
-            if not self.documents:
-                messagebox.showinfo("Ricalcola date", "Nessun documento disponibile")
-                return
-            if not messagebox.askyesno(
-                "Ricalcola date",
-                f"Nessun documento selezionato.\nRicalcolare le date per {len(self.documents)} documenti mostrati?",
-                icon="warning",
-            ):
-                return
-            docs = list(self.documents.values())
-
-        from documents_manager import recalc_member_documents_data_caricamento
-
-        updated, missing, errors = recalc_member_documents_data_caricamento(docs)
-        msg_lines = [f"Aggiornati: {updated}", f"File mancanti: {missing}"]
-        if errors:
-            msg_lines.append(f"Errori: {len(errors)}")
-            msg_lines.extend(errors[:10])
-            if len(errors) > 10:
-                msg_lines.append("...")
-        messagebox.showinfo("Ricalcola date", "\n".join(msg_lines))
-        self.refresh()
-
     def _open_member_folder(self):
         member_id = self._current_target_member_id()
         if not member_id:
@@ -853,7 +892,7 @@ class DocumentPanel(ttk.Frame):
             from utils import open_path
 
             folder = get_member_docs_dir(int(member_id))
-            open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+            open_path(folder, on_error=_show_document_error)
         except Exception as exc:
             messagebox.showerror("Documenti", f"Impossibile aprire la cartella del socio:\n{exc}")
 
@@ -914,7 +953,7 @@ class SectionDocumentPanel(ttk.Frame):
         self.upload_category_var = tk.StringVar(value=default_cat)
         self._doc_path_map: dict[str, str] = {}
         self._doc_meta_map: dict[str, dict] = {}
-        self._category_tag_manager: CategoryTagStyler | None = None
+        self._category_tag_manager: _CategoryTagStyler | None = None
         self._build_ui()
         self.refresh()
 
@@ -951,7 +990,6 @@ class SectionDocumentPanel(ttk.Frame):
         ttk.Button(toolbar, text="Apri cartella", command=self._open_document_folder).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Modifica", command=self._edit_document).pack(side=tk.LEFT, padx=2)
         ttk.Button(toolbar, text="Elimina", command=self._delete_document).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Ricalcola date", command=self._recalc_dates).pack(side=tk.LEFT, padx=(12, 2))
 
         ttk.Label(toolbar, text="Tipo:").pack(side=tk.LEFT, padx=(15, 2))
         section_categories = tuple(get_section_document_categories())
@@ -1026,10 +1064,10 @@ class SectionDocumentPanel(ttk.Frame):
         self.tv_docs.bind("<Double-1>", _open_edit_for_event)
         self.tv_docs.bind("<Return>", lambda _e: self._edit_document())
 
-        self._category_tag_manager = CategoryTagStyler(
+        self._category_tag_manager = _CategoryTagStyler(
             self.tv_docs,
-            default_label=DEFAULT_SECTION_CATEGORY,
-            palette=SECTION_CATEGORY_PALETTE,
+            default_category=DEFAULT_SECTION_CATEGORY,
+            palette=_SECTION_CATEGORY_PALETTE,
         )
         self._category_tag_manager.prime(get_section_document_categories())
 
@@ -1042,7 +1080,7 @@ class SectionDocumentPanel(ttk.Frame):
         tag_manager = getattr(self, "_category_tag_manager", None)
 
         try:
-            self.docs = list_section_documents(include_missing=False)
+            self.docs = list_section_documents()
         except Exception as exc:
             logger.error("Failed to read section documents: %s", exc)
             messagebox.showerror("Documenti", f"Errore lettura documenti sezione:\n{exc}")
@@ -1166,7 +1204,7 @@ class SectionDocumentPanel(ttk.Frame):
             return
         from utils import open_path
 
-        ok = open_path(path, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+        ok = open_path(path, on_error=_show_document_error)
         if not ok:
             self.refresh()
 
@@ -1198,9 +1236,9 @@ class SectionDocumentPanel(ttk.Frame):
 
         from utils import open_path
 
-        if open_path(path, select_target=path, on_error=lambda msg: messagebox.showerror("Documenti", msg)):
+        if open_path(path, select_target=path, on_error=_show_document_error):
             return
-        open_path(folder, on_error=lambda msg: messagebox.showerror("Documenti", msg))
+        open_path(folder, on_error=_show_document_error)
 
     def _edit_document(self):
         path = self._selected_path()
@@ -1265,43 +1303,6 @@ class SectionDocumentPanel(ttk.Frame):
                 self.refresh()
         except Exception as exc:
             messagebox.showerror("Documenti", f"Errore eliminazione documento:\n{exc}")
-
-    def _recalc_dates(self):
-        selected = list(self.tv_docs.selection())
-        docs: list[dict] = []
-        for item_id in selected:
-            doc = self._doc_meta_map.get(item_id)
-            if isinstance(doc, dict):
-                docs.append(doc)
-
-        if not docs:
-            visible_docs: list[dict] = []
-            for item_id in self.tv_docs.get_children():
-                doc = self._doc_meta_map.get(item_id)
-                if isinstance(doc, dict):
-                    visible_docs.append(doc)
-            if not visible_docs:
-                messagebox.showinfo("Ricalcola date", "Nessun documento disponibile")
-                return
-            if not messagebox.askyesno(
-                "Ricalcola date",
-                f"Nessun documento selezionato.\nRicalcolare le date per {len(visible_docs)} documenti mostrati?",
-                icon="warning",
-            ):
-                return
-            docs = visible_docs
-
-        updated, missing, errors = recalc_section_documents_data_caricamento(docs)
-        msg_lines = [f"Aggiornati: {updated}", f"File mancanti: {missing}"]
-        if errors:
-            msg_lines.append(f"Errori: {len(errors)}")
-            msg_lines.extend(errors[:10])
-            if len(errors) > 10:
-                msg_lines.append("...")
-        messagebox.showinfo("Ricalcola date", "\n".join(msg_lines))
-        self.refresh()
-        if self._on_changed:
-            self._on_changed()
 
 class SectionInfoPanel(ttk.Frame):
     """Panel for section information."""
@@ -1522,13 +1523,6 @@ class EventLogPanel(ttk.Frame):
         self.tv_events.column("dettagli", width=300)
         
         self.tv_events.pack(fill=tk.BOTH, expand=True)
-
-        self._event_type_tags = CategoryTagStyler(
-            self.tv_events,
-            default_label="Altro",
-            palette=SECTION_CATEGORY_PALETTE,
-            tag_prefix="evt::",
-        )
     
     def refresh(self):
         """Refresh event log"""
@@ -1545,15 +1539,12 @@ class EventLogPanel(ttk.Frame):
             )
             
             for event in events:
-                tag_manager = getattr(self, "_event_type_tags", None)
-                tipo = event.get("tipo_evento")
-                tags = (tag_manager.tag_for(str(tipo)),) if tag_manager is not None else ()
                 self.tv_events.insert("", tk.END, values=(
                     event["ts"],
                     event["tipo_evento"],
                     f"#{event['socio_id']}",
                     event["dettagli_json"][:50]
-                ), tags=tags)
+                ))
         except Exception as e:
             logger.warning("Failed to load events: %s", e)
     
