@@ -9,9 +9,57 @@ from tkinter import ttk, filedialog, messagebox
 import logging
 import csv
 
-logger = logging.getLogger("librosoci")
+# Configure logging for this module
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Log to console
+        logging.FileHandler('import_wizard.log', mode='a', encoding='utf-8')  # Log to file
+    ]
+)
+
+logger = logging.getLogger("import_wizard")
 
 class ImportWizard:
+    @staticmethod
+    def bind_import_shortcut(root, callback):
+        """Associa Ctrl+I per avviare il wizard di importazione CSV."""
+        def _on_ctrl_i(event):
+            callback()
+            return "break"
+        root.bind_all('<Control-i>', _on_ctrl_i)
+    def _clean_row(self, row):
+        """Converte una riga in lista di stringhe, pad con '' se necessario."""
+        if row is None:
+            return []
+        if not hasattr(row, '__getitem__'):
+            row = [str(row)]
+        else:
+            row = list(row)
+        return [str(x).strip() if x is not None else '' for x in row]
+
+    def _remove_duplicate_header(self):
+        """Rimuove header duplicato se presente come prima riga dei dati. Ritorna True se rimosso."""
+        if hasattr(self, 'rows') and hasattr(self, 'headers') and self.rows and self.headers:
+            first_row = self._clean_row(self.rows[0])[:len(self.headers)]
+            headers_clean = [str(h).strip() for h in self.headers]
+            if first_row == headers_clean:
+                logger.info("Headers found as first row, removing from data rows")
+                self.rows = self.rows[1:]
+                logger.info(f"Rows after header removal: {len(self.rows)}")
+                return True
+        return False
+
+    def _pad_row(self, row, target_len, fill_last_with_ellipsis=False):
+        """Pad a row to target_len, optionally fill last col with '...' if needed."""
+        padded_row = list(row[:target_len])
+        while len(padded_row) < target_len:
+            if fill_last_with_ellipsis and len(padded_row) == target_len - 1:
+                padded_row.append("...")
+            else:
+                padded_row.append('')
+        return padded_row
     """Main import wizard dialog - manages the complete import process"""
     
     def __init__(self, parent, on_complete_callback=None):
@@ -22,6 +70,7 @@ class ImportWizard:
             parent: Parent window
             on_complete_callback: Function to call when import completes (passes count)
         """
+        logger.info("Initializing ImportWizard")
         self.parent = parent
         self.on_complete_callback = on_complete_callback
         
@@ -87,6 +136,7 @@ class ImportWizard:
         
         # Show first page
         self._show_page()
+        logger.info("ImportWizard initialized successfully")
     
     def _build_page_file(self):
         """Page 1: File selection"""
@@ -112,23 +162,24 @@ class ImportWizard:
         self.delim_label.pack(padx=5, pady=5)
         
         # Preview
-        preview_frame = ttk.LabelFrame(frame, text="Anteprima intestazioni")
+        preview_frame = ttk.LabelFrame(frame, text="Anteprima file CSV")
         preview_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         
-        scrollbar = ttk.Scrollbar(preview_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(preview_frame)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        h_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.HORIZONTAL)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         
         self.tv_file_preview = ttk.Treeview(
-            preview_frame, columns=["header"], show="tree", height=8,
-            yscrollcommand=scrollbar.set
+            preview_frame, show="headings", columns=(), height=8,
+            yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set
         )
-        scrollbar.config(command=self.tv_file_preview.yview)
+        self.tv_file_preview.column("#0", width=0, stretch=False)  # Hide the default column
+        v_scrollbar.config(command=self.tv_file_preview.yview)
+        h_scrollbar.config(command=self.tv_file_preview.xview)
         self.tv_file_preview.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        # Enable click-to-sort on the headers
-        try:
-            self._make_treeview_sortable(self.tv_file_preview, ['header'])
-        except Exception:
-            pass
     
     def _build_page_config(self):
         """Page 2: Complete configuration with mapping, field selection and preview"""
@@ -204,143 +255,7 @@ class ImportWizard:
         ttk.Radiobutton(options_frame, text="Automatica", variable=self.name_split_var, value="smart").pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(options_frame, text="Primo=Nome", variable=self.name_split_var, value="first").pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(options_frame, text="Ultimo=Cognome", variable=self.name_split_var, value="last").pack(side=tk.LEFT, padx=5)
-        """Page 2: Preset loading"""
-        frame = ttk.Frame(self.content_frame)
-        frame.pack(fill=tk.BOTH, expand=True)
-        
-        ttk.Label(frame, text="Carica un preset di mapping salvato (opzionale)").pack(pady=10)
-        
-        # Preset list
-        list_frame = ttk.LabelFrame(frame, text="Preset disponibili")
-        list_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-        
-        scrollbar = ttk.Scrollbar(list_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        self.listbox_presets = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, height=10)
-        scrollbar.config(command=self.listbox_presets.yview)
-        self.listbox_presets.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.listbox_presets.bind("<<ListboxSelect>>", self._on_preset_selected)
-        
-        # Buttons
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(fill=tk.X, pady=10)
-        
-        self.btn_use_preset = ttk.Button(button_frame, text="Usa preset", command=self._use_preset, state=tk.DISABLED)
-        self.btn_use_preset.pack(side=tk.LEFT, padx=2)
-        
-        ttk.Button(button_frame, text="Salta (configura manualmente)", command=lambda: None).pack(side=tk.LEFT, padx=2)
-        
-        # Load presets
-        self._refresh_preset_list()
-    
-    def _build_page_mapping(self):
-        """Page 3: Column mapping and field selection"""
-        frame = ttk.Frame(self.content_frame)
-        frame.pack(fill=tk.BOTH, expand=True)
-        
-        ttk.Label(frame, text="Associa le colonne CSV ai campi del database e seleziona quali aggiornare").pack(pady=10)
-        
-        # Info text
-        info_frame = ttk.Frame(frame)
-        info_frame.pack(fill=tk.X, pady=5)
-        info_text = ttk.Label(
-            info_frame,
-            text="✓ = Campo sarà aggiornato durante l'importazione",
-            foreground="blue",
-            font="AppNormal",
-        )
-        info_text.pack()
-        
-        # Scrollable frame
-        canvas = tk.Canvas(frame, height=350)
-        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Get target fields
-        try:
-            from csv_import import TARGET_FIELDS
-        except Exception:
-            TARGET_FIELDS = [("matricola", "Matricola"), ("nome", "Nome"), ("cognome", "Cognome")]
-        
-        # Control buttons
-        btn_frame = ttk.Frame(scrollable_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-        ttk.Button(btn_frame, text="Auto-rileva mapping", command=self._auto_detect_mapping).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Seleziona tutto", command=self._select_all_fields).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Deseleziona tutto", command=self._deselect_all_fields).pack(side=tk.LEFT, padx=5)
-        
-        ttk.Separator(scrollable_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
-        
-        # Header
-        header_frame = ttk.Frame(scrollable_frame)
-        header_frame.pack(fill=tk.X, padx=10, pady=5)
-        ttk.Label(header_frame, text="✓", font="AppBold", width=3).pack(side=tk.LEFT, padx=2)
-        ttk.Label(header_frame, text="Campo database", font="AppBold", width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Label(header_frame, text="Colonna CSV", font="AppBold").pack(side=tk.LEFT, padx=5)
-        
-        # CSV column options
-        csv_options = [""] + self.headers
-        
-        # Mapping widgets and checkboxes
-        self.mapping_widgets = {}
-        self.field_checkboxes = {}
-        
-        for field_key, field_label in TARGET_FIELDS:
-            # Skip ID (not mappable)
-            if field_key == 'id':
-                continue
-                
-            row_frame = ttk.Frame(scrollable_frame)
-            row_frame.pack(fill=tk.X, padx=10, pady=2)
-            
-            # Checkbox (except matricola which is always needed)
-            if field_key == 'matricola':
-                # Matricola always selected, show disabled checkbox
-                var = tk.BooleanVar()
-                var.set(True)
-                cb = ttk.Checkbutton(row_frame, variable=var, state="disabled", width=3)
-                self.field_checkboxes[field_key] = var
-            else:
-                var = tk.BooleanVar()
-                # Default: select all fields except attivo (let user choose)
-                if field_key != 'attivo':
-                    var.set(True)
-                else:
-                    var.set(False)  # attivo requires user choice
-                cb = ttk.Checkbutton(row_frame, variable=var, width=3)
-                self.field_checkboxes[field_key] = var
-            
-            cb.pack(side=tk.LEFT, padx=2)
-            
-            # Field label
-            ttk.Label(row_frame, text=field_label, width=20, anchor="w").pack(side=tk.LEFT, padx=5)
-            
-            # Mapping combo
-            combo = ttk.Combobox(row_frame, values=csv_options, state="readonly", width=25)
-            combo.pack(side=tk.LEFT, padx=5)
-            
-            self.mapping_widgets[field_key] = combo
-        
-        # Special note for attivo field
-        note_frame = ttk.Frame(frame)
-        note_frame.pack(fill=tk.X, pady=10)
-        note_text = ttk.Label(note_frame, 
-            text="Nota: Il campo 'Attivo' applica la regola basata su Voto e Q0. Selezionalo solo se vuoi aggiornare lo stato.",
-            foreground="red", font="AppNormal", justify=tk.LEFT)
-        note_text.pack()
-    
+
     def _build_page_import(self):
         """Page 3: Import execution"""
         frame = ttk.Frame(self.content_frame)
@@ -450,90 +365,15 @@ class ImportWizard:
         else:
             self.mapping.pop(target_field, None)
     
-    def _build_page_preview(self):
-        """Page 4: Preview mapped data"""
-        frame = ttk.Frame(self.content_frame)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(frame, text="Anteprima dei dati mappati (prime 100 righe)").pack(pady=8)
-
-        # Build treeview with target fields as columns
-        try:
-            from csv_import import TARGET_FIELDS, apply_mapping
-        except Exception:
-            TARGET_FIELDS = []
-            apply_mapping = None
-
-        cols = [k for k, _ in TARGET_FIELDS]
-        headings = {k: lbl for k, lbl in TARGET_FIELDS}
-
-        tree_frame = ttk.Frame(frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        scrollbar = ttk.Scrollbar(tree_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.tv_preview = ttk.Treeview(tree_frame, columns=cols, show='headings', height=15,
-                                       yscrollcommand=scrollbar.set)
-        scrollbar.config(command=self.tv_preview.yview)
-
-        for c in cols:
-            self.tv_preview.heading(c, text=headings.get(c, c))
-            self.tv_preview.column(c, width=120, anchor='w')
-
-        self.tv_preview.pack(fill=tk.BOTH, expand=True)
-
-        # Enable sorting on preview columns
-        try:
-            self._make_treeview_sortable(self.tv_preview, cols)
-        except Exception:
-            pass
-
-        # Info label
-        self.preview_info = ttk.Label(frame, text="Caricamento anteprima...")
-        self.preview_info.pack(pady=4)
-
-        # Populate preview
-        try:
-            if apply_mapping is None:
-                raise RuntimeError("Modulo v41_csv_import non disponibile")
-
-            # Ensure mapping has type Dict[str, Optional[str]] to satisfy type checkers
-            # Create a mapping dict with Optional[str] values to satisfy type checkers
-            mapping_cast = {k: (v if v is not None else None) for k, v in self.mapping.items()}
-            mapped = apply_mapping(self.rows, mapping_cast)
-
-            def _display_val(val, key=None):
-                if val is None:
-                    return ""
-                s = str(val)
-                if key in ('attivo', 'voto'):
-                    if s == '1':
-                        return 'Si'
-                    if s == '0':
-                        return 'No'
-                return s
-
-            for i, r in enumerate(mapped[:100]):
-                values = [ _display_val(r.get(c), c) for c in cols ]
-                self.tv_preview.insert('', tk.END, values=values)
-
-            self.preview_info.config(text=f"Righe mappate: {len(mapped)} (mostrate: {min(100, len(mapped))})")
-        except Exception as e:
-            self.preview_info.config(text=f"Errore anteprima: {e}")
-            logger.exception("Preview build failed: %s", e)
-
-        # Allow saving mapping from preview page
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill=tk.X, pady=6)
-        ttk.Button(btn_frame, text="Salva mapping come preset", command=self._save_mapping_preset).pack(side=tk.LEFT, padx=4)
-    
     def _select_file(self):
         """File selection"""
+        logger.info("Opening file selection dialog")
         path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
         if not path:
+            logger.info("File selection cancelled")
             return
         
+        logger.info(f"Selected file: {path}")
         try:
             from csv_import import sniff_delimiter, read_csv_file, auto_detect_mapping
             
@@ -542,57 +382,100 @@ class ImportWizard:
             # Detect delimiter
             self.delimiter = sniff_delimiter(path)
             self.delim_label.config(text=f"Rilevato: {repr(self.delimiter)}")
+            logger.info(f"Detected delimiter: {repr(self.delimiter)}")
             
             # Load CSV
             self.headers, self.rows = read_csv_file(path, self.delimiter)
+            logger.info(f"Loaded CSV: {len(self.headers)} headers, {len(self.rows)} rows")
+            logger.debug(f"Headers: {self.headers}")
+            logger.debug(f"First 3 rows: {self.rows[:3] if self.rows else 'No rows'}")
+            
+            # Rimuovi header duplicato se presente e mostra solo i dati veri
+            header_removed = self._remove_duplicate_header()
             
             # Update file label
             self.file_label.config(text=path, foreground="black")
             
             # Update preview
+            if not self.headers:
+                logger.warning("No headers found in CSV file")
+                # No headers, show message
+                self.tv_file_preview['columns'] = ['message']
+                self.tv_file_preview.heading('message', text='Messaggio')
+                self.tv_file_preview.column('message', width=300)
+                for item in self.tv_file_preview.get_children():
+                    self.tv_file_preview.delete(item)
+                self.tv_file_preview.insert("", tk.END, values=['Nessuna intestazione trovata nel file CSV'])
+                return
+            
+            # Limit to first 10 columns to avoid overly wide display
+            display_headers = self.headers[:10]
+            if len(self.headers) > 10:
+                display_headers.append("...")  # Indicate truncation
+                logger.info(f"Truncated headers to first 10 columns (total: {len(self.headers)})")
+            
+            self.tv_file_preview['columns'] = display_headers
+            logger.debug(f"Display headers: {display_headers}")
+            
+            # Calculate column widths based on content
+            max_lengths = {}
+            for header in display_headers:
+                if header != "...":
+                    max_lengths[header] = len(str(header))
+                else:
+                    max_lengths[header] = 3
+            
+            # Check first 5 rows for max lengths
+            for row in self.rows[:5]:
+                clean_row = self._clean_row(row)
+                for i, value in enumerate(clean_row[:10]):  # Only check first 10 columns
+                    if i < len(display_headers) and display_headers[i] != "...":
+                        header = display_headers[i]
+                        max_lengths[header] = max(max_lengths[header], len(str(value) if value is not None else ''))
+            
+            # Set headings and column widths (min 80, max 200 pixels)
+            for col in display_headers:
+                self.tv_file_preview.heading(col, text=col)
+                width = min(max(max_lengths[col] * 8, 80), 200)  # Rough char to pixel conversion
+                self.tv_file_preview.column(col, width=width, minwidth=50)
+            
+            # Clear existing items
             for item in self.tv_file_preview.get_children():
                 self.tv_file_preview.delete(item)
-            for header in self.headers:
-                self.tv_file_preview.insert("", tk.END, values=(header,))
+            
+            # Insert first 5 data rows (headers are already shown as column headings)
+            if not self.rows:
+                logger.warning("No data rows found in CSV file")
+                self.tv_file_preview.insert("", tk.END, values=['Nessun dato trovato nel file CSV'] + [''] * (len(display_headers) - 1))
+            else:
+                logger.info(f"Inserting first {min(5, len(self.rows))} data rows into preview")
+                fill_last = ("..." in display_headers)
+                # Convert dict rows to value lists in header order for preview
+                for row in self.rows[:5]:
+                    if isinstance(row, dict):
+                        # Use self.headers for column order, not display_headers (which may be truncated)
+                        values = [str(row.get(h, '')) if row.get(h, '') is not None else '' for h in self.headers[:10]]
+                    else:
+                        values = [str(val) if val is not None else '' for val in self._clean_row(row)[:10]]
+                    padded_row = self._pad_row(values, len(display_headers), fill_last_with_ellipsis=fill_last)
+                    self.tv_file_preview.insert("", tk.END, values=padded_row)
+            
+            # Enable click-to-sort on the headers (only for actual columns)
+            sortable_cols = [col for col in display_headers if col != "..."]
+            try:
+                self._make_treeview_sortable(self.tv_file_preview, sortable_cols)
+                logger.debug("Enabled sorting on columns")
+            except Exception as e:
+                logger.error(f"Failed to enable sorting: {e}")
             
             # Auto-detect mapping
             self.mapping = auto_detect_mapping(self.headers)
+            logger.info("Auto-detected mapping completed")
             
             logger.info(f"Loaded CSV: {len(self.rows)} rows, {len(self.headers)} columns")
         except Exception as e:
+            logger.error(f"Error loading CSV file: {e}", exc_info=True)
             messagebox.showerror("Errore", f"Errore caricamento file: {e}")
-    
-    def _refresh_preset_list(self):
-        """Refresh preset list"""
-        try:
-            from csv_import import load_presets
-            self.presets = load_presets()
-            
-            self.listbox_presets.delete(0, tk.END)
-            for name in sorted(self.presets.keys()):
-                self.listbox_presets.insert(tk.END, name)
-        except Exception as e:
-            logger.warning(f"Failed to load presets: {e}")
-    
-    def _on_preset_selected(self, event):
-        """Handle preset selection"""
-        sel = self.listbox_presets.curselection()
-        self.btn_use_preset.config(state=tk.NORMAL if sel else tk.DISABLED)
-    
-    def _use_preset(self):
-        """Load selected preset"""
-        sel = self.listbox_presets.curselection()
-        if not sel:
-            return
-        
-        preset_name = self.listbox_presets.get(sel[0])
-        self.mapping = self.presets.get(preset_name, {})
-        
-        # Update mapping widgets
-        for field, combo in self.mapping_widgets.items():
-            combo.set(self.mapping.get(field, ""))
-        
-        messagebox.showinfo("Preset", f"Preset '{preset_name}' caricato.")
     
     def _auto_detect_mapping(self):
         """Auto-detect column mapping"""
@@ -617,39 +500,6 @@ class ImportWizard:
         except Exception as e:
             logger.error(f"Auto detect mapping failed: {e}")
             messagebox.showerror("Errore", f"Errore nel rilevamento automatico: {e}")
-    
-    def _save_mapping_preset(self):
-        """Save current mapping as preset"""
-        dialog = tk.Toplevel(self.win)
-        dialog.title("Salva mapping")
-        dialog.geometry("300x150")
-        dialog.transient(self.win)
-        dialog.grab_set()
-        
-        ttk.Label(dialog, text="Nome preset:").pack(padx=10, pady=10)
-        entry = ttk.Entry(dialog, width=30)
-        entry.pack(padx=10, pady=5)
-        
-        def save_it():
-            name = entry.get().strip()
-            if not name:
-                messagebox.showwarning("Salva", "Inserire un nome.")
-                return
-            
-            try:
-                from csv_import import save_presets
-                
-                # Use self.mapping (already contains the current mapping)
-                mapping = {k: v for k, v in self.mapping.items() if v}
-                
-                self.presets[name] = mapping
-                save_presets(self.presets)
-                messagebox.showinfo("Salva", f"Preset '{name}' salvato.")
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Errore", f"Errore: {e}")
-        
-        ttk.Button(dialog, text="Salva", command=save_it).pack(pady=5)
 
     def _make_treeview_sortable(self, tv, cols):
         """Enable click-to-sort on the given Treeview for the provided columns."""
@@ -757,6 +607,7 @@ class ImportWizard:
     
     def _execute_import(self):
         """Execute the import process"""
+        logger.info("Starting detailed import execution")
         try:
             from soci_import_engine import fetch_socio_by_matricola, insert_socio, update_socio_by_matricola
             from csv_import import apply_mapping
@@ -813,15 +664,19 @@ class ImportWizard:
             name_split_mode = _ask_name_split_mode()
             if name_split_mode is None:
                 # User cancelled split choice -> abort import
+                logger.info("Import cancelled by user during name split mode selection")
                 messagebox.showinfo("Importazione", "Importazione annullata dall'utente.")
                 return
 
+            logger.info(f"Name split mode selected: {name_split_mode}")
+            
             # Apply mapping to data (returns list of dicts)
             mapping_cast = {k: (v if v is not None else None) for k, v in self.mapping.items()}
             # Ensure any mapping that pointed to 'attivo' is ignored
             if 'attivo' in mapping_cast:
                 mapping_cast.pop('attivo', None)
             mapped_rows = apply_mapping(self.rows, mapping_cast)
+            logger.info(f"Applied mapping to {len(mapped_rows)} rows")
 
             def _voto_to_bool(v):
                 if v is None:
@@ -856,6 +711,18 @@ class ImportWizard:
                     if 'attivo' in r:
                         del r['attivo']
 
+            # Calculate data_scadenza if data_iscrizione is present but data_scadenza is not
+            # Membership validity is 3 years from inscription date
+            for r in mapped_rows:
+                if r.get('data_iscrizione') and not r.get('data_scadenza'):
+                    try:
+                        from datetime import datetime, timedelta
+                        iscrizione_date = datetime.fromisoformat(r['data_iscrizione'])
+                        scadenza_date = iscrizione_date + timedelta(days=365*3)  # 3 years
+                        r['data_scadenza'] = scadenza_date.date().isoformat()
+                    except Exception as e:
+                        logger.warning(f"Could not calculate scadenza for iscrizione {r.get('data_iscrizione')}: {e}")
+
             total = len(mapped_rows)
             if total == 0:
                 messagebox.showwarning("Importazione", "Nessuna riga da importare.")
@@ -875,11 +742,14 @@ class ImportWizard:
                 "Premi 'Annulla' per interrompere l'importazione."
             )
             if res is None:
+                logger.info("Import cancelled by user during duplicate strategy selection")
                 messagebox.showinfo("Importazione", "Importazione annullata dall'utente.")
                 return
             if res is True:
                 duplicate_strategy = 'status_only'
+                logger.info("Duplicate strategy set to: status_only")
 
+            logger.info(f"Starting import of {total} records")
             self.import_count = 0
             for i, row in enumerate(mapped_rows):
                 # Update progress
@@ -889,6 +759,8 @@ class ImportWizard:
                 self.win.update()
 
                 try:
+                    matricola = row.get('matricola')
+                    logger.debug(f"Processing row {i+1}: matricola={matricola}")
                     # If CSV provides a single 'nome' field containing both surname and given name
                     # (e.g. 'ROSSI PAOLA') and 'cognome' mapping is empty/None, attempt to split with heuristics.
                     nome_val = row.get('nome')
@@ -977,6 +849,7 @@ class ImportWizard:
                                 keep_empty_strings=False,
                             )
                             self.import_count += 1
+                            logger.debug(f"Updated existing socio matricola {matricola}")
                         else:
                             logger.debug("No fields to update for matricola %s", matricola)
                     else:
@@ -991,6 +864,7 @@ class ImportWizard:
                             continue
                         insert_socio(payload, write_enabled=True)
                         self.import_count += 1
+                        logger.debug(f"Inserted new socio matricola {matricola}")
                 except Exception as e:
                     logger.error("Unexpected error importing row %s: %s", i, e)
                     continue
@@ -999,6 +873,7 @@ class ImportWizard:
             self.progress["value"] = 100
             self.progress_text.config(text="Importazione completata!")
             messagebox.showinfo("Importazione", f"{self.import_count} soci importati/aggiornati con successo.")
+            logger.info(f"Import completed successfully: {self.import_count} records imported/updated")
 
             # Callback
             if self.on_complete_callback:
