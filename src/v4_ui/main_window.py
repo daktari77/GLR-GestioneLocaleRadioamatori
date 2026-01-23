@@ -91,6 +91,16 @@ class App:
         self.root.geometry("1300x860")
         # Enforce a minimum so layout widgets never collapse
         self.root.minsize(1300, 860)
+        # Center the window on screen
+        self.root.update_idletasks()
+        width = 1300
+        height = 860
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.after(100, lambda: self.root.attributes('-topmost', False))
         # Ensure closing main window also closes all Toplevel dialogs
         self.root.protocol("WM_DELETE_WINDOW", self._on_root_close)
         
@@ -442,6 +452,137 @@ class App:
             messagebox.showerror("Errore Backup", f"Errore durante il backup on demand:\n{str(e)}")
             logger.error(f"Manual backup failed: {e}")
 
+    def _reset_to_factory(self):
+        """Reset application to factory defaults with optional backup."""
+        # First confirmation
+        if not messagebox.askyesno(
+            "Reset ai dati di fabbrica",
+            "⚠️ ATTENZIONE: Questa operazione eliminerà tutti i dati dell'applicazione!\n\n"
+            "• Tutti i soci e i loro documenti verranno eliminati\n"
+            "• Il database verrà svuotato\n"
+            "• La configurazione verrà resettata\n\n"
+            "L'applicazione verrà riavviata e mostrerà nuovamente il wizard di configurazione iniziale.\n\n"
+            "Sei sicuro di voler procedere?",
+            icon="warning"
+        ):
+            return
+
+        # Ask about backup
+        do_backup = messagebox.askyesno(
+            "Backup prima del reset",
+            "Vuoi creare una copia di backup dei dati attuali prima del reset?\n\n"
+            "Questo salverà tutti i documenti e il database in un archivio ZIP.",
+            icon="question"
+        )
+
+        # Perform backup if requested
+        backup_path = None
+        if do_backup:
+            try:
+                from backup import backup_on_demand
+                from config import DATA_DIR, DB_NAME, get_backup_dir
+
+                self._set_status_message("Creazione backup in corso...")
+                self.root.update()
+
+                success, result = backup_on_demand(DATA_DIR, DB_NAME, get_backup_dir())
+                if success:
+                    backup_path = result
+                    messagebox.showinfo(
+                        "Backup completato",
+                        f"Backup creato con successo:\n{backup_path}\n\n"
+                        "Conserva questo file in un luogo sicuro."
+                    )
+                else:
+                    if not messagebox.askyesno(
+                        "Backup fallito",
+                        f"Il backup non è riuscito: {result}\n\n"
+                        "Vuoi procedere comunque con il reset?",
+                        icon="warning"
+                    ):
+                        return
+            except Exception as e:
+                if not messagebox.askyesno(
+                    "Errore backup",
+                    f"Errore durante il backup: {str(e)}\n\n"
+                    "Vuoi procedere comunque con il reset?",
+                    icon="warning"
+                ):
+                    return
+
+        # Final confirmation
+        if not messagebox.askyesno(
+            "Conferma reset finale",
+            "Questa è l'ultima conferma.\n\n"
+            "Tutti i dati verranno eliminati e l'applicazione verrà riavviata.\n\n"
+            "Procedere con il reset?",
+            icon="warning"
+        ):
+            return
+
+        try:
+            self._set_status_message("Reset in corso...")
+            self.root.update()
+
+            # Reset configuration
+            from config_manager import save_config
+            from config import DEFAULT_CONFIG
+
+            # Save default config with wizard_completed = False
+            reset_config = DEFAULT_CONFIG.copy()
+            reset_config['wizard_completed'] = False
+            save_config(reset_config)
+
+            # Delete database
+            from config import DB_NAME
+            if os.path.exists(DB_NAME):
+                try:
+                    os.remove(DB_NAME)
+                    logger.info(f"Database deleted: {DB_NAME}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete database: {e}")
+
+            # Delete data directory contents (but keep the directory structure)
+            from config import DATA_DIR
+            if os.path.exists(DATA_DIR):
+                try:
+                    # Remove documents but keep directory structure
+                    docs_dir = os.path.join(DATA_DIR, "documents")
+                    if os.path.exists(docs_dir):
+                        import shutil
+                        shutil.rmtree(docs_dir, ignore_errors=True)
+                        logger.info(f"Documents directory cleared: {docs_dir}")
+
+                    # Clear other data subdirectories as needed
+                    for subdir in ["section_docs", "tools"]:
+                        subpath = os.path.join(DATA_DIR, subdir)
+                        if os.path.exists(subpath):
+                            shutil.rmtree(subpath, ignore_errors=True)
+                            logger.info(f"Data subdirectory cleared: {subpath}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to clear data directory: {e}")
+
+            # Show success message
+            messagebox.showinfo(
+                "Reset completato",
+                "Reset ai dati di fabbrica completato con successo!\n\n"
+                f"{'Backup salvato: ' + os.path.basename(backup_path) if backup_path else 'Nessun backup creato.'}\n\n"
+                "L'applicazione verrà riavviata."
+            )
+
+            # Restart application
+            self.root.quit()
+            # Note: The main.py should detect wizard_completed=False and show the wizard
+
+        except Exception as e:
+            logger.error(f"Reset failed: {e}")
+            messagebox.showerror(
+                "Errore reset",
+                f"Si è verificato un errore durante il reset:\n{str(e)}\n\n"
+                "Alcuni dati potrebbero non essere stati eliminati correttamente."
+            )
+
     def _relink_document_paths(self):
         """Prompt user for a new documents root and attempt to relink missing files."""
         new_root = filedialog.askdirectory(parent=self.root, title="Seleziona nuova cartella documenti")
@@ -608,10 +749,13 @@ class App:
         tools_menu.add_command(label="⚙️ Preferenze...", command=self._show_preferences_dialog)
         tools_menu.add_separator()
         tools_menu.add_command(label="🏠 Configurazione sezione...", command=self._show_section_config_dialog)
+        tools_menu.add_command(label="🧙‍♂️ Configurazione guidata (Admin)...", command=self._show_admin_wizard)
         tools_menu.add_command(label="🛡️ Backup database...", accelerator="Ctrl+B", command=self._manual_backup)
         tools_menu.add_command(label="🔗 Riallinea percorsi documenti...", command=self._relink_document_paths)
         tools_menu.add_command(label="🧪 Verifica integrità DB...", command=self._not_implemented)
         tools_menu.add_command(label="📜 Log eventi...", command=self._show_event_log)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="🔄 Reset ai dati di fabbrica...", command=self._reset_to_factory)
         
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -681,6 +825,23 @@ class App:
         except Exception as exc:
             logger.error("Errore apertura wizard import documenti: %s", exc)
             messagebox.showerror("Import documenti", f"Errore:\n{exc}")
+
+    def _show_admin_wizard(self):
+        """Lancia il wizard di configurazione in modalità ADMIN, precompilando i dati dalla configurazione attuale."""
+        try:
+            from tkinter_wizard import run_wizard
+        except ImportError:
+            messagebox.showerror("Configurazione guidata", "Modulo wizard non trovato.")
+            return
+
+        def on_complete(state):
+            # Reload configuration
+            from config_manager import load_config
+            self.cfg = load_config()
+            self._update_title()
+            messagebox.showinfo("Configurazione guidata", "Configurazione aggiornata con successo.", parent=self.root)
+
+        run_wizard(mode="ADMIN", parent=self.root, on_complete=on_complete)
     
     def _create_soci_tab(self):
         """Create the Soci (members) tab."""
@@ -712,12 +873,6 @@ class App:
         filter_toolbar.pack(fill=tk.X, padx=5, pady=2)
 
         ttk.Label(filter_toolbar, text="Filtri:", font="AppNormal").pack(side=tk.LEFT, padx=5)
-
-        # Privacy filter
-        self.privacy_filter_var = tk.StringVar(value="tutti")
-        ttk.Radiobutton(filter_toolbar, text="Tutti", variable=self.privacy_filter_var, value="tutti", command=self._apply_filters).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(filter_toolbar, text="⚠ Senza privacy", variable=self.privacy_filter_var, value="no_privacy", command=self._apply_filters).pack(side=tk.LEFT, padx=2)
-        ttk.Radiobutton(filter_toolbar, text="✓ Con privacy", variable=self.privacy_filter_var, value="with_privacy", command=self._apply_filters).pack(side=tk.LEFT, padx=2)
 
         # Status filter
         ttk.Label(filter_toolbar, text="  |  Stato:").pack(side=tk.LEFT, padx=5)
@@ -800,8 +955,6 @@ class App:
             # light green for active, light red for inactive
             self.tv_soci.tag_configure('active', background='#e9f7ef')
             self.tv_soci.tag_configure('inactive', background='#f8d7da')
-            # rows without privacy appear slightly dimmed
-            self.tv_soci.tag_configure('no_privacy', foreground='gray40')
             # rows with missing critical data (matricola, email, telefono, indirizzo)
             self.tv_soci.tag_configure('missing_data', background='#fff3cd', foreground='#856404')
         except Exception:
@@ -986,8 +1139,110 @@ class App:
             side=tk.LEFT, padx=2
         )
 
-        # Single unified view (Riunioni + Verbali + Delibere in one tab)
-        self._build_cd_riunioni_view(tab)
+        # --- Nuovo tab: Libro Delibere (tabellare + esportazione PDF/DOCX) ---
+        self.cd_notebook = ttk.Notebook(tab)
+        self.cd_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Tab 1: Vista riunioni/delibere classica
+        cd_main_frame = ttk.Frame(self.cd_notebook)
+        self.cd_notebook.add(cd_main_frame, text="Riunioni")
+        self._build_cd_riunioni_view(cd_main_frame)
+
+        # Tab 2: Libro Delibere (tabellare per triennio)
+        libro_frame = ttk.Frame(self.cd_notebook)
+        self.cd_notebook.add(libro_frame, text="Libro Delibere (tabella)")
+        self._build_libro_delibere_tab(libro_frame)
+    def _build_libro_delibere_tab(self, parent):
+        """Crea la tabella delle delibere raggruppate per triennio e pulsanti di esportazione."""
+        from libro_delibere import group_delibere_by_triennio, get_all_delibere
+        from tkinter import messagebox, filedialog
+        import os
+
+        toolbar = ttk.Frame(parent)
+        toolbar.pack(fill=tk.X, padx=5, pady=(5, 0))
+        ttk.Button(toolbar, text="Esporta DOCX", command=self._export_libro_delibere_docx).pack(side=tk.LEFT, padx=2)
+        ttk.Button(toolbar, text="Esporta PDF", command=self._export_libro_delibere_pdf).pack(side=tk.LEFT, padx=2)
+
+        # Tabella principale
+        table_frame = ttk.Frame(parent)
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.tv_libro_delibere = ttk.Treeview(table_frame, columns=("triennio", "numero", "data", "oggetto", "esito", "favorevoli", "contrari", "astenuti", "verbale_rif"), show="headings")
+        columns = [
+            ("triennio", "Triennio", 90),
+            ("numero", "Numero", 70),
+            ("data", "Data", 90),
+            ("oggetto", "Oggetto", 320),
+            ("esito", "Esito", 80),
+            ("favorevoli", "Fav.", 50),
+            ("contrari", "Contr.", 50),
+            ("astenuti", "Asten.", 50),
+            ("verbale_rif", "Verbale Rif.", 120),
+        ]
+        for col, title, width in columns:
+            self.tv_libro_delibere.heading(col, text=title)
+            self.tv_libro_delibere.column(col, width=width, anchor="center" if col!="oggetto" else "w")
+        self.tv_libro_delibere.pack(fill=tk.BOTH, expand=True)
+
+        self._refresh_libro_delibere_table()
+
+    def _refresh_libro_delibere_table(self):
+        from libro_delibere import group_delibere_by_triennio, get_all_delibere
+        tv = getattr(self, "tv_libro_delibere", None)
+        if tv is None:
+            return
+        for item in tv.get_children():
+            tv.delete(item)
+        delibere = get_all_delibere()
+        grouped = group_delibere_by_triennio(delibere)
+        for triennio, items in sorted(grouped.items()):
+            for d in items:
+                tv.insert("", "end", values=(
+                    triennio,
+                    d.get("numero", ""),
+                    d.get("data_votazione", ""),
+                    d.get("oggetto", ""),
+                    d.get("esito", ""),
+                    d.get("favorevoli", ""),
+                    d.get("contrari", ""),
+                    d.get("astenuti", ""),
+                    d.get("verbale_riferimento", ""),
+                ))
+
+    def _export_libro_delibere_docx(self):
+        from tkinter import filedialog, messagebox
+        from libro_delibere import export_libro_delibere_docx
+        file_path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Esporta libro delibere (DOCX)",
+            initialfile="Libro_delibere.docx",
+            defaultextension=".docx",
+            filetypes=(("Word (.docx)", "*.docx"), ("Tutti i file", "*.*")),
+        )
+        if not file_path:
+            return
+        try:
+            export_libro_delibere_docx(file_path)
+            messagebox.showinfo("Libro delibere", "Libro delle delibere esportato:\n" + str(file_path))
+        except Exception as exc:
+            messagebox.showerror("Libro delibere", f"Errore durante l'esportazione DOCX:\n{exc}")
+
+    def _export_libro_delibere_pdf(self):
+        from tkinter import filedialog, messagebox
+        from libro_delibere import export_libro_delibere_pdf
+        file_path = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Esporta libro delibere (PDF)",
+            initialfile="Libro_delibere.pdf",
+            defaultextension=".pdf",
+            filetypes=(("PDF (.pdf)", "*.pdf"), ("Tutti i file", "*.*")),
+        )
+        if not file_path:
+            return
+        try:
+            export_libro_delibere_pdf(file_path)
+            messagebox.showinfo("Libro delibere", "Libro delle delibere esportato:\n" + str(file_path))
+        except Exception as exc:
+            messagebox.showerror("Libro delibere", f"Errore durante l'esportazione PDF:\n{exc}")
 
     def _export_libro_verbali(self):
         """Export the 'Libro verbali' Excel file from cd_riunioni."""
@@ -1060,135 +1315,176 @@ class App:
 
     def _build_cd_riunioni_view(self, parent: ttk.Frame):
         """Build the single CD view (riunioni overview + delibere list) inside the CD tab."""
-        toolbar = ttk.Frame(parent)
-        toolbar.pack(fill=tk.X, padx=5, pady=5)
-        ttk.Button(toolbar, text="Nuova riunione", command=self._new_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Modifica riunione", command=self._edit_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina riunione", command=self._delete_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
-
-        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Nuova delibera", command=self._new_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Modifica delibera", command=self._edit_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Elimina delibera", command=self._delete_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
-
-        ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
-        ttk.Button(toolbar, text="Apri verbale", command=self._open_cd_verbale_from_overview).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="Esporta verbale...", command=self._export_cd_verbale_from_overview).pack(side=tk.LEFT, padx=2)
-
-        paned = ttk.PanedWindow(parent, orient=tk.VERTICAL)
-        paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
-        top = ttk.Frame(paned)
-        bottom = ttk.Frame(paned)
-        paned.add(top, weight=3)
-        paned.add(bottom, weight=2)
-        frame = ttk.Frame(top)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        scrollbar_h = ttk.Scrollbar(frame, orient="horizontal")
-        scrollbar_v = ttk.Scrollbar(frame, orient="vertical")
-
-        self.tv_cd_riunioni = ttk.Treeview(
-            frame,
-            columns=("data", "titolo_riunione", "numero", "titolo_verbale", "mandato", "delibere"),
-            show="headings",
-            xscrollcommand=scrollbar_h.set,
-            yscrollcommand=scrollbar_v.set,
-        )
-        scrollbar_h.config(command=self.tv_cd_riunioni.xview)
-        scrollbar_v.config(command=self.tv_cd_riunioni.yview)
-
-        self.tv_cd_riunioni.column("data", width=110)
-        self.tv_cd_riunioni.column("titolo_riunione", width=320)
-        self.tv_cd_riunioni.column("numero", width=110)
-        self.tv_cd_riunioni.column("titolo_verbale", width=420)
-        self.tv_cd_riunioni.column("mandato", width=120)
-        self.tv_cd_riunioni.column("delibere", width=220)
-
-        self.tv_cd_riunioni.heading("data", text="Data")
-        self.tv_cd_riunioni.heading("titolo_riunione", text="Titolo riunione")
-        self.tv_cd_riunioni.heading("numero", text="Numero CD")
-        self.tv_cd_riunioni.heading("titolo_verbale", text="Titolo verbale")
-        self.tv_cd_riunioni.heading("mandato", text="Mandato")
-        self.tv_cd_riunioni.heading("delibere", text="Delibere")
-
-        self.tv_cd_riunioni.grid(row=0, column=0, sticky="nsew")
-        scrollbar_h.grid(row=1, column=0, sticky="ew")
-        scrollbar_v.grid(row=0, column=1, sticky="ns")
-
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-
         try:
-            self._make_treeview_sortable(
-                self.tv_cd_riunioni,
-                ["data", "titolo_riunione", "numero", "titolo_verbale", "mandato", "delibere"],
+            toolbar = ttk.Frame(parent)
+            toolbar.pack(fill=tk.X, padx=5, pady=5)
+            ttk.Button(toolbar, text="Gestione Mandato/Composizione CD", command=self._open_cd_mandato_wizard).pack(side=tk.LEFT, padx=2)
+            ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
+            ttk.Button(toolbar, text="Nuova riunione", command=self._new_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
+            ttk.Button(toolbar, text="Modifica riunione", command=self._edit_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
+            ttk.Button(toolbar, text="Elimina riunione", command=self._delete_cd_meeting_from_tab).pack(side=tk.LEFT, padx=2)
+
+            ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
+            ttk.Button(toolbar, text="Nuova delibera", command=self._new_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
+            ttk.Button(toolbar, text="Modifica delibera", command=self._edit_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
+            ttk.Button(toolbar, text="Elimina delibera", command=self._delete_cd_delibera_from_overview).pack(side=tk.LEFT, padx=2)
+
+            ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
+            ttk.Button(toolbar, text="Apri verbale", command=self._open_cd_verbale_from_overview).pack(side=tk.LEFT, padx=2)
+            ttk.Button(toolbar, text="Esporta verbale...", command=self._export_cd_verbale_from_overview).pack(side=tk.LEFT, padx=2)
+
+            ttk.Label(toolbar, text="  |  ").pack(side=tk.LEFT)
+            ttk.Button(toolbar, text="Delibere di questo verbale", command=self._show_delibere_of_selected_verbale).pack(side=tk.LEFT, padx=2)
+
+            # PanedWindow
+            paned = ttk.PanedWindow(parent, orient=tk.VERTICAL)
+            paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+            # Add top and bottom frames to the paned window
+            top = ttk.Frame(paned)
+            bottom = ttk.Frame(paned)
+            paned.add(top, weight=3)
+            paned.add(bottom, weight=2)
+
+            # Treeview delle riunioni (usa pack, non grid)
+            try:
+                scrollbar_h = ttk.Scrollbar(top, orient="horizontal")
+                scrollbar_v = ttk.Scrollbar(top, orient="vertical")
+                self.tv_cd_riunioni = ttk.Treeview(
+                    top,
+                    columns=("data", "titolo_riunione", "numero", "titolo_verbale", "mandato", "delibere"),
+                    show="headings",
+                    xscrollcommand=scrollbar_h.set,
+                    yscrollcommand=scrollbar_v.set,
+                )
+                scrollbar_h.config(command=self.tv_cd_riunioni.xview)
+                scrollbar_v.config(command=self.tv_cd_riunioni.yview)
+
+                self.tv_cd_riunioni.column("data", width=110)
+                self.tv_cd_riunioni.column("titolo_riunione", width=320)
+                self.tv_cd_riunioni.column("numero", width=110)
+                self.tv_cd_riunioni.column("titolo_verbale", width=420)
+                self.tv_cd_riunioni.column("mandato", width=120)
+                self.tv_cd_riunioni.column("delibere", width=220)
+
+                self.tv_cd_riunioni.heading("data", text="Data")
+                self.tv_cd_riunioni.heading("titolo_riunione", text="Titolo riunione")
+                self.tv_cd_riunioni.heading("numero", text="Numero CD")
+                self.tv_cd_riunioni.heading("titolo_verbale", text="Titolo verbale")
+                self.tv_cd_riunioni.heading("mandato", text="Mandato")
+                self.tv_cd_riunioni.heading("delibere", text="Delibere")
+
+                self.tv_cd_riunioni.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+                scrollbar_v.pack(fill=tk.Y, side=tk.RIGHT)
+                scrollbar_h.pack(fill=tk.X, side=tk.BOTTOM)
+
+                try:
+                    self._make_treeview_sortable(
+                        self.tv_cd_riunioni,
+                        ["data", "titolo_riunione", "numero", "titolo_verbale", "mandato", "delibere"],
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    self.tv_cd_riunioni.bind("<Double-1>", lambda _e: self._edit_cd_meeting_from_tab())
+                except Exception:
+                    pass
+
+                try:
+                    self.tv_cd_riunioni.bind("<<TreeviewSelect>>", lambda _e: self._refresh_cd_delibere_overview())
+                except Exception:
+                    pass
+            except Exception as exc:
+                ttk.Label(top, text=f"DEBUG: Treeview riunioni non creata: {exc}", foreground="red").pack()
+
+            # Bottom: delibere list filtered by selected meeting (usa pack)
+            bottom_toolbar = ttk.Frame(bottom)
+            bottom_toolbar.pack(fill=tk.X, padx=0, pady=(0, 4))
+            self._lbl_cd_delibere_badge = ttk.Label(bottom_toolbar, text="Delibere: (seleziona una riunione)")
+            self._lbl_cd_delibere_badge.pack(side=tk.LEFT)
+
+            dframe = ttk.Frame(bottom)
+            dframe.pack(fill=tk.BOTH, expand=True)
+
+            dscroll_h = ttk.Scrollbar(dframe, orient="horizontal")
+            dscroll_v = ttk.Scrollbar(dframe, orient="vertical")
+
+            self.tv_cd_delibere_overview = ttk.Treeview(
+                dframe,
+                columns=("id", "numero", "oggetto", "esito", "data"),
+                show="headings",
+                xscrollcommand=dscroll_h.set,
+                yscrollcommand=dscroll_v.set,
             )
-        except Exception:
-            pass
+            dscroll_h.config(command=self.tv_cd_delibere_overview.xview)
+            dscroll_v.config(command=self.tv_cd_delibere_overview.yview)
 
+            self.tv_cd_delibere_overview.column("id", width=50)
+            self.tv_cd_delibere_overview.column("numero", width=90)
+            self.tv_cd_delibere_overview.column("oggetto", width=520)
+            self.tv_cd_delibere_overview.column("esito", width=120)
+            self.tv_cd_delibere_overview.column("data", width=110)
+
+            self.tv_cd_delibere_overview.heading("id", text="ID")
+            self.tv_cd_delibere_overview.heading("numero", text="Numero")
+            self.tv_cd_delibere_overview.heading("oggetto", text="Oggetto")
+            self.tv_cd_delibere_overview.heading("esito", text="Esito")
+            self.tv_cd_delibere_overview.heading("data", text="Data votazione")
+
+            try:
+                self.tv_cd_delibere_overview.tag_configure("esito_ok", background="#e9f7ef")
+                self.tv_cd_delibere_overview.tag_configure("esito_ko", background="#f8d7da")
+                self.tv_cd_delibere_overview.tag_configure("esito_pending", background="#fff3cd", foreground="#856404")
+            except Exception:
+                pass
+
+            self.tv_cd_delibere_overview.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+            dscroll_v.pack(fill=tk.Y, side=tk.RIGHT)
+            dscroll_h.pack(fill=tk.X, side=tk.BOTTOM)
+
+            dframe.columnconfigure(0, weight=1)
+            dframe.rowconfigure(0, weight=1)
+
+            try:
+                self._make_treeview_sortable(self.tv_cd_delibere_overview, ["id", "numero", "oggetto", "esito", "data"])
+            except Exception:
+                pass
+        except Exception as exc:
+            logging.error(f"ERRORE in _build_cd_riunioni_view: {exc}")
+            raise
+    def _show_delibere_of_selected_verbale(self):
+        """Mostra tutte le delibere collegate al verbale selezionato nella tabella riunioni."""
+        from tkinter import messagebox, Toplevel
+        from cd_delibere import get_all_delibere
+        from cd_verbali import get_all_verbali
+        sel_meeting_id = self._selected_cd_meeting_id_from_overview()
+        if sel_meeting_id is None:
+            messagebox.showwarning("Delibere", "Seleziona una riunione con verbale.")
+            return
+        # Recupera il verbale associato alla riunione
         try:
-            self.tv_cd_riunioni.bind("<Double-1>", lambda _e: self._edit_cd_meeting_from_tab())
+            from cd_verbali import get_all_verbali
+            verbali = get_all_verbali(sel_meeting_id)
+            if not verbali:
+                messagebox.showinfo("Delibere", "Nessun verbale associato alla riunione selezionata.")
+                return
+            verbale_id = verbali[0].get('id')
         except Exception:
-            pass
+            messagebox.showerror("Delibere", "Errore nel recupero del verbale.")
+            return
+        # Recupera tutte le delibere che hanno quel verbale_id (diretto o ereditato)
+        all_delibere = get_all_delibere()
+        filtered = [d for d in all_delibere if (d.get('verbale_id') == verbale_id)]
+        if not filtered:
+            messagebox.showinfo("Delibere", "Nessuna delibera collegata a questo verbale.")
+            return
+        # Mostra in una finestra
+        win = Toplevel(self.root)
+        win.title(f"Delibere collegate al verbale ID {verbale_id}")
+        win.geometry("900x400")
+        frame = ttk.Frame(win)
 
-        try:
-            self.tv_cd_riunioni.bind("<<TreeviewSelect>>", lambda _e: self._refresh_cd_delibere_overview())
-        except Exception:
-            pass
-
-        # Bottom: delibere list filtered by selected meeting
-        bottom_toolbar = ttk.Frame(bottom)
-        bottom_toolbar.pack(fill=tk.X, padx=0, pady=(0, 4))
-        self._lbl_cd_delibere_badge = ttk.Label(bottom_toolbar, text="Delibere: (seleziona una riunione)")
-        self._lbl_cd_delibere_badge.pack(side=tk.LEFT)
-
-        dframe = ttk.Frame(bottom)
-        dframe.pack(fill=tk.BOTH, expand=True)
-
-        dscroll_h = ttk.Scrollbar(dframe, orient="horizontal")
-        dscroll_v = ttk.Scrollbar(dframe, orient="vertical")
-
-        self.tv_cd_delibere_overview = ttk.Treeview(
-            dframe,
-            columns=("id", "numero", "oggetto", "esito", "data"),
-            show="headings",
-            xscrollcommand=dscroll_h.set,
-            yscrollcommand=dscroll_v.set,
-        )
-        dscroll_h.config(command=self.tv_cd_delibere_overview.xview)
-        dscroll_v.config(command=self.tv_cd_delibere_overview.yview)
-
-        self.tv_cd_delibere_overview.column("id", width=50)
-        self.tv_cd_delibere_overview.column("numero", width=90)
-        self.tv_cd_delibere_overview.column("oggetto", width=520)
-        self.tv_cd_delibere_overview.column("esito", width=120)
-        self.tv_cd_delibere_overview.column("data", width=110)
-
-        self.tv_cd_delibere_overview.heading("id", text="ID")
-        self.tv_cd_delibere_overview.heading("numero", text="Numero")
-        self.tv_cd_delibere_overview.heading("oggetto", text="Oggetto")
-        self.tv_cd_delibere_overview.heading("esito", text="Esito")
-        self.tv_cd_delibere_overview.heading("data", text="Data votazione")
-
-        try:
-            self.tv_cd_delibere_overview.tag_configure("esito_ok", background="#e9f7ef")
-            self.tv_cd_delibere_overview.tag_configure("esito_ko", background="#f8d7da")
-            self.tv_cd_delibere_overview.tag_configure("esito_pending", background="#fff3cd", foreground="#856404")
-        except Exception:
-            pass
-
-        self.tv_cd_delibere_overview.grid(row=0, column=0, sticky="nsew")
-        dscroll_h.grid(row=1, column=0, sticky="ew")
-        dscroll_v.grid(row=0, column=1, sticky="ns")
-
-        dframe.columnconfigure(0, weight=1)
-        dframe.rowconfigure(0, weight=1)
-
-        try:
-            self._make_treeview_sortable(self.tv_cd_delibere_overview, ["id", "numero", "oggetto", "esito", "data"])
-        except Exception:
-            pass
 
         self._refresh_cd_riunioni()
 
@@ -1196,194 +1492,36 @@ class App:
         tv = getattr(self, "tv_cd_riunioni", None)
         if tv is None:
             return
-
         try:
             from cd_meetings import get_all_meetings
-
             meetings = get_all_meetings() or []
-        except Exception:
-            meetings = []
-
-        # Linked verbali by meeting (canonical link)
-        verbali_by_meeting: dict[int, dict] = {}
-        verbale_path_map: dict[str, str] = {}
-        try:
-            from section_documents import list_cd_verbali_linked_documents
-
-            linked = list_cd_verbali_linked_documents(start_date=None, end_date=None, include_missing=True) or []
-            for doc in linked:
-                try:
-                    mid_raw = doc.get("meeting_id")
-                    if mid_raw is None:
-                        continue
-                    mid = int(str(mid_raw))
-                except Exception:
-                    continue
-                if mid not in verbali_by_meeting:
-                    verbali_by_meeting[mid] = doc
-        except Exception:
-            pass
-
-        # Mandati lookup (for mandate label column)
-        mandati: list[dict] = []
-        try:
-            from database import fetch_all
-
-            rows = fetch_all(
-                """
-                SELECT id, label, start_date, end_date, is_active
-                FROM cd_mandati
-                WHERE start_date IS NOT NULL AND TRIM(start_date) <> ''
-                  AND end_date IS NOT NULL AND TRIM(end_date) <> ''
-                ORDER BY start_date DESC, id DESC
-                """
-            )
-            mandati = [dict(r) for r in rows]
-        except Exception:
-            mandati = []
-
-        def _mandato_label_for_date(iso_date: str | None) -> str:
-            dv = (iso_date or "").strip()
-            if not dv:
-                return ""
-            for m in mandati:
-                s = str(m.get("start_date") or "").strip()
-                e = str(m.get("end_date") or "").strip()
-                if not s or not e:
-                    continue
-                if s <= dv <= e:
-                    lbl = str(m.get("label") or "").strip()
-                    if lbl:
-                        return lbl
-                    return f"Mandato {s[:4]}-{e[:4]}"
-            return ""
-
-        def _mandato_label_for_id(mandato_id: object) -> str:
-            try:
-                mid = int(str(mandato_id))
-            except Exception:
-                return ""
-            for m in mandati:
-                raw_id_s = str(m.get("id") or "").strip()
-                if not raw_id_s:
-                    continue
-                try:
-                    if int(raw_id_s) != mid:
-                        continue
-                except Exception:
-                    continue
-                lbl = str(m.get("label") or "").strip()
-                if lbl:
-                    return lbl
-                s = str(m.get("start_date") or "").strip()
-                e = str(m.get("end_date") or "").strip()
-                if s and e:
-                    return f"Mandato {s[:4]}-{e[:4]}"
-                return f"Mandato ID {mid}"
-            return ""
-
-        # Delibere summary by meeting
-        delibere_nums_by_meeting: dict[int, list[str]] = {}
-        try:
-            from cd_delibere import get_all_delibere
-
-            all_delibere = get_all_delibere() or []
-            for d in all_delibere:
-                try:
-                    mid_raw = d.get("cd_id")
-                    if mid_raw is None:
-                        continue
-                    mid = int(str(mid_raw))
-                except Exception:
-                    continue
-                num = str(d.get("numero") or "").strip()
-                if not num:
-                    continue
-                delibere_nums_by_meeting.setdefault(mid, []).append(num)
-        except Exception:
-            delibere_nums_by_meeting = {}
-
-        def _delibere_summary(mid: int) -> str:
-            nums = delibere_nums_by_meeting.get(mid) or []
-            if not nums:
-                return ""
-            # Keep stable ordering (numbers are usually like "01/2026")
-            try:
-                uniq = sorted(set(nums), reverse=False)
-            except Exception:
-                uniq = list(dict.fromkeys(nums))
-            return ", ".join(uniq)
-
-        def _verbale_title(doc: dict | None) -> str:
-            if not doc:
-                return ""
-            return str(doc.get("descrizione") or doc.get("original_name") or doc.get("nome_file") or "").strip()
-
-        def _verbale_abs_path(doc: dict | None) -> str:
-            if not doc:
-                return ""
-            return str(doc.get("absolute_path") or doc.get("percorso") or "").strip()
-
-        # Display formatting
-        try:
-            from utils import iso_to_ddmmyyyy as _iso_to_ddmmyyyy
-
-            def iso_to_ddmmyyyy(iso_str: str | None) -> str:
-                return _iso_to_ddmmyyyy(iso_str)
-        except Exception:
-            def iso_to_ddmmyyyy(iso_str: str | None) -> str:
-                return str(iso_str or "")
-
-        for item in tv.get_children():
-            tv.delete(item)
-
-        self._cd_overview_verbale_path_map = {}
-
-        for m in meetings:
-            mid = m.get("id")
-            if mid is None:
-                continue
-            iid = str(mid)
-
-            meeting_date_iso = str(m.get("data") or "").strip()
-            meeting_date = iso_to_ddmmyyyy(meeting_date_iso)
-            titolo_riunione = str(m.get("titolo") or "")
-            numero_cd = str(m.get("numero_cd") or "")
-
-            vdoc = verbali_by_meeting.get(int(mid))
-            verbale_title = _verbale_title(vdoc)
-            mandato_lbl = ""
-            try:
-                mandato_lbl = _mandato_label_for_id(m.get("mandato_id"))
-            except Exception:
-                mandato_lbl = ""
-            if not mandato_lbl:
-                mandato_lbl = _mandato_label_for_date(meeting_date_iso)
-            delibere_summary = _delibere_summary(int(mid))
-
-            tv.insert(
-                "",
-                tk.END,
-                iid=iid,
-                values=(
-                    meeting_date,
-                    titolo_riunione,
-                    numero_cd,
-                    verbale_title,
-                    mandato_lbl,
-                    delibere_summary,
-                ),
-            )
-
-            abs_path = _verbale_abs_path(vdoc)
-            if abs_path:
-                self._cd_overview_verbale_path_map[iid] = abs_path
-
-        # Refresh delibere list for current selection
+            tv.delete(*tv.get_children())
+            for m in meetings:
+                tv.insert(
+                    "",
+                    tk.END,
+                    iid=str(m.get("id")),
+                    values=(
+                        m.get("data", ""),
+                        m.get("titolo", ""),
+                        m.get("numero_cd", ""),
+                        "",  # Titolo verbale (da implementare se serve)
+                        m.get("mandato_id", ""),
+                        "",  # Delibere (da implementare se serve)
+                    ),
+                )
+        except Exception as exc:
+            import traceback
+            from tkinter import messagebox
+            logger.error(f"Errore caricamento riunioni CD: {exc}\n{traceback.format_exc()}")
+            messagebox.showerror("Riunioni CD", f"Errore caricamento riunioni:\n{exc}")
         try:
             self._refresh_cd_delibere_overview()
-        except Exception:
-            pass
+        except Exception as exc:
+            import traceback
+            from tkinter import messagebox
+            logger.error(f"Errore refresh delibere overview: {exc}\n{traceback.format_exc()}")
+            messagebox.showerror("Delibere CD", f"Errore refresh delibere overview:\n{exc}")
 
     def _selected_cd_meeting_id_from_overview(self) -> int | None:
         tv = getattr(self, "tv_cd_riunioni", None)
@@ -1401,53 +1539,52 @@ class App:
         tv = getattr(self, "tv_cd_delibere_overview", None)
         if tv is None:
             return
-
-        meeting_id = self._selected_cd_meeting_id_from_overview()
-        for item in tv.get_children():
-            tv.delete(item)
-
-        lbl = getattr(self, "_lbl_cd_delibere_badge", None)
-        if meeting_id is None:
+        try:
+            meeting_id = self._selected_cd_meeting_id_from_overview()
+            for item in tv.get_children():
+                tv.delete(item)
+            lbl = getattr(self, "_lbl_cd_delibere_badge", None)
+            if meeting_id is None:
+                if lbl is not None:
+                    lbl.config(text="Delibere: (seleziona una riunione)")
+                return
+            from cd_delibere import get_all_delibere
+            delibere = get_all_delibere(meeting_id=meeting_id) or []
+            def _esito_tag(esito_value: object) -> tuple[str, ...]:
+                s = str(esito_value or "").strip().lower()
+                if not s:
+                    return ("esito_pending",)
+                ok_words = ("approv", "favorev", "ok", "si", "sì")
+                ko_words = ("resp", "boc", "no", "contr")
+                if any(w in s for w in ok_words):
+                    return ("esito_ok",)
+                if any(w in s for w in ko_words):
+                    return ("esito_ko",)
+                if "rinv" in s or "sosp" in s or "att" in s:
+                    return ("esito_pending",)
+                return ()
+            for d in delibere:
+                esito = d.get("esito", "")
+                tv.insert(
+                    "",
+                    tk.END,
+                    iid=str(d.get("id")),
+                    values=(
+                        d.get("id", ""),
+                        d.get("numero", ""),
+                        d.get("oggetto", ""),
+                        esito,
+                        d.get("data_votazione", ""),
+                    ),
+                    tags=_esito_tag(esito),
+                )
             if lbl is not None:
-                lbl.config(text="Delibere: (seleziona una riunione)")
-            return
-
-        from cd_delibere import get_all_delibere
-
-        delibere = get_all_delibere(meeting_id=meeting_id) or []
-
-        def _esito_tag(esito_value: object) -> tuple[str, ...]:
-            s = str(esito_value or "").strip().lower()
-            if not s:
-                return ("esito_pending",)
-            ok_words = ("approv", "favorev", "ok", "si", "sì")
-            ko_words = ("resp", "boc", "no", "contr")
-            if any(w in s for w in ok_words):
-                return ("esito_ok",)
-            if any(w in s for w in ko_words):
-                return ("esito_ko",)
-            if "rinv" in s or "sosp" in s or "att" in s:
-                return ("esito_pending",)
-            return ()
-
-        for d in delibere:
-            esito = d.get("esito", "")
-            tv.insert(
-                "",
-                tk.END,
-                iid=str(d.get("id")),
-                values=(
-                    d.get("id", ""),
-                    d.get("numero", ""),
-                    d.get("oggetto", ""),
-                    esito,
-                    d.get("data_votazione", ""),
-                ),
-                tags=_esito_tag(esito),
-            )
-
-        if lbl is not None:
-            lbl.config(text=f"Delibere: {len(delibere)}")
+                lbl.config(text=f"Delibere: {len(delibere)}")
+        except Exception as exc:
+            import traceback
+            from tkinter import messagebox
+            logger.error(f"Errore caricamento delibere CD: {exc}\n{traceback.format_exc()}")
+            messagebox.showerror("Delibere CD", f"Errore caricamento delibere:\n{exc}")
 
     def _new_cd_delibera_from_overview(self):
         from tkinter import messagebox
@@ -1668,14 +1805,7 @@ class App:
         from cd_meetings_dialog import MeetingDialog
 
         MeetingDialog(self.root)
-        try:
-            self._refresh_cd_riunioni()
-        except Exception:
-            pass
-        try:
-            self._refresh_cd_delibere_overview()
-        except Exception:
-            pass
+        self._refresh_cd_riunioni()
 
     def _edit_cd_meeting_from_tab(self):
         from tkinter import messagebox
@@ -1697,14 +1827,7 @@ class App:
         from cd_meetings_dialog import MeetingDialog
 
         MeetingDialog(self.root, meeting_id=meeting_id)
-        try:
-            self._refresh_cd_riunioni()
-        except Exception:
-            pass
-        try:
-            self._refresh_cd_delibere_overview()
-        except Exception:
-            pass
+        self._refresh_cd_riunioni()
 
     def _delete_cd_meeting_from_tab(self):
         from tkinter import messagebox
@@ -3525,7 +3648,7 @@ Generale:
         try:
             from database import fetch_one
             row = fetch_one(
-                "SELECT matricola, email, privacy_signed, telefono, indirizzo FROM soci WHERE id = ?",
+                "SELECT matricola, email, telefono, indirizzo FROM soci WHERE id = ?",
                 (member_id,)
             )
             if not row:
@@ -3539,8 +3662,6 @@ Generale:
                 missing.append('• Matricola')
             if not data.get('email', '') or str(data.get('email', '')).strip() == '':
                 missing.append('• Email')
-            if not (str(data.get('privacy_signed', '')) in ('1', 'True', 'true', 1, True)):
-                missing.append('• Privacy')
             if not data.get('telefono', '') or str(data.get('telefono', '')).strip() == '':
                 missing.append('• Telefono')
             if not data.get('indirizzo', '') or str(data.get('indirizzo', '')).strip() == '':
@@ -3700,25 +3821,16 @@ Generale:
                 # Determine tags based on raw DB values (prefer explicit checks)
                 tags = []
                 att_idx = self.COLONNE.index('attivo')
-                priv_idx = self.COLONNE.index('privacy_signed')
 
                 try:
                     att_val = row['attivo']
                 except Exception:
                     att_val = row[att_idx] if len(row) > att_idx else None
 
-                try:
-                    priv_val = row['privacy_signed']
-                except Exception:
-                    priv_val = row[priv_idx] if len(row) > priv_idx else None
-
                 if str(att_val) in ('1', 'True', 'true', 1, True):
                     tags.append('active')
                 else:
                     tags.append('inactive')
-
-                if not (str(priv_val) in ('1', 'True', 'true', 1, True)):
-                    tags.append('no_privacy')
                 
                 if has_missing:
                     tags.append('missing_data')
@@ -3975,8 +4087,7 @@ Generale:
         self._refresh_member_list()
     
     def _apply_filters(self):
-        """Apply privacy and status filters."""
-        privacy_filter = self.privacy_filter_var.get()
+        """Apply status filters."""
         status_filter = self.status_filter_var.get()
         missing_data_filter = self.missing_data_filter_var.get() if hasattr(self, 'missing_data_filter_var') else "tutti"
         keyword = self.search_var.get().strip()
@@ -4001,12 +4112,6 @@ Generale:
                 sql += " AND (nome LIKE ? OR cognome LIKE ? OR nominativo LIKE ? OR matricola LIKE ? OR email LIKE ?)"
                 pattern = f"%{keyword}%"
                 params.extend([pattern, pattern, pattern, pattern, pattern])
-            
-            # Add privacy filter
-            if privacy_filter == "no_privacy":
-                sql += " AND privacy_signed = 0"
-            elif privacy_filter == "with_privacy":
-                sql += " AND privacy_signed = 1"
             
             # use LOWER so accented characters like "sì" compare reliably even without full UTF-8 upper support
             attivo_truthy = "LOWER(TRIM(COALESCE(CAST(attivo AS TEXT), ''))) IN ('1','true','si','sì','yes')"
@@ -4040,18 +4145,13 @@ Generale:
                 # Determine tags
                 tags = []
                 att_idx = self.COLONNE.index('attivo')
-                priv_idx = self.COLONNE.index('privacy_signed')
                 raw_att = row.get('attivo') if hasattr(row, 'get') else row[att_idx]
                 att_str = str(raw_att).strip().lower() if raw_att is not None else ''
-                priv_val = row.get('privacy_signed') if hasattr(row, 'get') else row[priv_idx]
                 
                 if att_str in ('1', 'true', 'si', 'sì', 'yes'):
                     tags.append('active')
                 else:
                     tags.append('inactive')
-                
-                if not (str(priv_val) in ('1', 'True', 'true', 1, True)):
-                    tags.append('no_privacy')
                 
                 if has_missing:
                     tags.append('missing_data')
@@ -4306,7 +4406,19 @@ Generale:
             UnifiedExportWizard(self.root)
         except Exception as exc:
             logger.error("Errore apertura export: %s", exc)
-            messagebox.showerror("Export", f"Impossibile aprire l'esportazione:\n{exc}")
+
+    def _get_matricola_to_name_mapping(self) -> dict[str, str]:
+        """Get a mapping from matricola to full name for quick lookup."""
+        try:
+            from database import get_connection
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT matricola, nominativo FROM soci WHERE matricola IS NOT NULL AND nominativo IS NOT NULL")
+                rows = cursor.fetchall()
+                return {row[0]: row[1] for row in rows}
+        except Exception as exc:
+            logger.error("Errore caricamento mapping matricola-nome: %s", exc)
+            return {}
     
     def _show_duplicates_dialog(self):
         """Show duplicates detection and merge dialog"""

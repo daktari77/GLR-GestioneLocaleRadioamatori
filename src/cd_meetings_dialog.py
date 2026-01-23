@@ -212,6 +212,13 @@ class MeetingDialog:
         self.entry_oggetto = ttk.Entry(main_frame, width=60)
         self.entry_oggetto.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
 
+        # Note generali riunione
+        row += 1
+        self.label_note = ttk.Label(main_frame, text="Note riunione (campo libero):", font=("Arial", 10, "bold"))
+        self.label_note.grid(row=row, column=0, sticky="nw", padx=5, pady=(5, 2))
+        self.text_note = scrolledtext.ScrolledText(main_frame, height=3, wrap=tk.WORD)
+        self.text_note.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5, pady=(5, 2))
+
         # Metadati riunione
         row += 1
         self.meta_frame = ttk.LabelFrame(main_frame, text="Metadati riunione", padding=4)
@@ -977,6 +984,11 @@ class MeetingDialog:
             
             self.entry_oggetto.delete(0, tk.END)
             self.entry_oggetto.insert(0, meeting.get('titolo', ''))
+
+            # Carica note generali riunione
+            if meeting.get('note') is not None:
+                self.text_note.delete("1.0", tk.END)
+                self.text_note.insert("1.0", meeting.get('note'))
             
             if meeting.get('odg'):
                 self.text_odg.delete("1.0", tk.END)
@@ -1074,6 +1086,7 @@ class MeetingDialog:
         numero_cd = self.entry_numero_cd.get().strip()
         data = self.entry_date.get().strip()
         oggetto = self.entry_oggetto.get().strip() if hasattr(self, 'entry_oggetto') else ""
+        note = self.text_note.get("1.0", tk.END).strip() if hasattr(self, 'text_note') else None
         odg_text = self.text_odg.get("1.0", tk.END).strip()
         corpo_email = ""
         # Canonical: link via section document ID when available
@@ -1158,6 +1171,7 @@ class MeetingDialog:
                     tipo_riunione=self.tipo_riunione_var.get(),
                     meta_json=meta_json,
                     presenze_json=presenze_json,
+                    note=note,
                 ):
                     meeting_id = self.meeting_id
                 else:
@@ -1180,6 +1194,7 @@ class MeetingDialog:
                     tipo_riunione=self.tipo_riunione_var.get(),
                     meta_json=meta_json,
                     presenze_json=presenze_json,
+                    note=note,
                 )
                 if meeting_id <= 0:
                     messagebox.showerror("Errore", "Errore durante la creazione della riunione.", parent=self.dialog)

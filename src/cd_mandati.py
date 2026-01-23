@@ -48,6 +48,7 @@ def get_cd_composizione_for_mandato(mandato_id: int, *, on_date: str | None = No
         SELECT
             c.nome AS carica,
             COALESCE(NULLIF(TRIM(s.nominativo), ''), NULLIF(TRIM(a.nominativo), '')) AS nome,
+            s.matricola AS matricola,
             a.note AS note,
             a.socio_id AS socio_id,
             a.data_inizio AS data_inizio,
@@ -64,10 +65,14 @@ def get_cd_composizione_for_mandato(mandato_id: int, *, on_date: str | None = No
     out: list[dict[str, Any]] = []
     for r in rows or []:
         d = dict(r)
+        nome = str(d.get("nome") or "").strip()
+        mat = str(d.get("matricola") or "").strip()
+        if nome and mat:
+            nome = f"{nome} ({mat})"
         out.append(
             {
                 "carica": str(d.get("carica") or "").strip(),
-                "nome": str(d.get("nome") or "").strip(),
+                "nome": nome,
                 "note": str(d.get("note") or "").strip(),
                 "socio_id": d.get("socio_id"),
                 "data_inizio": d.get("data_inizio"),
@@ -181,23 +186,10 @@ def _save_relational_composizione(
                 data_inizio, data_fine,
                 created_at, updated_at
             )
-            VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (int(mandato_id), carica_id, nominativo, note, start_date, end_date, ts, ts),
+            (int(mandato_id), carica_id, socio_id_i, nominativo, note, start_date, end_date, ts, ts),
         )
-
-        # If socio_id is available, patch the row to set it (keeps SQL simple & compatible)
-        if socio_id_i is not None:
-            cur.execute(
-                """
-                UPDATE cd_assegnazioni_cariche
-                SET socio_id = ?
-                WHERE mandato_id = ? AND carica_id = ? AND COALESCE(nominativo,'') = COALESCE(?, '')
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (socio_id_i, int(mandato_id), carica_id, nominativo or ""),
-            )
 
 
 def get_all_cd_mandati() -> list[dict[str, Any]]:

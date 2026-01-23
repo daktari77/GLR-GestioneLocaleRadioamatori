@@ -25,7 +25,6 @@ class DuplicatesDialog:
             'email', 'telefono', 'attivo',
             'delibera_numero', 'delibera_data',
             'voto', 'familiare', 'socio', 'cd_ruolo',
-            'privacy_ok', 'privacy_data', 'privacy_scadenza', 'privacy_signed',
             'note'
         ]
         self.master_var = tk.IntVar(value=0)

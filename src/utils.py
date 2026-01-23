@@ -74,24 +74,6 @@ def ddmmyyyy_to_iso(s: str) -> Optional[str]:
     
     raise ValueError("Formato data non valido. Usa DD/MM/YYYY o YYYY-MM-DD.")
 
-def calc_privacy_scadenza(privacy_data_iso: Optional[str], anni: int) -> Optional[str]:
-    """
-    Calculate expiry date N years from privacy_data_iso (YYYY-MM-DD).
-    Returns ISO format string (YYYY-MM-DD) or None if privacy_data_iso is empty/invalid.
-    """
-    if not privacy_data_iso:
-        return None
-    try:
-        y, m, d = map(int, privacy_data_iso.split("-"))
-        base = date(y, m, d)
-        try:
-            return date(base.year + anni, base.month, base.day).isoformat()
-        except ValueError:
-            # Handle Feb 29 → Feb 28
-            return date(base.year + anni, base.month, 28).isoformat()
-    except Exception:
-        return None
-
 # --------------------------
 # Value utilities
 # --------------------------

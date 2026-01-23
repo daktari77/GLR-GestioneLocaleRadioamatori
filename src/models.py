@@ -48,6 +48,7 @@ class Member:
     # Status
     attivo: bool = True
     data_iscrizione: Optional[str] = None  # ISO format
+    data_scadenza: Optional[str] = None  # ISO format
     data_dimissioni: Optional[str] = None  # ISO format
     motivo_uscita: Optional[str] = None
     deleted_at: Optional[str] = None
@@ -62,12 +63,6 @@ class Member:
     familiare: Optional[str] = None
     cd_ruolo: Optional[str] = None
     socio: Optional[str] = None
-    
-    # Privacy
-    privacy_ok: bool = False
-    privacy_data: Optional[str] = None  # ISO format
-    privacy_scadenza: Optional[str] = None  # ISO format
-    privacy_signed: bool = False
     
     # Quote
     q0: Optional[str] = None
@@ -177,10 +172,9 @@ class Member:
         date_fields = [
             ('data_nascita', self.data_nascita),
             ('data_iscrizione', self.data_iscrizione),
+            ('data_scadenza', self.data_scadenza),
             ('data_dimissioni', self.data_dimissioni),
             ('delibera_data', self.delibera_data),
-            ('privacy_data', self.privacy_data),
-            ('privacy_scadenza', self.privacy_scadenza),
         ]
         
         for field_name, field_value in date_fields:
@@ -251,10 +245,6 @@ class Member:
             'familiare': self.familiare,
             'cd_ruolo': self.cd_ruolo,
             'socio': self.socio,
-            'privacy_ok': 1 if self.privacy_ok else 0,
-            'privacy_data': self.privacy_data,
-            'privacy_scadenza': self.privacy_scadenza,
-            'privacy_signed': 1 if self.privacy_signed else 0,
             'q0': self.q0,
             'q1': self.q1,
             'q2': self.q2,
@@ -281,7 +271,7 @@ class Member:
             ValidationError: If validation fails
         """
         # Convert boolean fields from DB (0/1) to Python bool
-        bool_fields = ['attivo', 'voto', 'privacy_ok', 'privacy_signed']
+        bool_fields = ['attivo', 'voto']
         for field in bool_fields:
             if field in data:
                 value = data[field]

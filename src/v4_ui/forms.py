@@ -299,12 +299,9 @@ class MemberForm(ttk.Frame):
         self.widgets['voto'] = tk.BooleanVar()
         self._create_checkbutton(section5, "Voto", self.widgets['voto']).grid(row=0, column=1, sticky='w', padx=5, pady=2)
         
-        self.widgets['privacy_signed'] = tk.BooleanVar()
-        self._create_checkbutton(section5, "Privacy", self.widgets['privacy_signed']).grid(row=0, column=2, sticky='w', padx=5, pady=2)
-        
         # Q fields inline with status controls (width=2 chars)
         q_fields = [("q0", "Q0:"), ("q1", "Q1:"), ("q2", "Q2:" )]
-        base_col = 3
+        base_col = 2
         for idx, (field, label) in enumerate(q_fields):
             col = base_col + idx * 2
             self._create_label(section5, label).grid(row=0, column=col, sticky='w', padx=4, pady=2)

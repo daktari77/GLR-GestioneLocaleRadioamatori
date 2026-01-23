@@ -664,12 +664,10 @@ class DocumentPanel(ttk.Frame):
         self.category_var.set(categoria)
 
         from documents_manager import upload_document
-        from database import set_privacy_signed
 
         success, message = upload_document(socio_id, file_path, "privacy", categoria, descrizione)
         if success:
-            set_privacy_signed(socio_id, True)
-            messagebox.showinfo("Documenti", message + "\n✓ Modulo privacy marcato come firmato")
+            messagebox.showinfo("Documenti", message)
             self.refresh()
         else:
             messagebox.showerror("Documenti", message)
@@ -1311,6 +1309,7 @@ class SectionInfoPanel(ttk.Frame):
         super().__init__(parent, **kwargs)
         self.widgets = {}
         self.editable = editable
+        self.cfg = {}  # Store config data
         self._build_ui()
     
     def _build_ui(self):
@@ -1338,9 +1337,9 @@ class SectionInfoPanel(ttk.Frame):
             ("sito_web", "Sito Web"),
             ("coordinate_bancarie", "Coordinate Bancarie"),
             ("recapiti", "Recapiti (descrizione)"),
-            ("cd_componenti", "Consiglio Direttivo"),
-            ("cd_triennio", "Triennio validità CD (es: 2023-2026)"),
-            ("privacy_validita_anni", "Validità Privacy (anni)"),
+            ("cd_componenti", "Componenti CD"),
+            ("cd_triennio", "Triennio validità CD (es: 2023-2025)"),
+            #("privacy_validita_anni", "Validità Privacy (anni)"),
         ]
         
         for field_name, label_text in fields:
@@ -1387,6 +1386,8 @@ class SectionInfoPanel(ttk.Frame):
     
     def set_values(self, data: dict):
         """Set all section info values"""
+        self.cfg = data.copy()  # Store config for CD members lookup
+        
         # Populate CD members automatically
         data = data.copy()  # Don't modify original dict
         if 'cd_componenti' not in data or not data['cd_componenti']:
@@ -1419,50 +1420,70 @@ class SectionInfoPanel(ttk.Frame):
                     widget.configure(state="readonly")
     
     def _get_cd_members(self) -> str:
-        """Get list of CD members from database, grouped by role."""
+        """Get list of CD members from config data, with names from database."""
         try:
-            from database import fetch_all
+            cd_config = self.cfg.get('cd_config', {})
+            mandato = self.cfg.get('mandato', '')
             
-            # Fetch all active members with CD roles
-            rows = fetch_all("""
-                SELECT nome, cognome, nominativo, cd_ruolo 
-                FROM soci 
-                WHERE cd_ruolo IN ('Presidente', 'Vice Presidente', 'Segretario', 'Tesoriere', 'Sindaco', 'Consigliere')
-                AND deleted_at IS NULL
-                ORDER BY 
-                    CASE cd_ruolo
-                        WHEN 'Presidente' THEN 1
-                        WHEN 'Vice Presidente' THEN 2
-                        WHEN 'Segretario' THEN 3
-                        WHEN 'Tesoriere' THEN 4
-                        WHEN 'Sindaco' THEN 5
-                        WHEN 'Consigliere' THEN 6
-                    END,
-                    cognome, nome
-            """)
+            # Calculate triennio validity
+            triennio_text = "Non specificato"
+            if mandato:
+                try:
+                    # Assume mandato is in format "YYYY-YYYY" or similar
+                    if '-' in mandato:
+                        years = mandato.split('-')
+                        if len(years) >= 2:
+                            start_year = years[0].strip()
+                            end_year = years[1].strip()
+                            triennio_text = f"{start_year} - {end_year}"
+                    else:
+                        # If it's just a year, assume 3-year period
+                        try:
+                            start_year = int(mandato.strip())
+                            triennio_text = f"{start_year} - {start_year + 2}"
+                        except ValueError:
+                            triennio_text = mandato
+                except Exception:
+                    triennio_text = mandato
             
-            if not rows:
-                return ""
+            # Get member names from database
+            matricola_to_name = self._get_matricola_to_name_mapping()
             
-            # Group by role
+            # CD roles from config
+            roles = [
+                ("Presidente", cd_config.get('Presidente')),
+                ("Vice Presidente", cd_config.get('Vice Presidente')),
+                ("Segretario", cd_config.get('Segretario')),
+                ("Consigliere 1", cd_config.get('Consigliere 1')),
+                ("Consigliere 2", cd_config.get('Consigliere 2')),
+                ("Consigliere 3", cd_config.get('Consigliere 3')),
+                ("Probiviro 1", cd_config.get('Probiviro 1')),
+                ("Probiviro 2", cd_config.get('Probiviro 2')),
+                ("Probiviro 3", cd_config.get('Probiviro 3')),
+            ]
+            
+            # Group by role (handle multiple consiglieri)
             grouped = {}
-            for row in rows:
-                nome = row['nome'] if hasattr(row, 'get') else row[0]
-                cognome = row['cognome'] if hasattr(row, 'get') else row[1]
-                nominativo = row['nominativo'] if hasattr(row, 'get') else row[2]
-                cd_ruolo = row['cd_ruolo'] if hasattr(row, 'get') else row[3]
-                # Format: NOMINATIVO, Nome Cognome (or just Nome Cognome if nominativo is empty)
-                if nominativo and nominativo.strip():
-                    display_name = f"{nominativo}, {nome} {cognome}"
-                else:
-                    display_name = f"{nome} {cognome}"
-                if cd_ruolo not in grouped:
-                    grouped[cd_ruolo] = []
-                grouped[cd_ruolo].append(display_name)
+            for role, matricola in roles:
+                if matricola and matricola != 'Non assegnato':
+                    # For consiglieri, group under "Consigliere"
+                    display_role = "Consigliere" if role.startswith("Consigliere") else role
+                    # For probiviri, group under "Probiviro"  
+                    display_role = "Probiviro" if role.startswith("Probiviro") else display_role
+                    
+                    if display_role not in grouped:
+                        grouped[display_role] = []
+                    
+                    name = matricola_to_name.get(matricola, f'Socio {matricola} non trovato')
+                    display_name = name
+                    grouped[display_role].append(display_name)
             
             # Format output with indentation
             lines = []
-            role_order = ['Presidente', 'Vice Presidente', 'Segretario', 'Tesoriere', 'Sindaco', 'Consigliere']
+            lines.append(f"Triennio di validità: {triennio_text}")
+            lines.append("")
+            
+            role_order = ['Presidente', 'Vice Presidente', 'Segretario', 'Consigliere', 'Probiviro']
             for role in role_order:
                 if role in grouped:
                     lines.append(f"{role}:")
@@ -1471,8 +1492,30 @@ class SectionInfoPanel(ttk.Frame):
             
             return '\n'.join(lines)
         except Exception as e:
-            logger.error(f"Failed to get CD members: {e}")
+            logger.error(f"Failed to get CD members from config: {e}")
             return ""
+    
+    def _get_matricola_to_name_mapping(self) -> dict[str, str]:
+        """Get a mapping from matricola to formatted full name for quick lookup."""
+        try:
+            from database import get_connection
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT matricola, nome, cognome, nominativo FROM soci WHERE matricola IS NOT NULL")
+                rows = cursor.fetchall()
+                result = {}
+                for row in rows:
+                    matricola, nome, cognome, nominativo = row[0], row[1], row[2], row[3]
+                    # Format: NOMINATIVO, Nome Cognome (or just Nome Cognome if nominativo is empty)
+                    if nominativo and nominativo.strip():
+                        formatted_name = f"{nominativo}, {nome} {cognome}"
+                    else:
+                        formatted_name = f"{nome} {cognome}"
+                    result[matricola] = formatted_name
+                return result
+        except Exception as exc:
+            logger.error("Errore caricamento mapping matricola-nome: %s", exc)
+            return {}
     
     def _refresh_cd_members(self):
         """Refresh CD members list in the text widget."""

@@ -1,3 +1,54 @@
+# Table definition for cd_mandati
+CREATE_CD_MANDATI = """
+CREATE TABLE IF NOT EXISTS cd_mandati (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT,
+    start_date TEXT,
+    end_date TEXT,
+    composizione_json TEXT,
+    note TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT,
+    updated_at TEXT
+);
+"""
+
+# Table definition for cd_cariche
+CREATE_CD_CARICHE = """
+CREATE TABLE IF NOT EXISTS cd_cariche (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codice TEXT NOT NULL UNIQUE,
+    nome TEXT NOT NULL,
+    ordine INTEGER,
+    is_cd_member INTEGER NOT NULL DEFAULT 0,
+    allow_multiple INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+# Table definition for cd_assegnazioni_cariche
+CREATE_CD_ASSEGNAZIONI_CARICHE = """
+CREATE TABLE IF NOT EXISTS cd_assegnazioni_cariche (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mandato_id INTEGER NOT NULL,
+    carica_id INTEGER NOT NULL,
+    socio_id INTEGER,
+    nominativo TEXT,
+    data_inizio TEXT,
+    data_fine TEXT,
+    note TEXT,
+    updated_by TEXT,
+    FOREIGN KEY (mandato_id) REFERENCES cd_mandati(id) ON DELETE RESTRICT,
+    FOREIGN KEY (carica_id) REFERENCES cd_cariche(id) ON DELETE RESTRICT,
+    FOREIGN KEY (socio_id) REFERENCES soci(id) ON DELETE SET NULL,
+    CHECK (socio_id IS NOT NULL OR (nominativo IS NOT NULL AND TRIM(nominativo) <> '')),
+    CHECK (data_fine IS NULL OR data_inizio IS NULL OR data_fine >= data_inizio)
+);
+"""
+__all__ = [
+    "get_connection",
+    "init_db",
+    # ... altri simboli pubblici se necessario
+]
 # -*- coding: utf-8 -*-
 """
 Database operations for GLR Gestione Locale Radioamatori
@@ -9,52 +60,61 @@ import logging
 from typing import List, Tuple, Optional, Any, Dict, Sequence
 from contextlib import contextmanager
 from documents_catalog import DEFAULT_DOCUMENT_CATEGORY
-from exceptions import (
-    DatabaseError,
-    DatabaseConnectionError,
-    DatabaseIntegrityError,
-    DatabaseLockError,
-    map_sqlite_exception
-)
+from exceptions import map_sqlite_exception, DatabaseError
 
-logger = logging.getLogger("librosoci")
+logger = logging.getLogger("database")
 
-# Database configuration will be injected
-_db_name = None
+# ...existing imports...
 
-def set_db_path(db_name: str):
-    """Set the database file path."""
-    global _db_name
-    _db_name = db_name
+# Definizione corretta di REQUIRED_COLUMNS_SOCI
+REQUIRED_COLUMNS_SOCI = [
+    ("matricola", "TEXT"),
+    ("nominativo", "TEXT"),
+    ("nominativo2", "TEXT"),
+    ("nome", "TEXT"),
+    ("cognome", "TEXT"),
+    ("data_nascita", "TEXT"),
+    ("luogo_nascita", "TEXT"),
+    ("indirizzo", "TEXT"),
+    ("cap", "TEXT"),
+    ("citta", "TEXT"),
+    ("provincia", "TEXT"),
+    ("codicefiscale", "TEXT"),
+    ("email", "TEXT"),
+    ("telefono", "TEXT"),
+    ("attivo", "INTEGER NOT NULL DEFAULT 1 CHECK(attivo IN (0,1))"),
+    ("data_iscrizione", "TEXT"),
+    ("data_scadenza", "TEXT"),
+    ("delibera_numero", "TEXT"),
+    ("delibera_data", "TEXT"),
+    ("data_dimissioni", "TEXT"),
+    ("motivo_uscita", "TEXT"),
+    ("note", "TEXT"),
+    ("deleted_at", "TEXT"),
+    ("voto", "INTEGER NOT NULL DEFAULT 0 CHECK(voto IN (0,1))"),
+    # ... altri campi ...
+]
 
+DB_PATH = None
 
-def get_db_path() -> str:
-    """Return the currently configured database file path."""
-    if _db_name is None:
-        raise RuntimeError("Database path not set. Call set_db_path() first.")
-    return _db_name
-
-def get_conn() -> sqlite3.Connection:
-    """Get a database connection with row factory."""
-    if _db_name is None:
-        raise RuntimeError("Database path not set. Call set_db_path() first.")
-    conn = sqlite3.connect(_db_name, timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def set_db_path(path):
+    global DB_PATH
+    DB_PATH = path
 
 @contextmanager
 def get_connection():
     """
     Context manager for database connections.
     Ensures connection is properly closed and committed/rolled back.
-    
     Usage:
         with get_connection() as conn:
             conn.execute("INSERT INTO ...")
             # Automatically commits on success, rollback on error
     """
-    conn = get_conn()
+    if not DB_PATH:
+        raise DatabaseError("DB path not set")
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
         yield conn
         conn.commit()
@@ -68,66 +128,48 @@ def fetch_all(sql: str, params=()):
     """
     Execute query and return all results.
     Properly closes connection after execution.
-    
     Raises:
         DatabaseError: If query execution fails
     """
-    conn = get_conn()
-    try:
-        result = conn.execute(sql, params).fetchall()
-        conn.commit()
-        return result
-    except sqlite3.Error as e:
-        conn.rollback()
-        raise map_sqlite_exception(e)
-    except Exception as e:
-        conn.rollback()
-        raise DatabaseError(f"Query execution failed: {str(e)}", original_error=e)
-    finally:
-        conn.close()
+    with get_connection() as conn:
+        try:
+            result = conn.execute(sql, params).fetchall()
+            return result
+        except sqlite3.Error as e:
+            raise map_sqlite_exception(e)
+        except Exception as e:
+            raise DatabaseError(f"Query execution failed: {str(e)}", original_error=e)
 
 def fetch_one(sql: str, params=()):
     """
     Execute query and return first result.
     Properly closes connection after execution.
-    
     Raises:
         DatabaseError: If query execution fails
     """
-    conn = get_conn()
-    try:
-        result = conn.execute(sql, params).fetchone()
-        conn.commit()
-        return result
-    except sqlite3.Error as e:
-        conn.rollback()
-        raise map_sqlite_exception(e)
-    except Exception as e:
-        conn.rollback()
-        raise DatabaseError(f"Query execution failed: {str(e)}", original_error=e)
-    finally:
-        conn.close()
+    with get_connection() as conn:
+        try:
+            result = conn.execute(sql, params).fetchone()
+            return result
+        except sqlite3.Error as e:
+            raise map_sqlite_exception(e)
+        except Exception as e:
+            raise DatabaseError(f"Query execution failed: {str(e)}", original_error=e)
 
 def exec_query(sql: str, params=()):
     """
     Execute query without returning results.
     Properly closes connection and commits transaction.
-    
     Raises:
         DatabaseError: If query execution fails
     """
-    conn = get_conn()
-    try:
-        conn.execute(sql, params)
-        conn.commit()
-    except sqlite3.Error as e:
-        conn.rollback()
-        raise map_sqlite_exception(e)
-    except Exception as e:
-        conn.rollback()
-        raise DatabaseError(f"Query execution failed: {str(e)}", original_error=e)
-    finally:
-        conn.close()
+    with get_connection() as conn:
+        try:
+            conn.execute(sql, params)
+        except sqlite3.Error as e:
+            raise map_sqlite_exception(e)
+        except Exception as e:
+            raise DatabaseError(f"Query execution failed: {str(e)}", original_error=e)
 
 # --------------------------
 # Database schema
@@ -149,6 +191,7 @@ REQUIRED_COLUMNS_SOCI = [
     ("telefono", "TEXT"),
     ("attivo", "INTEGER DEFAULT 1"),
     ("data_iscrizione", "TEXT"),
+    ("data_scadenza", "TEXT"),
     ("delibera_numero", "TEXT"),
     ("delibera_data", "TEXT"),
     ("data_dimissioni", "TEXT"),
@@ -159,13 +202,12 @@ REQUIRED_COLUMNS_SOCI = [
     ("familiare", "TEXT"),
     ("socio", "TEXT"),
     ("cd_ruolo", "TEXT"),
-    ("privacy_ok", "INTEGER DEFAULT 0"),
-    ("privacy_data", "TEXT"),
-    ("privacy_scadenza", "TEXT"),
-    ("privacy_signed", "INTEGER DEFAULT 0"),
     ("q0", "TEXT"),
     ("q1", "TEXT"),
     ("q2", "TEXT"),
+    ("privacy_signed", "INTEGER DEFAULT 0"),
+    ("privacy_ok", "INTEGER DEFAULT 0"),
+    ("privacy_data", "TEXT"),
 ]
 REQUIRED_COLUMNS_DOCS = [
     ("categoria", "TEXT"),
@@ -178,9 +220,9 @@ CREATE_DOCS = """
 CREATE TABLE IF NOT EXISTS documenti (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     socio_id INTEGER NOT NULL,
-    nome_file TEXT,
-    percorso TEXT,
-    tipo TEXT,
+    nome_file TEXT NOT NULL,
+    percorso TEXT NOT NULL,
+    tipo TEXT NOT NULL,
     categoria TEXT,
     descrizione TEXT,
     data_caricamento TEXT,
@@ -216,7 +258,7 @@ CREATE TABLE IF NOT EXISTS cd_riunioni (
     numero_cd TEXT,
     data TEXT NOT NULL,
     titolo TEXT,
-    note TEXT,
+    note TEXT, -- campo note già presente, va gestito meglio in UI
     tipo_riunione TEXT,
     meta_json TEXT,
     odg_json TEXT,
@@ -240,8 +282,11 @@ CREATE TABLE IF NOT EXISTS cd_delibere (
     astenuti INTEGER,
     allegato_path TEXT,
     note TEXT,
+    verbale_id INTEGER, -- riferimento FK a cd_verbali (opzionale)
+    verbale_riferimento TEXT, -- stringa formattata tipo "n. 02 del 01/02/2023"
     created_at TEXT NOT NULL,
-    FOREIGN KEY (cd_id) REFERENCES cd_riunioni(id) ON DELETE CASCADE
+    FOREIGN KEY (cd_id) REFERENCES cd_riunioni(id) ON DELETE CASCADE,
+    FOREIGN KEY (verbale_id) REFERENCES cd_verbali(id) ON DELETE SET NULL
 )
 """
 
@@ -251,61 +296,23 @@ CREATE TABLE IF NOT EXISTS cd_verbali (
     cd_id INTEGER NOT NULL,
     data_redazione TEXT NOT NULL,
     presidente TEXT,
-    segretario TEXT,
-    odg TEXT,
-    documento_path TEXT,
-    note TEXT,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (cd_id) REFERENCES cd_riunioni(id) ON DELETE CASCADE
-)
+    segretario TEXT
+);
 """
 
-CREATE_CD_MANDATI = """
-CREATE TABLE IF NOT EXISTS cd_mandati (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    label TEXT,
-    start_date TEXT NOT NULL,
-    end_date TEXT NOT NULL,
-    composizione_json TEXT,
-    note TEXT,
-    is_active INTEGER DEFAULT 1,
-    created_at TEXT,
-    updated_at TEXT
-)
-"""
 
-# CD: cariche e assegnazioni (composizione derivata, non manuale)
-CREATE_CD_CARICHE = """
-CREATE TABLE IF NOT EXISTS cd_cariche (
+# Table definition for magazzino_loans
+CREATE_MAGAZZINO_LOANS = """
+CREATE TABLE IF NOT EXISTS magazzino_loans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    codice TEXT NOT NULL UNIQUE,
-    nome TEXT NOT NULL,
-    ordine INTEGER NOT NULL DEFAULT 0,
-    is_cd_member INTEGER NOT NULL DEFAULT 1,
-    allow_multiple INTEGER NOT NULL DEFAULT 0
-)
-"""
-
-CREATE_CD_ASSEGNAZIONI_CARICHE = """
-CREATE TABLE IF NOT EXISTS cd_assegnazioni_cariche (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    mandato_id INTEGER NOT NULL,
-    carica_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
     socio_id INTEGER,
-    nominativo TEXT,
+    data_prestito TEXT,
+    data_reso TEXT,
     note TEXT,
-    data_inizio TEXT,
-    data_fine TEXT,
-    created_at TEXT,
-    created_by TEXT,
-    updated_at TEXT,
-    updated_by TEXT,
-    FOREIGN KEY (mandato_id) REFERENCES cd_mandati(id) ON DELETE RESTRICT,
-    FOREIGN KEY (carica_id) REFERENCES cd_cariche(id) ON DELETE RESTRICT,
-    FOREIGN KEY (socio_id) REFERENCES soci(id) ON DELETE SET NULL,
-    CHECK (socio_id IS NOT NULL OR (nominativo IS NOT NULL AND TRIM(nominativo) <> '')),
-    CHECK (data_fine IS NULL OR data_inizio IS NULL OR data_fine >= data_inizio)
-)
+    FOREIGN KEY (item_id) REFERENCES magazzino_items(id) ON DELETE CASCADE,
+    FOREIGN KEY (socio_id) REFERENCES soci(id) ON DELETE SET NULL
+);
 """
 
 # CD: documenti + versioning (append-only)
@@ -363,6 +370,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 )
 """
 
+
 CREATE_CALENDAR_EVENTS = """
 CREATE TABLE IF NOT EXISTS calendar_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -375,8 +383,9 @@ CREATE TABLE IF NOT EXISTS calendar_events (
     origin TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-)
+);
 """
+
 
 CREATE_PONTI = """
 CREATE TABLE IF NOT EXISTS ponti (
@@ -398,8 +407,9 @@ CREATE TABLE IF NOT EXISTS ponti (
     documento_principale_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-)
+);
 """
+
 
 CREATE_PONTI_STATUS_HISTORY = """
 CREATE TABLE IF NOT EXISTS ponti_status_history (
@@ -410,8 +420,9 @@ CREATE TABLE IF NOT EXISTS ponti_status_history (
     ts TEXT NOT NULL,
     autore TEXT,
     FOREIGN KEY (ponte_id) REFERENCES ponti(id) ON DELETE CASCADE
-)
+);
 """
+
 
 CREATE_PONTI_AUTHORIZATIONS = """
 CREATE TABLE IF NOT EXISTS ponti_authorizations (
@@ -427,8 +438,9 @@ CREATE TABLE IF NOT EXISTS ponti_authorizations (
     calendar_event_id INTEGER,
     FOREIGN KEY (ponte_id) REFERENCES ponti(id) ON DELETE CASCADE,
     FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(id) ON DELETE SET NULL
-)
+);
 """
+
 
 CREATE_PONTI_INTERVENTI = """
 CREATE TABLE IF NOT EXISTS ponti_interventi (
@@ -444,7 +456,7 @@ CREATE TABLE IF NOT EXISTS ponti_interventi (
     note TEXT,
     FOREIGN KEY (ponte_id) REFERENCES ponti(id) ON DELETE CASCADE,
     FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(id) ON DELETE SET NULL
-)
+);
 """
 
 CREATE_PONTI_DOCUMENTS = """
@@ -499,7 +511,7 @@ CREATE TABLE IF NOT EXISTS magazzino_items (
     scheda_tecnica TEXT,
     provenienza TEXT,
     altre_notizie TEXT,
-    is_dismesso INTEGER NOT NULL DEFAULT 0,
+    is_dismesso INTEGER NOT NULL DEFAULT 0 CHECK(is_dismesso IN (0,1)),
     dismesso_at TEXT,
     dismesso_reason TEXT,
     dismesso_destination TEXT,
@@ -507,22 +519,22 @@ CREATE TABLE IF NOT EXISTS magazzino_items (
     updated_at TEXT NOT NULL
 )
 """
-
-CREATE_MAGAZZINO_LOANS = """
-CREATE TABLE IF NOT EXISTS magazzino_loans (
+CREATE_DOCUMENTI_CATEGORIE = """
+CREATE TABLE IF NOT EXISTS documenti_categorie (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    item_id INTEGER NOT NULL,
-    socio_id INTEGER,
-    data_prestito TEXT NOT NULL,
-    data_reso TEXT,
-    note TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (item_id) REFERENCES magazzino_items(id) ON DELETE CASCADE,
-    FOREIGN KEY (socio_id) REFERENCES soci(id) ON DELETE SET NULL
+    nome TEXT NOT NULL UNIQUE
 )
 """
-
+CREATE_FULLTEXT_INDEXES = [
+    "CREATE VIRTUAL TABLE IF NOT EXISTS documenti_fts USING fts5(descrizione, categoria, content='documenti', content_rowid='id')",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS section_documents_fts USING fts5(descrizione, categoria, content='section_documents', content_rowid='id')",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS ponti_fts USING fts5(note_tecniche, content='ponti', content_rowid='id')"
+]
+CREATE_ALTER_TABLES = [
+    # Esempio di aggiunta FK mancante
+    "ALTER TABLE section_documents ADD CONSTRAINT fk_section_documents_socio FOREIGN KEY (socio_id) REFERENCES soci(id)"
+]
+# Indici
 CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_soci_attivo ON soci(attivo)",
     "CREATE INDEX IF NOT EXISTS idx_soci_deleted ON soci(deleted_at)",
@@ -530,32 +542,9 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_eventi_socio ON eventi_libro_soci(socio_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_soci_matricola ON soci(matricola) WHERE matricola IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_cd_delibere_cd ON cd_delibere(cd_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_verbali_cd ON cd_verbali(cd_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_riunioni_data ON cd_riunioni(data)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_riunioni_verbale_section_doc ON cd_riunioni(verbale_section_doc_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_mandati_active ON cd_mandati(is_active)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_mandati_periodo ON cd_mandati(start_date, end_date)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_cd_mandati_single_active ON cd_mandati(is_active) WHERE is_active = 1",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_cd_cariche_codice ON cd_cariche(codice)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_mandato ON cd_assegnazioni_cariche(mandato_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_carica ON cd_assegnazioni_cariche(carica_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_socio ON cd_assegnazioni_cariche(socio_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_documenti_mandato ON cd_documenti(mandato_id)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_documenti_tipo ON cd_documenti(tipo)",
-    "CREATE INDEX IF NOT EXISTS idx_cd_docver_doc ON cd_documenti_versioni(documento_id, version_no DESC)",
-    "CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id)",
-    "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)",
-    "CREATE INDEX IF NOT EXISTS idx_ponti_stato ON ponti(stato_corrente)",
-    "CREATE INDEX IF NOT EXISTS idx_ponti_auth_scadenza ON ponti_authorizations(data_scadenza)",
-    "CREATE INDEX IF NOT EXISTS idx_ponti_interventi_data ON ponti_interventi(data)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_section_documents_relative_path ON section_documents(relative_path) WHERE deleted_at IS NULL",
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_section_documents_percorso ON section_documents(percorso) WHERE deleted_at IS NULL",
-    "CREATE INDEX IF NOT EXISTS idx_section_documents_categoria ON section_documents(categoria)",
-    "CREATE INDEX IF NOT EXISTS idx_section_documents_data ON section_documents(data_caricamento)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_soci_ruoli_unique ON soci_ruoli(socio_id, ruolo)",
-    "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_item ON magazzino_loans(item_id)",
-    "CREATE INDEX IF NOT EXISTS idx_magazzino_loans_active ON magazzino_loans(item_id, data_reso)"
+	"CREATE INDEX IF NOT EXISTS idx_cd_assegnazioni_socio ON cd_assegnazioni_cariche(socio_id)"
 ]
+
 
 
 def _normalize_cd_carica_codice(nome: str) -> str:
@@ -880,6 +869,23 @@ def init_db():
             "UPDATE documenti SET categoria = ? WHERE categoria IS NULL OR TRIM(categoria) = ''",
             (DEFAULT_DOCUMENT_CATEGORY,)
         )
+        # Nuova tabella di lookup categorie documenti
+        try:
+            conn.execute(CREATE_DOCUMENTI_CATEGORIE)
+        except Exception:
+            pass
+        # Indici fulltext (solo se engine supporta FTS5)
+        for fts in CREATE_FULLTEXT_INDEXES:
+            try:
+                conn.execute(fts)
+            except Exception:
+                pass
+        # Alter table per FK mancanti (best effort)
+        for alter in CREATE_ALTER_TABLES:
+            try:
+                conn.execute(alter)
+            except Exception:
+                pass
         conn.execute(CREATE_EVENTI)
         conn.execute(CREATE_CD_RIUNIONI)
         # Ensure numero_cd column exists in cd_riunioni
@@ -1074,7 +1080,7 @@ def init_db():
         _ensure_column(conn, "magazzino_items", "provenienza", "TEXT")
         _ensure_column(conn, "magazzino_items", "altre_notizie", "TEXT")
         # Magazzino: dismissione (soft-delete)
-        _ensure_column(conn, "magazzino_items", "is_dismesso", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "magazzino_items", "is_dismesso", "INTEGER NOT NULL DEFAULT 0 CHECK(is_dismesso IN (0,1))")
         _ensure_column(conn, "magazzino_items", "dismesso_at", "TEXT")
         _ensure_column(conn, "magazzino_items", "dismesso_reason", "TEXT")
         _ensure_column(conn, "magazzino_items", "dismesso_destination", "TEXT")
@@ -1083,8 +1089,8 @@ def init_db():
         for idx in CREATE_INDEXES:
             try:
                 conn.execute(idx)
-            except sqlite3.OperationalError as e:
-                logger.warning("Indice non creato (%s): %s", idx, e)
+            except Exception:
+                pass
 
         # Backfill historical single-role data into soci_ruoli
         try:

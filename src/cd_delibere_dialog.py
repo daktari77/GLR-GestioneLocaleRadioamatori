@@ -104,6 +104,54 @@ class DeliberaDialog:
         self.label_allegato = ttk.Label(all_frame, text="Nessun file selezionato", foreground="gray")
         self.label_allegato.pack(anchor="w", padx=5, pady=5)
         
+
+        # Verbale di riferimento
+        verbale_frame = ttk.LabelFrame(scrollable_frame, text="Verbale di riferimento (opzionale)")
+        verbale_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        self.verbale_id_var = tk.StringVar()
+        self.combo_verbale = ttk.Combobox(verbale_frame, textvariable=self.verbale_id_var, state="readonly", width=40)
+        self.combo_verbale.pack(side=tk.LEFT, padx=5, pady=5)
+        self.verbale_map = {}
+        default_verbale_id = None
+        try:
+            from cd_verbali import get_all_verbali
+            verbali = get_all_verbali(self.meeting_id) if self.meeting_id else get_all_verbali()
+            items = []
+            for v in verbali:
+                label = f"Verbale n. {v.get('id')} del {v.get('data_redazione','')}"
+                self.verbale_map[label] = v.get('id')
+                items.append(label)
+            self.combo_verbale['values'] = ["(Nessuno)"] + items
+            # Preseleziona il verbale della riunione, se esiste
+            if self.meeting_id:
+                try:
+                    from cd_meetings import get_meeting_by_id
+                    meeting = get_meeting_by_id(self.meeting_id)
+                    # Cerca verbale associato (verbale_section_doc_id o simile)
+                    if meeting:
+                        # Cerca un verbale con cd_id uguale e data più vicina
+                        for v in verbali:
+                            if v.get('cd_id') == self.meeting_id:
+                                default_verbale_id = v.get('id')
+                                break
+                except Exception:
+                    pass
+            if default_verbale_id:
+                for label, vid in self.verbale_map.items():
+                    if vid == default_verbale_id:
+                        self.combo_verbale.set(label)
+                        break
+            else:
+                self.combo_verbale.set("(Nessuno)")
+        except Exception:
+            self.combo_verbale['values'] = ["(Nessuno)"]
+            self.combo_verbale.set("(Nessuno)")
+
+        ttk.Label(verbale_frame, text="Riferimento (testo libero):").pack(side=tk.LEFT, padx=5)
+        self.entry_verbale_rif = ttk.Entry(verbale_frame, width=30)
+        self.entry_verbale_rif.pack(side=tk.LEFT, padx=5)
+
         # Note
         note_frame = ttk.LabelFrame(scrollable_frame, text="Note")
         note_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -196,6 +244,18 @@ class DeliberaDialog:
             pass
 
         if delibera:
+            # Verbale di riferimento
+            verbale_id = delibera.get('verbale_id')
+            verbale_rif = delibera.get('verbale_riferimento') or ''
+            if verbale_id:
+                for label, vid in getattr(self, 'verbale_map', {}).items():
+                    if str(vid) == str(verbale_id):
+                        self.combo_verbale.set(label)
+                        break
+            else:
+                self.combo_verbale.set("(Nessuno)")
+            self.entry_verbale_rif.delete(0, tk.END)
+            self.entry_verbale_rif.insert(0, verbale_rif)
             self.entry_numero.delete(0, tk.END)
             self.entry_numero.insert(0, delibera.get('numero', ''))
             
@@ -237,6 +297,22 @@ class DeliberaDialog:
         astenuti = self.entry_astenuti.get() or None
         allegato_path = self.selected_allegato
         note = self.text_note.get('1.0', tk.END).strip()
+        # Verbale di riferimento
+        verbale_id = None
+        verbale_rif = self.entry_verbale_rif.get().strip() or None
+        if hasattr(self, 'combo_verbale'):
+            label = self.combo_verbale.get()
+            if label and label != "(Nessuno)":
+                verbale_id = self.verbale_map.get(label)
+        # Se non selezionato, eredita il verbale della riunione (se esiste)
+        if not verbale_id and self.meeting_id:
+            try:
+                from cd_verbali import get_all_verbali
+                verbali = get_all_verbali(self.meeting_id)
+                if verbali:
+                    verbale_id = verbali[0].get('id')
+            except Exception:
+                pass
         
         if not numero or not oggetto:
             messagebox.showwarning("Validazione", "Inserire numero e oggetto della delibera.")
@@ -250,7 +326,8 @@ class DeliberaDialog:
                                    favorevoli=int(favorevoli) if favorevoli else None,
                                    contrari=int(contrari) if contrari else None,
                                    astenuti=int(astenuti) if astenuti else None,
-                                   allegato_path=allegato_path, note=note if note else None):
+                                   allegato_path=allegato_path, note=note if note else None,
+                                   verbale_id=verbale_id, verbale_riferimento=verbale_rif):
                     messagebox.showinfo("Successo", "Delibera aggiornata.")
                     self.result = True
                     self.dialog.destroy()
@@ -266,7 +343,8 @@ class DeliberaDialog:
                                           favorevoli=int(favorevoli) if favorevoli else None,
                                           contrari=int(contrari) if contrari else None,
                                           astenuti=int(astenuti) if astenuti else None,
-                                          allegato_path=allegato_path, note=note if note else None)
+                                          allegato_path=allegato_path, note=note if note else None,
+                                          verbale_id=verbale_id, verbale_riferimento=verbale_rif)
                 if delibera_id > 0:
                     messagebox.showinfo("Successo", f"Delibera creata (ID: {delibera_id}).")
                     self.result = True

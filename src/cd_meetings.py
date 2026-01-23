@@ -1,3 +1,22 @@
+def recalc_meeting_numbers(year: str | None = None):
+    """
+    Ricalcola il progressivo numero_cd per tutte le riunioni CD, ordinando per data.
+    Se year è specificato, limita alle riunioni di quell'anno.
+    """
+    from database import get_connection, fetch_all
+    import re
+    try:
+        with get_connection() as conn:
+            if year:
+                rows = fetch_all("SELECT id, data FROM cd_riunioni WHERE data LIKE ? ORDER BY data ASC, id ASC", (f"{year}-%",))
+            else:
+                rows = fetch_all("SELECT id, data FROM cd_riunioni ORDER BY data ASC, id ASC")
+            for idx, row in enumerate(rows or [], start=1):
+                numero_cd = f"{idx:02d}"
+                conn.execute("UPDATE cd_riunioni SET numero_cd=? WHERE id=?", (numero_cd, row["id"]))
+    except Exception as exc:
+        logger.error(f"Errore ricalcolo progressivo numero_cd: {exc}")
+
 # -*- coding: utf-8 -*-
 """
 CD Meetings management for GLR Gestione Locale Radioamatori
@@ -207,9 +226,10 @@ def add_meeting(
     verbale_section_doc_id: int | None = None,
     meta_json: str | dict | None = None,
     presenze_json: str | dict | None = None,
+    note: str | None = None,
 ) -> int:
     """
-    Add a new CD meeting.
+    try:
     
     Args:
         data: Meeting date (ISO format YYYY-MM-DD)
@@ -245,7 +265,7 @@ def add_meeting(
                     data,
                     titolo,
                     int(mandato_id) if mandato_id else None,
-                    odg,
+                    note,
                     tipo_riunione,
                     meta_json,
                     odg_json,
@@ -265,6 +285,10 @@ def add_meeting(
         if meeting_id is None:
             logger.error("Failed to get meeting ID after insert")
             return -1
+
+        # Ricalcola progressivo per l'anno della riunione
+        year = str(data)[:4] if data else None
+        recalc_meeting_numbers(year)
 
         # Canonical storage: section documents.
         # If caller provided a legacy path, import it into section docs and link it.
@@ -303,6 +327,7 @@ def update_meeting(
     verbale_section_doc_id: int | None = None,
     meta_json: str | dict | None = None,
     presenze_json: str | dict | None = None,
+    note: str | None = None,
 ) -> bool:
     """
     Update an existing meeting.
@@ -339,9 +364,10 @@ def update_meeting(
         if tipo_riunione is not None:
             updates.append("tipo_riunione=?")
             values.append(tipo_riunione)
-        if odg is not None:
+        if note is not None:
             updates.append("note=?")
-            values.append(odg)
+            values.append(note)
+        if odg is not None:
             updates.append("odg_json=?")
             values.append(_odg_text_to_json(odg))
         if meta_json is not None:
@@ -393,6 +419,16 @@ def update_meeting(
             cursor = conn.cursor()
             cursor.execute(sql, values)
             conn.commit()
+
+        # Ricalcola progressivo per l'anno della riunione aggiornata
+        if data:
+            year = str(data)[:4]
+        else:
+            # Se data non aggiornata, recupera quella attuale
+            from database import fetch_one
+            row = fetch_one("SELECT data FROM cd_riunioni WHERE id=?", (meeting_id,))
+            year = str(row["data"])[:4] if row and row.get("data") else None
+        recalc_meeting_numbers(year)
         
         logger.info(f"Updated meeting {meeting_id}")
         return True

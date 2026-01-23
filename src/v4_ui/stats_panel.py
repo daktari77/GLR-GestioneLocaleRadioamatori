@@ -57,31 +57,18 @@ class StatsPanel(ttk.Frame):
         self.label_vote_pct = ttk.Label(main_frame, text="0%", font="AppBold")
         self.label_vote_pct.grid(row=1, column=3, sticky="w", padx=5, pady=5)
         
-        # Row 3: Privacy
-        ttk.Label(main_frame, text="Privacy firmato:", font="AppNormal").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        self.label_privacy_signed = ttk.Label(main_frame, text="0", font="AppBold", foreground="green")
-        self.label_privacy_signed.grid(row=2, column=1, sticky="w", padx=5, pady=5)
-        
-        ttk.Label(main_frame, text="Senza privacy:", font="AppNormal").grid(row=2, column=2, sticky="w", padx=5, pady=5)
-        self.label_no_privacy = ttk.Label(main_frame, text="0", font="AppBold", foreground="red")
-        self.label_no_privacy.grid(row=2, column=3, sticky="w", padx=5, pady=5)
-        
-        ttk.Label(main_frame, text="% Privacy:", font="AppNormal").grid(row=2, column=4, sticky="w", padx=5, pady=5)
-        self.label_privacy_pct = ttk.Label(main_frame, text="0%", font="AppBold")
-        self.label_privacy_pct.grid(row=2, column=5, sticky="w", padx=5, pady=5)
-        
         # Separator
         sep = ttk.Separator(main_frame, orient="horizontal")
-        sep.grid(row=3, column=0, columnspan=6, sticky="ew", padx=5, pady=10)
+        sep.grid(row=2, column=0, columnspan=6, sticky="ew", padx=5, pady=10)
         
-        # Row 4: Documents
-        ttk.Label(main_frame, text="Con documenti:", font="AppNormal").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        # Row 3: Documents
+        ttk.Label(main_frame, text="Con documenti:", font="AppNormal").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         self.label_with_docs = ttk.Label(main_frame, text="0", font="AppBold")
-        self.label_with_docs.grid(row=4, column=1, sticky="w", padx=5, pady=5)
+        self.label_with_docs.grid(row=3, column=1, sticky="w", padx=5, pady=5)
         
-        ttk.Label(main_frame, text="% Documenti:", font="AppNormal").grid(row=4, column=2, sticky="w", padx=5, pady=5)
+        ttk.Label(main_frame, text="% Documenti:", font="AppNormal").grid(row=3, column=2, sticky="w", padx=5, pady=5)
         self.label_docs_pct = ttk.Label(main_frame, text="0%", font="AppBold")
-        self.label_docs_pct.grid(row=4, column=3, sticky="w", padx=5, pady=5)
+        self.label_docs_pct.grid(row=3, column=3, sticky="w", padx=5, pady=5)
         
         # Refresh button
         button_frame = ttk.Frame(self)
@@ -97,7 +84,6 @@ class StatsPanel(ttk.Frame):
             # coming from legacy imports are handled correctly.
             attivo_expr = "LOWER(TRIM(COALESCE(CAST(attivo AS TEXT), '')))"
             voto_expr = "LOWER(TRIM(COALESCE(CAST(voto AS TEXT), '')))"
-            privacy_expr = "LOWER(TRIM(COALESCE(CAST(privacy_signed AS TEXT), '')))"
             truthy_values = "('1','true','si','sì','yes')"
 
             stats = fetch_one(
@@ -106,9 +92,7 @@ class StatsPanel(ttk.Frame):
                     COUNT(*) AS total_cnt,
                     SUM(CASE WHEN {attivo_expr} IN {truthy_values} THEN 1 ELSE 0 END) AS active_cnt,
                     SUM(CASE WHEN {attivo_expr} IN {truthy_values} THEN 0 ELSE 1 END) AS inactive_cnt,
-                    SUM(CASE WHEN {voto_expr} IN {truthy_values} AND {attivo_expr} IN {truthy_values} THEN 1 ELSE 0 END) AS vote_cnt,
-                    SUM(CASE WHEN {privacy_expr} IN {truthy_values} THEN 1 ELSE 0 END) AS privacy_yes_cnt,
-                    SUM(CASE WHEN {privacy_expr} IN {truthy_values} THEN 0 ELSE 1 END) AS privacy_no_cnt
+                    SUM(CASE WHEN {voto_expr} IN {truthy_values} AND {attivo_expr} IN {truthy_values} THEN 1 ELSE 0 END) AS vote_cnt
                 FROM soci
                 WHERE deleted_at IS NULL
                 """
@@ -118,8 +102,6 @@ class StatsPanel(ttk.Frame):
             active_count = stats['active_cnt'] if stats else 0
             inactive_count = stats['inactive_cnt'] if stats else 0
             with_vote_count = stats['vote_cnt'] if stats else 0
-            privacy_signed_count = stats['privacy_yes_cnt'] if stats else 0
-            no_privacy_count = stats['privacy_no_cnt'] if stats else 0
             
             # Documents (soci with at least one document)
             with_docs = fetch_one("""
@@ -133,8 +115,6 @@ class StatsPanel(ttk.Frame):
             self.label_active.config(text=str(active_count))
             self.label_inactive.config(text=str(inactive_count))
             self.label_with_vote.config(text=str(with_vote_count))
-            self.label_privacy_signed.config(text=str(privacy_signed_count))
-            self.label_no_privacy.config(text=str(no_privacy_count))
             self.label_with_docs.config(text=str(with_docs_count))
             
             # Calculate percentages
@@ -142,14 +122,10 @@ class StatsPanel(ttk.Frame):
                 vote_pct = int((with_vote_count / total_count) * 100)
                 self.label_vote_pct.config(text=f"{vote_pct}%")
                 
-                privacy_pct = int((privacy_signed_count / total_count) * 100)
-                self.label_privacy_pct.config(text=f"{privacy_pct}%")
-                
                 docs_pct = int((with_docs_count / total_count) * 100)
                 self.label_docs_pct.config(text=f"{docs_pct}%")
             else:
                 self.label_vote_pct.config(text="0%")
-                self.label_privacy_pct.config(text="0%")
                 self.label_docs_pct.config(text="0%")
             
         except Exception as e:

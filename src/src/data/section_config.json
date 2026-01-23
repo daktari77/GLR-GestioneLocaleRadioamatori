@@ -1,0 +1,36 @@
+{
+  "nome_sezione": "Bg",
+  "codice_sezione": "2401",
+  "sede_operativa": "qwe",
+  "sede_legale": "asd",
+  "indirizzo_postale": "asd",
+  "email": "zxc",
+  "telefono": "rty",
+  "sito_web": "fgh",
+  "coordinate_bancarie": "vbn",
+  "recapiti": "uio",
+  "mandato": "jkl",
+  "import_result": {
+    "imported": 138,
+    "errors": 0,
+    "duplicates": 0
+  },
+  "cd_config": {
+    "Presidente": "130491",
+    "Vice Presidente": "230456",
+    "Segretario": "150702",
+    "Tesoriere": "230619",
+    "Consigliere 1": "091031",
+    "Consigliere 2": "220247",
+    "Consigliere 3": "150703",
+    "Probiviro 1 (referente)": "891947",
+    "Probiviro 2": "761380",
+    "Probiviro 3": "840543"
+  },
+  "thunderbird": {
+    "method": "thunderbird",
+    "thunderbird_path": "data/tools/thunderbird",
+    "auto_download": true
+  },
+  "wizard_completed": true
+}

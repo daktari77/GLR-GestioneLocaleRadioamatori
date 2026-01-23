@@ -45,9 +45,6 @@ class ExportDialog(tk.Toplevel):
             ("email", "Email"),
             ("telefono", "Telefono"),
             ("familiare", "Familiare"),
-            ("privacy_signed", "Privacy firmato"),
-            ("privacy_ok", "Privacy accordato"),
-            ("privacy_data", "Data privacy"),
             ("cd_ruolo", "Stato"),
             ("voto", "Diritto voto"),
             ("data_iscrizione", "Data iscrizione"),
@@ -57,7 +54,7 @@ class ExportDialog(tk.Toplevel):
         ]
         
         # Default selected fields
-        self.default_fields = ["nominativo", "nome", "cognome", "matricola", "email", "attivo", "privacy_signed", "data_iscrizione"]
+        self.default_fields = ["nominativo", "nome", "cognome", "matricola", "email", "attivo", "data_iscrizione"]
         
         self._build_ui()
         

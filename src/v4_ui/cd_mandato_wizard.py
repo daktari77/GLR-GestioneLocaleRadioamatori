@@ -168,7 +168,39 @@ def _ask_member_manual_name(parent: tk.Misc, *, initial_value: str = "") -> str 
     return nome or None
 
 
+class _RolePickerDialog(simpledialog.Dialog):
+    """Dialog with dropdown to select or edit the role."""
+
+    def __init__(self, parent, *, roles: list[str] | tuple[str, ...], initial_role: str):
+        self._roles = tuple(roles)
+        self._initial_role = initial_role
+        super().__init__(parent, title="Ruolo componente CD")
+
+    def body(self, master):
+        ttk.Label(master, text="Seleziona il ruolo").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 4))
+        self.var = tk.StringVar(value=self._initial_role)
+        self.combo = ttk.Combobox(master, textvariable=self.var, values=self._roles, state="normal", width=30)
+        self.combo.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.combo.focus_set()
+        return self.combo
+
+    def apply(self):
+        self.result = (self.var.get() or "").strip()
+
+
+
 class CdMandatoWizard(tk.Toplevel):
+    def _backup_before_save(self):
+        """Esegue un backup automatico prima di modifiche strutturali ai mandati."""
+        try:
+            from backup import run_incremental_backup
+            run_incremental_backup(interactive=False)
+        except Exception as exc:
+            messagebox.showwarning(
+                "Backup non riuscito",
+                f"Backup automatico non riuscito: {exc}\nProcedere solo se si dispone di un backup recente."
+            )
+
     """Wizard/dialog per aggiornare Mandato + composizione Consiglio Direttivo."""
 
     DEFAULT_CARICHE = (
@@ -193,6 +225,7 @@ class CdMandatoWizard(tk.Toplevel):
 
         self._selected_mandato_id: int | None = None
         self._mandato_display_to_id: dict[str, int | None] = {}
+        self._autofill_attempted = False
 
         self.var_label = tk.StringVar()
         self.var_start = tk.StringVar()
@@ -337,6 +370,8 @@ class CdMandatoWizard(tk.Toplevel):
         except Exception:
             pass
 
+        self._maybe_autofill_from_roles()
+
     def _reload_mandati_list(self):
         try:
             from cd_mandati import get_all_cd_mandati
@@ -382,7 +417,122 @@ class CdMandatoWizard(tk.Toplevel):
         except Exception:
             pass
 
+    def _next_member_iid(self) -> str:
+        """Return a unique iid for the Treeview rows (avoids duplicate mX ids)."""
+        existing = set(self.tv.get_children())
+        counter = 1
+        while True:
+            candidate = f"m{counter}"
+            if candidate not in existing:
+                return candidate
+            counter += 1
+
+    def _composition_is_empty(self) -> bool:
+        return len(self.tv.get_children()) == 0
+
+    def _fetch_roles_from_members(self) -> list[dict]:
+        try:
+            from database import fetch_all
+
+            rows = fetch_all(
+                """
+                SELECT id, nominativo, nome, cognome, cd_ruolo
+                FROM soci
+                WHERE deleted_at IS NULL AND TRIM(COALESCE(cd_ruolo, '')) <> ''
+                ORDER BY cognome, nome
+                """
+            )
+        except Exception:
+            return []
+
+        role_map: list[dict] = []
+        for r in rows or []:
+            role_raw = str((r.get("cd_ruolo") if hasattr(r, "get") else r[4]) or "").strip().lower()
+            if not role_raw:
+                continue
+            if role_raw.startswith("pres"):
+                carica = "Presidente"
+            elif "vice" in role_raw:
+                carica = "Vicepresidente"
+            elif role_raw.startswith("segr"):
+                carica = "Segretario"
+            elif role_raw.startswith("tes"):
+                carica = "Tesoriere"
+            elif "sindac" in role_raw or "revisor" in role_raw:
+                carica = "Sindaco/Revisore"
+            elif role_raw.startswith("consig"):
+                carica = "Consigliere"
+            else:
+                continue
+
+            socio_id = None
+            try:
+                socio_id_val = r.get("id") if hasattr(r, "get") else r[0]
+                socio_id = int(str(socio_id_val)) if socio_id_val is not None else None
+            except Exception:
+                socio_id = None
+
+            nominativo = str((r.get("nominativo") if hasattr(r, "get") else r[1]) or "").strip()
+            nome = str((r.get("nome") if hasattr(r, "get") else r[2]) or "").strip()
+            cognome = str((r.get("cognome") if hasattr(r, "get") else r[3]) or "").strip()
+            display_nome = nominativo if nominativo else f"{nome} {cognome}".strip()
+            if not display_nome:
+                display_nome = "Socio"
+
+            role_map.append({
+                "carica": carica,
+                "nome": display_nome,
+                "note": "",
+                "socio_id": socio_id,
+            })
+
+        # Ordina per importanza carica
+        order: dict[str, int] = {
+            "Presidente": 1,
+            "Vicepresidente": 2,
+            "Segretario": 3,
+            "Tesoriere": 4,
+            "Sindaco/Revisore": 5,
+            "Consigliere": 6,
+        }
+        role_map.sort(key=lambda x: order.get(str(x.get("carica") or ""), 99))
+        return role_map
+
+    def _maybe_autofill_from_roles(self):
+        if self._autofill_attempted:
+            return
+        self._autofill_attempted = True
+
+        if not self._composition_is_empty():
+            return
+
+        roles = self._fetch_roles_from_members()
+        if not roles:
+            return
+
+        summary_lines = ["Ruoli trovati nei soci:"]
+        for r in roles:
+            summary_lines.append(f"- {r['carica']}: {r['nome']}")
+
+        if not messagebox.askyesno(
+            "Precompila mandato",
+            "\n".join(summary_lines + ["", "Vuoi usare questi ruoli per compilare il mandato corrente?"])
+        ):
+            return
+
+        for r in roles:
+            socio_id_s = str(int(r["socio_id"])) if r.get("socio_id") else ""
+            iid = self._next_member_iid()
+            self.tv.insert("", tk.END, iid=iid, values=(socio_id_s, r["carica"], r["nome"], r["note"]))
+
     def _new_mandato(self):
+        # Conferma se ci sono modifiche non salvate
+        if self._composition_is_empty() is False and self._selected_mandato_id is None:
+            if not messagebox.askyesno(
+                "Attenzione",
+                "Ci sono componenti inseriti non ancora salvati. Vuoi davvero creare un nuovo mandato e perdere le modifiche?"
+            ):
+                return
         self._selected_mandato_id = None
         self.var_pick.set("(nuovo)")
         self.var_label.set("")
@@ -392,6 +542,8 @@ class CdMandatoWizard(tk.Toplevel):
         self.var_is_active.set(False)
         for row in self.tv.get_children():
             self.tv.delete(row)
+        self._autofill_attempted = False
+        self._maybe_autofill_from_roles()
 
     def _on_pick_mandato(self):
         choice = (self.var_pick.get() or "").strip()
@@ -399,6 +551,16 @@ class CdMandatoWizard(tk.Toplevel):
         if mid is None:
             self._new_mandato()
             return
+
+        # Conferma se ci sono modifiche non salvate
+        if self._composition_is_empty() is False and self._selected_mandato_id is None:
+            if not messagebox.askyesno(
+                "Attenzione",
+                "Ci sono componenti inseriti non ancora salvati. Vuoi davvero cambiare mandato e perdere le modifiche?"
+            ):
+                return
+
+        self._autofill_attempted = False
 
         try:
             from cd_mandati import get_cd_mandato_by_id
@@ -438,6 +600,8 @@ class CdMandatoWizard(tk.Toplevel):
                 ),
             )
 
+        self._maybe_autofill_from_roles()
+
     def _ask_member_data(self, *, initial=None):
         initial = initial or {}
 
@@ -461,16 +625,15 @@ class CdMandatoWizard(tk.Toplevel):
         if not nome:
             messagebox.showwarning("Componente CD", "Inserire un nominativo.")
             return None
-
-        carica = simpledialog.askstring(
-            "Componente CD",
-            "Carica (es. Presidente, Segretario, Consigliere)",
-            initialvalue=str(initial.get("carica") or "Consigliere"),
-            parent=self,
+        role_dialog = _RolePickerDialog(
+            self,
+            roles=self.DEFAULT_CARICHE,
+            initial_role=str(initial.get("carica") or "Consigliere"),
         )
+        carica = role_dialog.result
         if carica is None:
             return None
-        carica = carica.strip() or "Consigliere"
+        carica = str(carica).strip() or "Consigliere"
 
         note = simpledialog.askstring("Componente CD", "Note (opzionale)", initialvalue=str(initial.get("note") or ""), parent=self)
         if note is None:
@@ -482,7 +645,7 @@ class CdMandatoWizard(tk.Toplevel):
         data = self._ask_member_data()
         if not data:
             return
-        iid = f"m{len(self.tv.get_children()) + 1}"
+        iid = self._next_member_iid()
         socio_id_s = str(int(data["socio_id"])) if data.get("socio_id") else ""
         self.tv.insert("", tk.END, iid=iid, values=(socio_id_s, data["carica"], data["nome"], data["note"]))
 
@@ -518,6 +681,8 @@ class CdMandatoWizard(tk.Toplevel):
             self.tv.delete(iid)
 
     def _on_save(self):
+        # Backup automatico prima di ogni salvataggio
+        self._backup_before_save()
         # Parse/normalize dates (accept DD/MM/YYYY or ISO)
         try:
             start_iso = ddmmyyyy_to_iso(self.var_start.get())
@@ -575,6 +740,8 @@ class CdMandatoWizard(tk.Toplevel):
                 self.on_saved(self.result)
             except Exception:
                 pass
+
+        self._autofill_attempted = False
 
         # Refresh list so the newly created mandate is selectable
         try:

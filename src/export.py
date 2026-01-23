@@ -54,7 +54,7 @@ class ExportManager:
                     "indirizzo", "cap", "citta", "provincia",
                     "email", "telefono", "familiare", "socio",
                     "matricola", "num_iscrizione", "q0", "q1", "q2", "cd_ruolo",
-                    "note", "voto", "privacy_ok", "privacy_data", "privacy_scadenza",
+                    "note", "voto",
                     "data_iscrizione", "deleted_at"
                 ]
             
@@ -172,6 +172,17 @@ class ExportManager:
             border-bottom: 1px solid #ddd;
         }}
         tr:hover {{
+                    # Always use all columns from REQUIRED_COLUMNS_SOCI in database.py
+                    # Duplicated here for decoupling
+                    headers = [
+                        "matricola", "nominativo", "nominativo2", "nome", "cognome", "data_nascita", "luogo_nascita", "indirizzo", "cap", "citta", "provincia", "codicefiscale", "email", "telefono", "attivo", "data_iscrizione", "data_scadenza", "delibera_numero", "delibera_data", "data_dimissioni", "motivo_uscita", "note", "deleted_at", "voto", "familiare", "socio", "cd_ruolo", "q0", "q1", "q2", "privacy_signed", "privacy_ok", "privacy_data"
+                    ]
+                    # Add id and num_iscrizione if present in data
+                    if isinstance(members_list[0], dict):
+                        if "id" in members_list[0]:
+                            headers = ["id"] + headers
+                        if "num_iscrizione" in members_list[0]:
+                            headers.append("num_iscrizione")
             background-color: #f9f9f9;
         }}
         .active {{
@@ -192,6 +203,43 @@ class ExportManager:
         }}
     </style>
 </head>
+
+            def export_magazzino_csv(self, items_list, filename=None):
+                """
+                Export magazzino_items to CSV format (all columns)
+                Args:
+                    items_list: List of magazzino item dicts or tuples
+                    filename: Output filename (auto-generated if None)
+                Returns:
+                    Path to exported file
+                """
+                if not filename:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    filename = f"magazzino_export_{timestamp}.csv"
+                filepath = self.export_dir / filename
+                try:
+                    import csv
+                    if not items_list:
+                        logger.warning("Empty magazzino list for CSV export")
+                        return None
+                    # All columns from magazzino_items schema
+                    headers = [
+                        "id", "numero_inventario", "marca", "modello", "descrizione", "note", "quantita", "ubicazione", "matricola", "doc_fisc_prov", "valore_acq_eur", "scheda_tecnica", "provenienza", "altre_notizie", "is_dismesso", "dismesso_at", "dismesso_reason", "dismesso_destination", "created_at", "updated_at"
+                    ]
+                    with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
+                        writer = csv.DictWriter(f, fieldnames=headers, delimiter=";")
+                        writer.writeheader()
+                        for item in items_list:
+                            if isinstance(item, dict):
+                                writer.writerow({k: item.get(k, "") for k in headers})
+                            else:
+                                row = dict(zip(headers, item))
+                                writer.writerow(row)
+                    logger.info(f"CSV export completed: {filepath}")
+                    return filepath
+                except Exception as e:
+                    logger.error(f"CSV export failed: {e}")
+                    return None
 <body>
     <div class="container">
         <header>
