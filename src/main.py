@@ -73,6 +73,7 @@ from causali import set_causali_path
 from config_manager import set_config_paths
 from utils import set_docs_base
 from backup import backup_on_startup
+from documents_backup import backup_documents
 
 verify_and_prepare_environment()
 
@@ -128,6 +129,11 @@ def _init_db_thread():
 
 def _backup_thread():
     backup_on_startup(DB_NAME, get_backup_dir())
+    # Backup incrementale documenti soci e sezione
+    try:
+        backup_documents(DATA_DIR, BACKUP_DIR, mode='incremental')
+    except Exception as e:
+        logger.warning(f"Backup incrementale documenti fallito: {e}")
 
 db_thread = threading.Thread(target=_init_db_thread, name="InitDB")
 backup_thread = threading.Thread(target=_backup_thread, name="BackupStartup")

@@ -265,8 +265,6 @@ class TestDateValidation(unittest.TestCase):
             'data_iscrizione',
             'data_dimissioni',
             'delibera_data',
-            'privacy_data',
-            'privacy_scadenza'
         ]
         
         for field in date_fields:

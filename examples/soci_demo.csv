@@ -1,0 +1,31 @@
+matricola,nome,cognome,indirizzo,cap,localita,provincia,email,telefono,data_nascita,cf,attivo,voto,q0,q1,q2
+1001,Marco,Rossi,Via Roma 1,24121,Bergamo,BG,marco.rossi@email.it,3331234567,1980-05-12,RSSMRC80E12A794X,1,1,2025,2024,2023
+1002,Anna,Bianchi,Via Milano 5,24122,Bergamo,BG,anna.bianchi@email.it,3332345678,1975-08-23,BNCNNA75M63A794B,1,1,2025,2024,2023
+1003,Luca,Verdi,Via Verdi 10,24123,Bergamo,BG,luca.verdi@email.it,3333456789,1990-11-30,VRDLCA90S30A794C,1,1,2025,2024,2023
+1004,Paolo,Neri,Via Neri 3,24124,Bergamo,BG,paolo.neri@email.it,3334567890,1985-02-14,NRIPLA85B14A794D,1,1,2025,2024,2023
+1005,Elena,Fontana,Via Fontana 7,24125,Bergamo,BG,elena.fontana@email.it,3335678901,1982-07-19,FNTLNE82L59A794E,1,1,2025,2024,2023
+1006,Giovanni,Colombo,Via Colombo 12,24126,Bergamo,BG,giovanni.colombo@email.it,3336789012,1978-03-22,CLMGNN78C22A794F,1,1,2025,2024,2023
+1007,Francesca,Bruni,Via Bruni 15,24127,Bergamo,BG,francesca.bruni@email.it,3337890123,1992-09-05,BRNFNC92P45A794G,1,1,2025,2024,2023
+1008,Stefano,Greco,Via Greco 18,24128,Bergamo,BG,stefano.greco@email.it,3338901234,1987-12-11,GRCSTF87T11A794H,1,1,2025,2024,2023
+1009,Chiara,Leoni,Via Leoni 21,24129,Bergamo,BG,chiara.leoni@email.it,3339012345,1983-04-28,LNOCAR83D68A794I,1,1,2025,2024,2023
+1010,Matteo,Moretti,Via Moretti 24,24130,Bergamo,BG,matteo.moretti@email.it,3330123456,1995-06-17,MRTMTT95H17A794L,1,1,2025,2024,2023
+1011,Alessia,Pagani,Via Pagani 27,24131,Bergamo,BG,alessia.pagani@email.it,3331234500,1981-01-09,PGNLSS81A49A794M,1,1,2025,2024,2023
+1012,Simone,Testa,Via Testa 30,24132,Bergamo,BG,simone.testa@email.it,3332345600,1986-10-21,TSTSMN86R21A794N,1,1,2025,2024,2023
+1013,Martina,Fiore,Via Fiore 33,24133,Bergamo,BG,martina.fiore@email.it,3333456700,1993-03-15,FRIMTN93C55A794O,1,1,2025,2024,2023
+1014,Andrea,Serra,Via Serra 36,24134,Bergamo,BG,andrea.serra@email.it,3334567800,1984-09-27,SERRND84P27A794P,1,1,2025,2024,2023
+1015,Valentina,De Luca,Via De Luca 39,24135,Bergamo,BG,valentina.deluca@email.it,3335678900,1989-12-03,DLCLNT89T43A794Q,1,1,2025,2024,2023
+1016,Roberto,Marini,Via Marini 42,24136,Bergamo,BG,roberto.marini@email.it,3336789000,1977-05-16,MRNRRT77E16A794R,1,1,2025,2024,2023
+1017,Giulia,Conti,Via Conti 45,24137,Bergamo,BG,giulia.conti@email.it,3337890100,1991-08-29,CNTGLI91M69A794S,1,1,2025,2024,2023
+1018,Daniele,Barbieri,Via Barbieri 48,24138,Bergamo,BG,daniele.barbieri@email.it,3338901200,1988-02-07,BRBDNL88B07A794T,1,1,2025,2024,2023
+1019,Silvia,Martini,Via Martini 51,24139,Bergamo,BG,silvia.martini@email.it,3339012300,1980-06-25,MRTSLV80H65A794U,1,1,2025,2024,2023
+1020,Alberto,De Angelis,Via De Angelis 54,24140,Bergamo,BG,alberto.deangelis@email.it,3330123400,1979-11-13,DNGLRT79S13A794V,1,1,2025,2024,2023
+1021,Serena,Romano,Via Romano 57,24141,Bergamo,BG,serena.romano@email.it,3331234600,1985-03-19,RMNSRN85C59A794Z,1,1,2025,2024,2023
+1022,Massimo,Grechi,Via Grechi 60,24142,Bergamo,BG,massimo.grechi@email.it,3332345700,1976-07-22,GRCMSM76L62A794A,1,1,2025,2024,2023
+1023,Patrizia,Longhi,Via Longhi 63,24143,Bergamo,BG,patrizia.longhi@email.it,3333456800,1983-10-05,LNGPTR83R45A794B,1,1,2025,2024,2023
+1024,Stefania,Monti,Via Monti 66,24144,Bergamo,BG,stefania.monti@email.it,3334567900,1987-01-30,MNTSFN87A70A794C,1,1,2025,2024,2023
+1025,Enrico,Parisi,Via Parisi 69,24145,Bergamo,BG,enrico.parisi@email.it,3335678000,1994-04-11,PRSNRC94D11A794D,1,1,2025,2024,2023
+1026,Laura,Grassi,Via Grassi 72,24146,Bergamo,BG,laura.grassi@email.it,3336789100,1982-08-08,GRSLRA82M48A794E,1,1,2025,2024,2023
+1027,Matilde,Caruso,Via Caruso 75,24147,Bergamo,BG,matilde.caruso@email.it,3337890200,1996-02-18,CRSMTD96B58A794F,1,1,2025,2024,2023
+1028,Giovanna,Pagliari,Via Pagliari 78,24148,Bergamo,BG,giovanna.pagliari@email.it,3338901300,1974-09-09,PGLGVN74P49A794G,1,1,2025,2024,2023
+1029,Franco,Testoni,Via Testoni 81,24149,Bergamo,BG,franco.testoni@email.it,3339012400,1986-12-22,TSTFNC86T22A794H,1,1,2025,2024,2023
+1030,Lucia,Serafini,Via Serafini 84,24150,Bergamo,BG,lucia.serafini@email.it,3330123500,1980-03-03,SRFLCU80C43A794I,1,1,2025,2024,2023

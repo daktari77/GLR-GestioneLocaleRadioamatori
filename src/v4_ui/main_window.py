@@ -437,19 +437,42 @@ class App:
             pass
     
     def _manual_backup(self):
-        """Perform on-demand backup (data folder + database)."""
+        """Chiede all'utente se eseguire backup solo DB o FULL (DB+documenti) e agisce di conseguenza."""
         from backup import backup_on_demand
+        from documents_backup import backup_documents
         from config import DATA_DIR, DB_NAME, get_backup_dir
-        from tkinter import messagebox
+        from tkinter import messagebox, simpledialog
 
+        # Chiedi all'utente la modalità di backup
+        resp = messagebox.askyesnocancel(
+            "Backup manuale",
+            "Vuoi eseguire il backup FULL (database + documenti)?\n\n"
+            "Sì = FULL (DB + documenti)\nNo = Solo database\nAnnulla = Annulla backup."
+        )
+        if resp is None:
+            return  # Annullato
         try:
-            success, result = backup_on_demand(DATA_DIR, DB_NAME, get_backup_dir())
-            if success:
-                messagebox.showinfo("Backup", f"Archivio creato:\n{result}")
+            if resp:
+                # FULL: backup DB + documenti
+                success, result = backup_on_demand(DATA_DIR, DB_NAME, get_backup_dir())
+                if success:
+                    # Backup documenti FULL
+                    dest_dir, changed = backup_documents(DATA_DIR, get_backup_dir(), mode='full')
+                    messagebox.showinfo(
+                        "Backup FULL",
+                        f"Backup DB creato:\n{result}\n\nBackup documenti (full): {changed} file in {dest_dir}"
+                    )
+                else:
+                    messagebox.showerror("Errore Backup", f"Backup DB non riuscito:\n{result}")
             else:
-                messagebox.showerror("Errore Backup", f"Backup non riuscito:\n{result}")
+                # Solo DB
+                success, result = backup_on_demand(DATA_DIR, DB_NAME, get_backup_dir())
+                if success:
+                    messagebox.showinfo("Backup DB", f"Archivio DB creato:\n{result}")
+                else:
+                    messagebox.showerror("Errore Backup", f"Backup DB non riuscito:\n{result}")
         except Exception as e:
-            messagebox.showerror("Errore Backup", f"Errore durante il backup on demand:\n{str(e)}")
+            messagebox.showerror("Errore Backup", f"Errore durante il backup manuale:\n{str(e)}")
             logger.error(f"Manual backup failed: {e}")
 
     def _reset_to_factory(self):
